@@ -415,6 +415,33 @@
     <div class="err" id="ejMsg" style="color:var(--text)"></div>
   </div>
 </dialog>
+<dialog id="picDlg">
+  <form class="card" id="picForm" style="width:min(440px,92vw)">
+    <h2>🎛️ <span data-t="picture"></span>: <span id="picCam"></span></h2>
+    <div id="picLoad" class="muted" style="margin:8px 0"></div>
+    <div id="picBody" style="display:none">
+      <div id="picIrRow"><label class="f" data-t="nightMode"></label>
+        <select id="picIr"><option value="AUTO" data-t="irAuto"></option><option value="OFF" data-t="irOff"></option><option value="ON" data-t="irOn"></option></select></div>
+      <div id="picWdrRow"><label class="f" data-t="hdr"></label>
+        <select id="picWdr"><option value="ON" data-t="on"></option><option value="OFF" data-t="off"></option></select></div>
+      <div id="picBrRow"><label class="f"><span data-t="brightness"></span>: <b id="picBrV"></b></label><input type="range" id="picBr" style="width:100%"></div>
+      <div id="picSatRow"><label class="f"><span data-t="colorSat"></span>: <b id="picSatV"></b></label><input type="range" id="picSat" style="width:100%"></div>
+      <label class="f" data-t="mainStream"></label>
+      <div id="picEncNow" class="muted"></div>
+      <div id="picEncEdit" class="grid2" style="display:none">
+        <div><select id="picRes"></select></div>
+        <div><input type="number" id="picBit" min="256" step="256" placeholder="kbps"></div>
+      </div>
+      <div class="hint" id="picEncHint" style="color:var(--muted)"></div>
+      <div class="hint" style="color:var(--muted);margin-top:8px" data-t="colorNightHint"></div>
+    </div>
+    <div class="btnrow">
+      <button class="btn" type="submit" id="picSave" data-t="save"></button>
+      <button class="btn ghost" type="button" onclick="this.closest('dialog').close()" data-t="close"></button>
+    </div>
+    <div class="err" id="picMsg"></div>
+  </form>
+</dialog>
 <dialog id="pwDlg">
   <form class="card" id="pwForm">
     <h2 data-t="changePass"></h2>
@@ -531,6 +558,19 @@ const I18N = {
   drvSpace: ["Google account: {0} / {1} GB used, {2} GB free", "Google account: {0} / {1} GB ব্যবহার হয়েছে, {2} GB খালি"],
   drvOffQ: ["Disconnect Google Drive? (clips already on Drive stay)", "Google Drive disconnect করবেন? (Drive-এর clip মুছবে না)"],
   drvTesting: ["Testing…", "Test করছি…"],
+  // picture
+  picture: ["Picture settings", "ছবির setting"], picLoading: ["Asking the camera…", "Camera-র কাছ থেকে আনা হচ্ছে…"],
+  nightMode: ["Night mode", "Night mode"], irAuto: ["Auto (color by day, black & white IR at night)", "Auto (দিনে রঙিন, রাতে সাদা-কালো IR)"],
+  irOff: ["Night vision always (black & white, IR on)", "সবসময় night vision (সাদা-কালো, IR চালু)"],
+  irOn: ["Color always (IR off; at night needs light)", "সবসময় রঙিন (IR বন্ধ; রাতে আলো লাগবে)"],
+  hdr: ["HDR / WDR (bright sky + dark areas)", "HDR / WDR (উজ্জ্বল আকাশ + অন্ধকার জায়গা)"], on: ["On", "চালু"], off: ["Off", "বন্ধ"],
+  brightness: ["Brightness", "উজ্জ্বলতা"], colorSat: ["Color", "রঙ"], mainStream: ["Main stream (MAX quality)", "Main stream (MAX quality)"], now: ["Now", "এখন"],
+  encHint: ["Highest this camera offers: {0}, up to {1} kbps. Higher bitrate = sharper picture, more SSD space.", "এই camera সর্বোচ্চ দিতে পারে: {0}, {1} kbps পর্যন্ত। Bitrate বেশি = ছবি বেশি পরিষ্কার, SSD-তে জায়গা বেশি লাগে।"],
+  encApp: ["This camera sends H.265: resolution/bitrate can only be changed in its own app (it is usually already at max).", "এই camera H.265 পাঠায়: resolution/bitrate শুধু তার নিজের app-এ বদলানো যায় (সাধারণত আগে থেকেই max-এ থাকে)।"],
+  colorNightHint: ["Color night vision with the camera's own spotlight (Imou \"Full color\" / Meari \"Color night\") can only be switched in the camera's app: ONVIF has no control for the spotlight.", "Camera-র নিজের light জ্বালিয়ে রঙিন night vision (Imou-তে \"Full color\", Meari-তে \"Color night\") শুধু camera-র app থেকে চালু করা যায়। ONVIF দিয়ে light চালু করা যায় না।"],
+  noImaging: ["This camera does not offer night mode / HDR over ONVIF: use its own app for those.", "এই camera ONVIF দিয়ে night mode / HDR বদলাতে দেয় না: এগুলো camera-র app থেকে করুন।"],
+  picSaved: ["✅ Saved on the camera.", "✅ Camera-য় save হয়েছে।"], saving: ["Saving…", "Save হচ্ছে…"],
+  qualityTip: ["SD = light, MAX = the camera's full resolution", "SD = হালকা, MAX = camera-র পুরো resolution"],
   // storage limits
   limits: ["Storage limits", "Storage-এর সীমা"],
   limInfo: ["SD card: {0} GB total, {1} GB free. Recordings on the SD card now: {2} GB.", "SD card: মোট {0} GB, খালি {1} GB। এখন SD card-এ recording আছে {2} GB।"],
@@ -699,7 +739,7 @@ function makeTile(c) {
     <div class="label"><span class="dot"></span><span class="nm"></span></div>
     <div class="mbadge"></div>
     <div class="tools"><button class="snd" title="">🔇</button><button class="pz" style="display:none">🎮</button>
-      <button class="q">SD</button><button class="fs">⛶</button></div>
+      <button class="pic" style="display:none">🎛️</button><button class="q">SD</button><button class="fs">⛶</button></div>
     <div class="msg"></div>
     <div class="ptz">
       <span class="c"></span><button data-x="0" data-y="1">▲</button><span class="c"></span>
@@ -712,11 +752,17 @@ function makeTile(c) {
   T.player = new LivePlayer(video, (state, text) => { dot.className = "dot " + (state === "ok" ? "ok" : state === "bad" ? "bad" : "warn"); msg.textContent = text || ""; });
   const qBtn = el.querySelector(".q"), sBtn = el.querySelector(".snd"), pBtn = el.querySelector(".pz");
   const sync = () => {
-    qBtn.textContent = T.hd ? "HD" : "SD"; qBtn.classList.toggle("on", T.hd);
+    qBtn.textContent = T.hd ? (video.videoHeight ? resLabel(video.videoWidth, video.videoHeight) : "MAX") : "SD";
+    qBtn.classList.toggle("on", T.hd); qBtn.title = t("qualityTip");
     sBtn.textContent = T.audio ? "🔊" : "🔇"; sBtn.classList.toggle("on", T.audio); sBtn.title = t("soundOn");
     pBtn.title = t("ptzBtn"); el.querySelector(".mbadge").textContent = t("motion");
   };
   T.sync = sync; sync();
+  video.addEventListener("resize", sync);
+  if (ME && ME.role === "admin") {
+    const pc = el.querySelector(".pic"); pc.style.display = ""; pc.title = t("picture");
+    pc.onclick = e => { e.stopPropagation(); openPicture(c); };
+  }
   T.start = () => T.player.play(T.hd ? c.id : c.id + "_sub", T.audio);
   qBtn.onclick = e => { e.stopPropagation(); T.hd = !T.hd; LS.set("cctv.hd." + c.id, T.hd); sync(); T.start(); };
   sBtn.onclick = e => { e.stopPropagation(); T.audio = !T.audio; sync(); T.start(); };
@@ -796,7 +842,11 @@ async function refreshStatus() {
     const up = s.upload || {}, ago = up.time ? Math.round((s.time - up.time) / 60) : null;
     setPill("#stDrive", { ok: "ok", idle: "ok", busy: "warn", off: "", error: "bad" }[up.state] ?? "",
       up.message ? `Drive · ${tr(up.message)}${ago > 0 ? ` · ${ago} ${t("minAgo")}` : ""}` : `Drive · ${t("waiting")}`);
-    if (s.load !== null && s.cpus) { const pct = Math.round(100 * s.load / s.cpus); setPill("#stLoad", pct < 70 ? "ok" : pct < 95 ? "warn" : "bad", `CPU ${pct}%`); }
+    if (s.load !== null && s.cpus) {
+      const pct = Math.round(100 * s.load / s.cpus), tc = s.temp;
+      const lv = Math.max(pct < 70 ? 0 : pct < 95 ? 1 : 2, tc == null ? 0 : tc < 70 ? 0 : tc < 80 ? 1 : 2);
+      setPill("#stLoad", ["ok", "warn", "bad"][lv], `CPU ${pct}%` + (tc != null ? ` · 🌡️ ${Math.round(tc)}°C` : ""));
+    }
   } catch (e) { if (e.message !== "login") setPill("#stStorage", "bad", t("noServer")); }
 }
 
@@ -1228,6 +1278,67 @@ async function ssdAction(kind) {
 $("#stStorage").onclick = showStorage;
 $("#ejBtn").onclick = () => { if (confirm(t("ejectQ"))) ssdAction("eject"); };
 $("#atBtn").onclick = () => ssdAction("attach");
+
+/* ======================= picture (night / HDR) ======================= */
+function resLabel(w, h) {
+  const p = Math.min(w, h);
+  return p >= 2100 ? "4K" : p >= 1600 ? "5MP" : p >= 1440 ? "2K 4MP" : p >= 1296 ? "2K 3MP" : p >= 1080 ? "1080p" : p >= 720 ? "720p" : p + "p";
+}
+let PIC = null;
+async function openPicture(c) {
+  PIC = { cam: c }; $("#picCam").textContent = c.name; $("#picMsg").textContent = "";
+  $("#picBody").style.display = "none"; $("#picLoad").textContent = t("picLoading"); $("#picSave").disabled = true;
+  $("#picDlg").showModal();
+  try { showPicture(await api("/api/admin/picture?cam=" + encodeURIComponent(c.id))); }
+  catch (e) { $("#picLoad").textContent = e.message; }
+}
+function showPicture(d) {
+  PIC.d = d; $("#picLoad").textContent = ""; $("#picBody").style.display = ""; $("#picSave").disabled = false;
+  const show = (id, ok) => { $(id).style.display = ok ? "" : "none"; };
+  show("#picIrRow", d.imaging && d.ir_modes && d.ir_modes.length);
+  if (d.ir_modes) for (const o of $("#picIr").options) o.hidden = !d.ir_modes.includes(o.value);
+  if (d.ir) $("#picIr").value = d.ir;
+  show("#picWdrRow", d.imaging && d.wdr_modes && d.wdr_modes.length); if (d.wdr) $("#picWdr").value = d.wdr;
+  const slider = (row, inp, val, v, rng) => {
+    const ok = d.imaging && v !== null && v !== undefined && rng && rng[0] !== null && rng[1] !== null; show(row, ok);
+    if (ok) { $(inp).min = rng[0]; $(inp).max = rng[1]; $(inp).value = v; $(val).textContent = v; $(inp).oninput = () => $(val).textContent = $(inp).value; }
+  };
+  slider("#picBrRow", "#picBr", "#picBrV", d.brightness, d.brightness_range);
+  slider("#picSatRow", "#picSat", "#picSatV", d.saturation, d.saturation_range);
+  const e = d.encoder;
+  if (e) {
+    $("#picEncNow").textContent = `${t("now")}: ${e.width}×${e.height} (${resLabel(e.width, e.height)}) · ${e.encoding || "?"} · ${e.bitrate || "?"} kbps · ${e.fps || "?"} fps`;
+    show("#picEncEdit", e.editable);
+    if (e.editable) {
+      $("#picRes").innerHTML = e.resolutions.map(([w, h]) => `<option value="${w}x${h}">${w}×${h} (${resLabel(w, h)})</option>`).join("");
+      $("#picRes").value = `${e.width}x${e.height}`;
+      $("#picBit").max = e.bitrate_max || 8192; $("#picBit").value = e.bitrate || "";
+      const top = e.resolutions[0];
+      $("#picEncHint").textContent = t("encHint", top[0] + "×" + top[1], e.bitrate_max || "—");
+    } else $("#picEncHint").textContent = e.encoding === "H264" ? "" : t("encApp");
+  } else { $("#picEncNow").textContent = "—"; show("#picEncEdit", false); $("#picEncHint").textContent = ""; }
+  if (!d.imaging) $("#picLoad").textContent = t("noImaging");
+}
+$("#picForm").onsubmit = async ev => {
+  ev.preventDefault(); const d = PIC.d, m = $("#picMsg"); m.style.color = "var(--bad)"; m.textContent = t("saving");
+  const body = { cam: PIC.cam.id };
+  if (d.imaging) {
+    if ($("#picIrRow").style.display !== "none" && $("#picIr").value !== d.ir) body.ir = $("#picIr").value;
+    if ($("#picWdrRow").style.display !== "none" && $("#picWdr").value !== d.wdr) body.wdr = $("#picWdr").value;
+    if ($("#picBrRow").style.display !== "none" && +$("#picBr").value !== d.brightness) body.brightness = $("#picBr").value;
+    if ($("#picSatRow").style.display !== "none" && +$("#picSat").value !== d.saturation) body.saturation = $("#picSat").value;
+  }
+  const e = d.encoder;
+  if (e && e.editable) {
+    if ($("#picRes").value !== `${e.width}x${e.height}`) body.resolution = $("#picRes").value;
+    if (+$("#picBit").value && +$("#picBit").value !== e.bitrate) body.bitrate = String(+$("#picBit").value);
+  }
+  try {
+    showPicture(await api("/api/admin/picture", body));
+    m.style.color = "var(--accent)"; m.textContent = t("picSaved");
+    if (body.resolution || body.bitrate) setTimeout(() => { const T = tiles.get(PIC.cam.id); if (T) T.start(); }, 4000);
+  } catch (err) { m.textContent = err.message; }
+};
 
 /* ========================== storage limits ========================== */
 let LIM = null;

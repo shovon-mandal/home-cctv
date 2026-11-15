@@ -216,6 +216,20 @@ def _dir_size(path):
     return total
 
 
+def cpu_temp():
+    """Hottest thermal zone in °C (the Tinker Board's SoC), or None."""
+    import glob
+    best = None
+    for f in glob.glob("/sys/class/thermal/thermal_zone*/temp"):
+        try:
+            v = int(open(f).read().strip()) / 1000
+        except (OSError, ValueError):
+            continue
+        if 0 < v < 150 and (best is None or v > best):
+            best = v
+    return round(best, 1) if best is not None else None
+
+
 def limits_info():
     g, _ = cctvconf.load()
     st = os.statvfs(SD_BUF if os.path.isdir(SD_BUF) else "/")
@@ -426,6 +440,10 @@ class Handler(BaseHTTPRequestHandler):
                 if user["role"] != "admin":
                     return self.send_error_json(403, "Admins only || শুধু admin পারবে")
                 return self.send_json(share_info())
+            if p == "/api/admin/picture":
+                if user["role"] != "admin":
+                    return self.send_error_json(403, "Admins only || শুধু admin পারবে")
+                return self.picture(q, None)
             if p == "/api/admin/limits":
                 if user["role"] != "admin":
                     return self.send_error_json(403, "Admins only || শুধু admin পারবে")
@@ -522,6 +540,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(drive_status())
             if p == "/api/admin/limits":
                 return self.send_json(limits_save(body))
+            if p == "/api/admin/picture":
+                return self.picture(None, body)
             if p == "/api/admin/cameras/save":
                 return self.cam_save(body)
             if p == "/api/admin/cameras/delete":
@@ -705,6 +725,31 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_error_json(400, str(e))
         self.send_json(res)
 
+    # ---------- picture settings (night mode, HDR, resolution) ----------
+    def picture(self, q, body):
+        cid = str((q.get("cam") or [""])[0] if q is not None else body.get("cam", ""))
+        c = {x["id"]: x for x in cctvconf.load_cameras()}.get(cid)
+        if not c:
+            return self.send_error_json(404, "No such camera || camera নেই")
+        port = c.get("onvif_port") or None
+        try:
+            if body is None:
+                return self.send_json(onvif.get_picture(c["host"], c["user"], c["password"], port))
+            num = lambda k: float(body[k]) if body.get(k) not in (None, "") else None
+            ir = body.get("ir") if body.get("ir") in ("AUTO", "ON", "OFF") else None
+            wdr = body.get("wdr") if body.get("wdr") in ("ON", "OFF") else None
+            w = h = None
+            if body.get("resolution"):
+                w, h = (int(v) for v in str(body["resolution"]).lower().split("x"))
+            br = int(body["bitrate"]) if str(body.get("bitrate", "")).isdigit() else None
+            onvif.set_picture(c["host"], c["user"], c["password"], port, ir=ir, wdr=wdr,
+                              brightness=num("brightness"), saturation=num("saturation"), width=w, height=h, bitrate=br)
+            return self.send_json(onvif.get_picture(c["host"], c["user"], c["password"], port))
+        except onvif.OnvifError as e:
+            return self.send_error_json(400, str(e))
+        except (OSError, ValueError):
+            return self.send_error_json(502, "Camera did not answer || camera সাড়া দেয়নি")
+
     # ---------- PTZ ----------
     def ptz(self, body, user):
         if not (user["role"] == "admin" or user.get("ptz")):
@@ -798,6 +843,7 @@ class Handler(BaseHTTPRequestHandler):
             "storage": storage,
             "upload": upload,
             "load": load1,
+            "temp": cpu_temp(),
             "cpus": os.cpu_count(),
             "time": int(time.time()),
         })

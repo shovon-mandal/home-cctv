@@ -37,6 +37,7 @@ journalctl -u cctv-upload -n 6 --no-pager -o cat 2>/dev/null | sed 's/^/    /'
 echo "  files: $(stat -c '%n %U:%G %a' /etc/cctv/cctv.conf /etc/cctv/cameras.conf /etc/cctv/rclone.conf 2>/dev/null | tr '\n' ';')"
 echo "== Load =="
 uptime
+t=$(cat /sys/class/thermal/thermal_zone*/temp 2>/dev/null | sort -n | tail -1); [ -n "$t" ] && echo "  CPU temperature: $((t/1000))°C"
 free -h | head -2
 echo
 echo "Logs: journalctl -u cctv-recorder -n 30   |   journalctl -u cctv-motion -n 30   |   journalctl -u cctv-go2rtc -n 30"
