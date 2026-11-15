@@ -504,6 +504,7 @@ const I18N = {
   save: ["Save", "Save"], cancel: ["Cancel", "বাতিল"], delete: ["Delete", "Delete"], new: ["New", "নতুন"], test: ["Test", "Test"],
   passChanged: ["Password changed", "Password বদলানো হয়েছে"],
   // live
+  noH265: ["{0}: this browser can't play the camera's MAX (H.265) stream, showing SD. MAX works in the Android app / Chrome on phone; recordings are still full quality.", "{0}: এই browser camera-র MAX (H.265) stream চালাতে পারে না, তাই SD দেখানো হচ্ছে। Android app বা phone-এর Chrome-এ MAX চলে; recording full quality-তেই হচ্ছে।"],
   connecting: ["Connecting…", "connect হচ্ছে…"], camLost: ["Camera not reachable", "Camera পাওয়া যাচ্ছে না"],
   connLost: ["Connection lost", "connection কেটে গেছে"], streamStopped: ["Stream stopped", "stream থেমে গেছে"],
   noMSE: ["Live view is not supported in this browser", "এই browser-এ live view চলে না"],
@@ -652,6 +653,16 @@ async function api(path, body) {
   return data;
 }
 
+function toast(text, ms = 9000) {
+  let box = document.getElementById("toast");
+  if (!box) {
+    box = document.createElement("div"); box.id = "toast";
+    box.style.cssText = "position:fixed;left:50%;bottom:18px;transform:translateX(-50%);max-width:min(560px,92vw);background:#222a35;color:#e6edf3;border:1px solid #3b4552;border-radius:12px;padding:10px 14px;font-size:14px;z-index:9999;box-shadow:0 6px 24px #0008;cursor:pointer";
+    box.onclick = () => box.remove(); document.body.appendChild(box);
+  }
+  box.textContent = text; clearTimeout(box._t); box._t = setTimeout(() => box.remove(), ms);
+}
+
 /* ====================== live player (go2rtc MSE) ======================
  * send {"type":"mse","value":"<codecs>"} -> {"type":"mse","value":"video/mp4; codecs=..."} -> binary fMP4 */
 const VCODECS = ["avc1.640029", "avc1.64002A", "avc1.640033", "hvc1.1.6.L153.B0"];
@@ -699,7 +710,11 @@ class LivePlayer {
       if (typeof ev.data === "string") {
         let msg; try { msg = JSON.parse(ev.data); } catch { return; }
         if (msg.type === "mse") this.initSb(msg.value);
-        else if (msg.type === "error") this.reconnect("camLost");
+        else if (msg.type === "error") {
+          // go2rtc says the browser cannot play this stream's codec (e.g. H.265 MAX on a PC browser)
+          if (/codec/i.test(msg.value || "") && this.onCodec && this.onCodec()) return;
+          this.reconnect("camLost");
+        }
         return;
       }
       this.append(ev.data);
@@ -710,7 +725,7 @@ class LivePlayer {
   }
   initSb(type) {
     try { const sb = this.sb = this.ms.addSourceBuffer(type); sb.mode = "segments"; sb.addEventListener("updateend", () => this.pump()); }
-    catch { this.onState("bad", t("noCodec")); this.stopped = true; }
+    catch { if (this.onCodec && this.onCodec()) return; this.onState("bad", t("noCodec")); this.stopped = true; }
   }
   append(buf) { if (!this.sb) return; this.queue.push(buf); if (this.queue.length > 50) this.queue.splice(0, this.queue.length - 50); this.pump(); }
   pump() {
@@ -786,6 +801,13 @@ function makeTile(c) {
     pc.onclick = e => { e.stopPropagation(); openPicture(c); };
   }
   T.start = () => T.player.play(T.hd ? c.id : c.id + "_sub", T.audio);
+  // MAX is H.265 on some cameras (Imou): browsers without H.265 support get SD instead of an error
+  T.player.onCodec = () => {
+    if (!T.hd) return false;
+    T.hd = false; T.noMax = true; sync(); T.start();
+    if (!LS.get("cctv.noh265." + c.id, false)) { toast(t("noH265", c.name)); LS.set("cctv.noh265." + c.id, true); }
+    return true;
+  };
   qBtn.onclick = e => { e.stopPropagation(); T.hd = !T.hd; LS.set("cctv.hd." + c.id, T.hd); sync(); T.start(); };
   sBtn.onclick = e => { e.stopPropagation(); T.audio = !T.audio; sync(); T.start(); };
   el.querySelector(".fs").onclick = e => {
