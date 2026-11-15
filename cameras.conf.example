@@ -10,7 +10,7 @@ user = admin
 password =
 main_path = /cam/realmonitor?channel=1&subtype=0
 sub_path = /cam/realmonitor?channel=1&subtype=1
-mode = motion
+mode = smart
 record_stream = main
 threshold = 250
 enabled = no
@@ -24,7 +24,7 @@ user = admin
 password =
 main_path =
 sub_path =
-mode = motion
+mode = smart
 record_stream = main
 threshold = 250
 enabled = no

@@ -790,11 +790,11 @@ class Handler(BaseHTTPRequestHandler):
         now = time.time()
         base = f"/rec/{cam}/{date}/"
         segs = []
-        for s in cctvrec.segments(d, date, now):
-            jpg = s["name"][:-4] + ".jpg"
+        for s in cctvrec.merged_segments(d, date, now):
+            jpg = s["rel"][:-4] + ".jpg"
             has = os.path.exists(os.path.join(d, jpg)) and os.path.getsize(os.path.join(d, jpg)) > 0
-            segs.append({"start": s["start"], "end": s["end"], "size": s["size"], "done": s["done"],
-                         "url": base + s["name"], "thumb": base + jpg if has else None})
+            segs.append({"start": s["start"], "end": s["end"], "size": s["size"], "done": s["done"], "low": s["low"],
+                         "url": base + s["rel"], "thumb": base + jpg if has else None})
         evs = [{"start": a, "end": b, "live": b is None, "pic": base + pic if pic else None}
                for a, b, pic in cctvrec.read_events(d, now)]
         self.send_json({"cam": cam, "date": date, "day_start": cctvrec.midnight(date),
@@ -883,7 +883,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def serve_recording(self, rel, user):
         parts = rel.split("/")
-        if len(parts) != 3 or not all(SAFE_NAME.match(x) for x in parts):
+        if len(parts) == 4 and parts[2] == cctvrec.LOW:      # cam/date/low/file
+            pass
+        elif len(parts) != 3:
+            return self.send_error_json(400, "bad path")
+        if not all(SAFE_NAME.match(x) for x in parts):
             return self.send_error_json(400, "bad path")
         if not user.get("recordings") or not cctvusers.can_see(user, parts[0]):
             return self.send_error_json(403, "No permission || অনুমতি নেই")

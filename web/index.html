@@ -117,6 +117,7 @@
   .day { position: relative; height: 56px; margin: 10px 0 4px; touch-action: none; user-select: none; -webkit-user-select: none; background: #0b0f14; border: 1px solid var(--line);
     border-radius: 10px; overflow: hidden; cursor: pointer; touch-action: pan-y; }
   .day .seg { position: absolute; top: 8px; bottom: 8px; background: #3b4552; }
+  .day .seg.hq { background: #4f7fb8; }
   .day .ev { position: absolute; top: 4px; bottom: 4px; background: var(--motion); border-radius: 2px; min-width: 2px; opacity: .95; }
   .day .cur { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--blue); box-shadow: 0 0 6px var(--blue); }
   .day .now { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--warn); opacity: .7; }
@@ -261,6 +262,7 @@
     <div class="day" id="day"><div class="hov" id="hov"></div></div>
     <div class="hours" id="hours"></div>
     <div class="legend"><span><i style="background:#3b4552"></i><span data-t="lgRec"></span></span>
+      <span><i style="background:#4f7fb8"></i><span data-t="lgHq"></span></span>
       <span><i style="background:var(--motion)"></i><span data-t="lgMotion"></span></span>
       <span><i style="background:var(--blue)"></i><span data-t="lgNow"></span></span></div>
     <div class="hourpick" id="hourpick"></div>
@@ -297,7 +299,7 @@
       <input type="text" id="cSub" placeholder="/...">
       <div class="grid2">
         <div><label class="f" data-t="recording"></label>
-          <select id="cMode"><option value="continuous" data-t="mode247"></option><option value="motion" data-t="modeMotion"></option><option value="off" data-t="modeOff"></option></select></div>
+          <select id="cMode"><option value="smart" data-t="modeSmart"></option><option value="continuous" data-t="mode247"></option><option value="motion" data-t="modeMotion"></option><option value="off" data-t="modeOff"></option></select></div>
         <div><label class="f" data-t="recQuality"></label>
           <select id="cRec"><option value="main" data-t="qMain"></option><option value="sub" data-t="qSub"></option></select></div>
       </div>
@@ -512,7 +514,7 @@ const I18N = {
   speed: ["Speed", "Speed"], prevMotion: ["⏮ Motion", "⏮ Motion"], nextMotion: ["Motion ⏭", "Motion ⏭"],
   noMoreMotion: ["No more motion that way", "ওদিকে আর কোনো motion নেই"],
   prevMin: ["1 min", "১ মিনিট"], nextMin: ["1 min", "১ মিনিট"], download: ["Download", "Download"],
-  lgRec: ["Recorded", "Recording আছে"], lgMotion: ["Motion", "Motion"], lgNow: ["Playing", "এখন চলছে"],
+  lgRec: ["Recorded", "Recording আছে"], lgHq: ["Full quality", "Full quality"], lgMotion: ["Motion", "Motion"], lgNow: ["Playing", "এখন চলছে"],
   motionEvents: ["Motion events", "Motion event"], noRecs: ["No recordings for this day.", "এই দিনের কোনো recording নেই।"],
   noEvents: ["No motion this day.", "এই দিনে কোনো motion নেই।"], gap: ["No recording at this time", "এই সময়ের recording নেই"],
   ongoing: ["now", "চলছে"], secs: ["s", "সে."], mins: ["min", "মি."], live2: ["live", "live"],
@@ -524,7 +526,8 @@ const I18N = {
   findOnvif: ["🔍 Find stream paths via ONVIF", "🔍 ONVIF থেকে stream path খুঁজুন"],
   mainPath: ["Main stream path (full quality)", "Main stream path (full quality)"],
   subPath: ["Sub stream path (low quality, empty = main)", "Sub stream path (low quality, ফাঁকা = main)"],
-  recording: ["Recording", "Recording"], mode247: ["24/7 (motion marked)", "২৪ ঘণ্টা (motion চিহ্নিত)"],
+  recording: ["Recording", "Recording"], mode247: ["24/7 full quality (uses more space)", "২৪ ঘণ্টা full quality (জায়গা বেশি লাগে)"],
+  modeSmart: ["Smart: 24/7 low quality + full quality at motion (recommended)", "Smart: ২৪ ঘণ্টা কম quality + motion-এ full quality (recommended)"],
   modeMotion: ["Only when motion", "শুধু motion হলে"], modeOff: ["Off (live only)", "বন্ধ (শুধু live)"],
   recQuality: ["Recording quality", "Recording quality"], qMain: ["Full (main)", "Full (main)"], qSub: ["Low (sub, less space)", "Low (sub, কম জায়গা)"],
   sensitivity: ["Motion sensitivity", "Motion sensitivity"],
@@ -545,7 +548,7 @@ const I18N = {
   recStarting: ["◌ starting…", "◌ চালু হচ্ছে…"],
   noCamsYet: ["No cameras yet. Add one with the form below.", "এখনো কোনো camera নেই। নিচের form দিয়ে যোগ করুন।"],
   keepPass: ["leave empty to keep the old one", "আগেরটা রাখতে ফাঁকা রাখুন"],
-  modeShort: [{ continuous: "24/7", motion: "motion only", off: "live only" }, { continuous: "২৪ ঘণ্টা", motion: "শুধু motion", off: "শুধু live" }],
+  modeShort: [{ smart: "smart (24/7 low + motion full)", continuous: "24/7 full", motion: "motion only", off: "live only" }, { smart: "smart (২৪ ঘণ্টা কম + motion-এ full)", continuous: "২৪ ঘণ্টা full", motion: "শুধু motion", off: "শুধু live" }],
   // drive
   drv1: ["Press the button below → log in to Google and press <b>Allow</b>", "নিচের button চাপুন → Google-এ login করে <b>Allow</b> দিন"],
   drv2: ["A <b>\"can't be reached\"</b> page opens next. That is expected", "এরপর একটা <b>\"পাওয়া যাচ্ছে না\"</b> page আসবে। এটাই স্বাভাবিক"],
@@ -900,6 +903,11 @@ function drawDay() {
   let blk = null; const blocks = [];
   for (const s of TL.segments) { if (blk && s.start - blk[1] < 15) blk[1] = s.end; else { blk = [s.start, s.end]; blocks.push(blk); } }
   for (const [a, b] of blocks) put("seg", relSec(a), relSec(b));
+  if (TL.segments.some(s => s.low)) {                  // smart mode: mark where full quality exists
+    let hb = null; const hq = [];
+    for (const s of TL.segments) { if (s.low) { hb = null; continue; } if (hb && s.start - hb[1] < 15) hb[1] = s.end; else { hb = [s.start, s.end]; hq.push(hb); } }
+    for (const [a, b] of hq) put("seg hq", relSec(a), relSec(b));
+  }
   for (const e of TL.events) put("ev", relSec(e.start), relSec(e.end ?? TL.now), 2);
   for (const tk of ticks()) { const x = xPct(tk); if (x > 0 && x < 100) { const d = document.createElement("div"); d.className = "tick"; d.style.left = x + "%"; day.appendChild(d); } }
   if (TL.now - TL.day_start < 86400) { const x = xPct(relSec(TL.now)); if (x >= 0 && x <= 100) { const n = document.createElement("div"); n.className = "now"; n.style.left = x + "%"; day.appendChild(n); } }
@@ -1141,7 +1149,7 @@ function editCam(c) {
     $("#cRec").value = c.record_stream; setThr(c.threshold); $("#cEn").checked = c.enabled;
     $("#cAud").checked = c.audio !== false && c.audio !== "no"; $("#cPtz").checked = !!c.ptz && c.ptz !== "no";
   } else {
-    $("#cName").value = ""; $("#cHost").value = ""; $("#cMode").value = "continuous"; $("#cRec").value = "main";
+    $("#cName").value = ""; $("#cHost").value = ""; $("#cMode").value = "smart"; $("#cRec").value = "main";
     setThr(250); $("#cEn").checked = true; $("#cAud").checked = true;
   }
   $("#cPass").value = ""; $("#cPass").placeholder = c && c.has_password ? t("keepPass") : "";

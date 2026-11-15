@@ -47,12 +47,12 @@ def main():
             d = os.path.join(root, c["id"], day)
             evs = cctvrec.read_events(d, now)
             ivs = [(s - pre, (e + post) if e is not None else None) for s, e, _ in evs]
-            for s in cctvrec.segments(d, day, now):
+            for s in cctvrec.segments(d, day, now):     # full-quality segments only
                 if not s["done"]:
                     continue
                 if cctvrec.overlaps(s["start"], s["end"], ivs):
                     to_upload.append(os.path.relpath(s["path"], root))
-                elif c["mode"] == "motion" and now - s["end"] > keep:
+                elif c["mode"] in ("motion", "smart") and now - s["end"] > keep:
                     for p in (s["path"], s["path"][:-4] + ".jpg"):
                         try:
                             os.remove(p)

@@ -5,6 +5,8 @@
     HH-MM-SS.jpg      thumbnail of that segment
     m-HH-MM-SS.jpg    snapshot taken when motion started (from Motion)
     events.jsonl      {"e": "start"|"end"|"pic", "t": epoch, ["f": file]}
+    low/HH-MM-SS.mp4  "smart" mode: 24/7 low-resolution copy (sub stream); the full-quality
+                      segments above are then kept only around motion
 """
 import json
 import os
@@ -15,6 +17,7 @@ from datetime import datetime, timedelta
 SEG_RE = re.compile(r"^(\d{2})-(\d{2})-(\d{2})\.mp4$")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 SEGMENT_SECONDS = int(os.environ.get("CCTV_SEGMENT_SECONDS", 60))
+LOW = "low"
 
 
 def seg_epoch(date, name):
@@ -68,10 +71,13 @@ def motion_active(rec, cam, now=None):
     return bool(ev) and ev[-1][1] is None
 
 
-def segments(daydir, date, now=None):
+def segments(daydir, date, now=None, low=False):
     """List segments with start/end epochs. A segment's end is the next one's start
-    (capped at SEGMENT_SECONDS+5), or its mtime for the newest one."""
+    (capped at SEGMENT_SECONDS+5), or its mtime for the newest one.
+    low=True lists the low-resolution copies in <day>/low/."""
     now = now or time.time()
+    if low:
+        daydir = os.path.join(daydir, LOW)
     try:
         names = sorted(n for n in os.listdir(daydir) if SEG_RE.match(n))
     except OSError:
@@ -83,13 +89,23 @@ def segments(daydir, date, now=None):
             st = os.stat(p)
         except OSError:
             continue
-        segs.append({"name": n, "path": p, "start": seg_epoch(date, n), "size": st.st_size, "mtime": st.st_mtime})
+        segs.append({"name": n, "path": p, "start": seg_epoch(date, n), "size": st.st_size, "mtime": st.st_mtime,
+                     "low": low, "rel": f"{LOW}/{n}" if low else n})
     for i, s in enumerate(segs):
         nxt = segs[i + 1]["start"] if i + 1 < len(segs) else None
         end = min(nxt, s["start"] + SEGMENT_SECONDS + 5) if nxt else max(s["start"] + 1, min(s["mtime"], now))
         s["end"] = end
         s["done"] = nxt is not None or now - s["mtime"] > 30
     return segs
+
+
+def merged_segments(daydir, date, now=None):
+    """What to play: full-quality segments, and the low copy wherever no full one exists."""
+    main = segments(daydir, date, now)
+    have = [s["start"] for s in main]               # both are cut on the clock, so starts line up
+    extra = [s for s in segments(daydir, date, now, low=True)
+             if not any(abs(a - s["start"]) <= 1 for a in have)]
+    return sorted(main + extra, key=lambda s: s["start"])
 
 
 def overlaps(a0, a1, intervals):
@@ -126,7 +142,8 @@ def all_segments(rec, now=None):
     out = []
     for cam in cams_in(rec):
         for date in dates_of(rec, cam):
-            for s in segments(os.path.join(rec, cam, date), date, now):
-                s["cam"], s["date"] = cam, date
-                out.append(s)
+            for low in (False, True):
+                for s in segments(os.path.join(rec, cam, date), date, now, low):
+                    s["cam"], s["date"] = cam, date
+                    out.append(s)
     return out

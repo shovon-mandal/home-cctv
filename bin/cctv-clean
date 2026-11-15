@@ -51,7 +51,18 @@ def main():
             if date >= today:                     # today's folder may be empty for a moment
                 continue
             d = os.path.join(root, cam, date)
-            if not any(cctvrec.SEG_RE.match(f) for f in os.listdir(d)):
+            lowd = os.path.join(d, cctvrec.LOW)
+            lows = os.listdir(lowd) if os.path.isdir(lowd) else []
+            if not any(cctvrec.SEG_RE.match(f) for f in os.listdir(d) + lows):
+                for f in lows:
+                    try:
+                        os.remove(os.path.join(lowd, f))
+                    except OSError:
+                        pass
+                try:
+                    os.rmdir(lowd)
+                except OSError:
+                    pass
                 for f in os.listdir(d):
                     try:
                         os.remove(os.path.join(d, f))

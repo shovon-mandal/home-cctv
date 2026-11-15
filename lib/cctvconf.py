@@ -64,7 +64,7 @@ CAM_DEFAULTS = {
     "main_path": "", "sub_path": "", "onvif_port": "",
     "main": "", "sub": "",        # optional full rtsp:// URLs (override host/path fields)
     "enabled": "yes",
-    "mode": "continuous",         # continuous (24/7) | motion (keep only motion parts) | off
+    "mode": "smart",              # smart (24/7 low + full quality at motion) | continuous (24/7 full) | motion | off
     "ptz": "no",                  # camera can pan/tilt (ONVIF)
     "audio": "yes",               # sound in live view and recordings
     "threshold": "250",
@@ -117,8 +117,8 @@ def normalize_cam(cid, raw):
     c["ptz"] = _yes(c["ptz"])
     c["audio"] = _yes(c["audio"])
     c["mode"] = c["mode"].lower()
-    if c["mode"] not in ("motion", "continuous", "off"):
-        raise ValueError(f"[{cid}] mode must be motion, continuous or off")
+    if c["mode"] not in ("smart", "motion", "continuous", "off"):
+        raise ValueError(f"[{cid}] mode must be smart, motion, continuous or off")
     c["record_stream"] = c["record_stream"].lower()
     if c["record_stream"] not in ("main", "sub"):
         raise ValueError(f"[{cid}] record_stream must be main or sub")

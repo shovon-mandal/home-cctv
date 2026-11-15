@@ -41,9 +41,10 @@ def probe_codec(url):
 
 
 class Cam:
-    def __init__(self, cfg):
+    def __init__(self, cfg, low=False):
         self.cfg = cfg
         self.id = cfg["id"]
+        self.low = low                               # True: 24/7 low-resolution copy in <day>/low/
         self.proc = None
         self.started = 0
         self.fails = 0
@@ -53,7 +54,7 @@ class Cam:
         self.error = ""
 
     def url(self):
-        return self.cfg["src"]
+        return self.cfg["low_src"] if self.low else self.cfg["src"]
 
     def start(self):
         url = self.url()
@@ -62,7 +63,7 @@ class Cam:
             if not self.codec:
                 self.fail("stream not reachable")
                 return
-        pattern = os.path.join(REC, self.id, "%Y-%m-%d", "%H-%M-%S.mp4")
+        pattern = os.path.join(REC, self.id, "%Y-%m-%d", *([cctvrec.LOW] if self.low else []), "%H-%M-%S.mp4")
         src = ["-rtsp_transport", "tcp", "-timeout", "10000000", "-i", url] if url.startswith("rtsp://") \
             else ["-re", "-stream_loop", "-1", "-i", url]
         cmd = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", *src,
@@ -82,7 +83,7 @@ class Cam:
         self.logpath = os.path.join(RUN, f"rec-{self.id}.log")
         self.proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=open(self.logpath, "w"))
         self.started = time.time()
-        log(f"{self.id}: recording ({self.codec}{', audio' if self.audio else ''})")
+        log(f"{self.id}{' low' if self.low else ''}: recording ({self.codec}{', audio' if self.audio else ''})")
 
     def fail(self, msg):
         self.error = msg
@@ -133,17 +134,17 @@ def ensure_dirs(cam):
     for t in (time.time(), time.time() + 90):
         d = os.path.join(REC, cam, datetime.fromtimestamp(t).strftime("%Y-%m-%d"))
         try:
-            os.makedirs(d, exist_ok=True)
+            os.makedirs(os.path.join(d, cctvrec.LOW), exist_ok=True)
         except OSError:
             pass
 
 
-def make_thumbs(cam, limit=3):
+def make_thumbs(cam, limit=3, low=False):
     """Thumbnail for finished segments that do not have one yet (newest first)."""
     made = 0
     for date in cctvrec.dates_of(REC, cam)[:2]:
         d = os.path.join(REC, cam, date)
-        for s in reversed(cctvrec.segments(d, date)):
+        for s in reversed(cctvrec.segments(d, date, low=low)):
             if not s["done"]:
                 continue
             jpg = s["path"][:-4] + ".jpg"
@@ -181,13 +182,17 @@ def main():
             m = None
         if m != mtime:                               # config changed: reconcile
             mtime = m
-            want = {c["id"]: c for c in load_conf()}
+            want = {}
+            for c in load_conf():
+                want[c["id"]] = c
+                if c.get("low_src"):
+                    want[c["id"] + ":low"] = c
             for cid in list(cams):
                 if cid not in want or cams[cid].cfg != want[cid]:
                     cams.pop(cid).stop()
             for cid, c in want.items():
                 if cid not in cams:
-                    cams[cid] = Cam(c)
+                    cams[cid] = Cam(c, low=cid.endswith(":low"))
             log(f"{len(cams)} camera(s) to record")
         for c in cams.values():
             ensure_dirs(c.id)
@@ -196,7 +201,7 @@ def main():
             last_thumb = time.time()
             for c in cams.values():
                 try:
-                    make_thumbs(c.id)
+                    make_thumbs(c.id, low=c.low)
                 except Exception as e:  # noqa: BLE001
                     log(f"{c.id}: thumbnail error {e}")
         try:
