@@ -13,9 +13,9 @@ HTTPS_PORT=${CCTV_FUNNEL_PORT:-8443}
 eval "$(/opt/cctv/bin/cctv-config)"
 LOCAL="http://127.0.0.1:${CFG_WEB_PORT}"
 
-[ "$(id -u)" -eq 0 ] || { echo "sudo দিয়ে চালান: sudo cctv-funnel"; exit 1; }
+[ "$(id -u)" -eq 0 ] || { echo "Run with sudo: sudo cctv-funnel"; exit 1; }
 command -v tailscale >/dev/null || {
-  echo "Tailscale install নেই। আগে চালান:"
+  echo "Tailscale is not installed. First run:"
   echo "  curl -fsSL https://tailscale.com/install.sh | sh && sudo tailscale up"
   exit 1
 }
@@ -24,7 +24,7 @@ case "${1:-on}" in
   off)
     tailscale funnel --https="$HTTPS_PORT" off 2>/dev/null || true
     rm -f /etc/cctv/public_url
-    echo "বন্ধ করা হয়েছে। এখন শুধু বাসার Wi-Fi আর Tailscale দিয়ে খোলা যাবে।"
+    echo "Turned off. The dashboard is reachable only at home and over Tailscale again."
     exit 0 ;;
   status)
     tailscale funnel status
@@ -33,24 +33,24 @@ esac
 
 # Never put the cameras on the internet without accounts.
 if ! python3 -c 'import json,sys; d=json.load(open("/etc/cctv/auth/users.json")); sys.exit(0 if d["users"] else 1)' 2>/dev/null; then
-  echo "আগে admin account বানান: sudo cctv-user add admin --admin"
+  echo "Create an admin first: sudo cctv-user add admin --admin"
   exit 1
 fi
-echo "মনে রাখবেন: dashboard এখন internet থেকে খোলা যাবে। সব account-এ শক্ত password দিন"
-echo "(কমপক্ষে ১০ অক্ষর; বদলাতে: sudo cctv-user passwd NAME)। ৫ বার ভুল দিলে ১০ মিনিট login আটকে থাকে।"
+echo "Note: the dashboard will be reachable from the internet. Use strong passwords on every account"
+echo "(10+ characters; change with: sudo cctv-user passwd NAME). 5 wrong tries lock that address for 10 minutes."
 echo
-echo "Funnel চালু করছি (port $HTTPS_PORT → $LOCAL)…"
-echo "(Tailscale কোনো link দেখালে সেটা খুলে Funnel/HTTPS allow করুন, তারপর আবার এই command চালান।)"
+echo "Turning on Funnel (port $HTTPS_PORT → $LOCAL)…"
+echo "(If Tailscale prints a link to enable Funnel/HTTPS, open it, allow it, then run this again.)"
 if ! tailscale funnel --bg --https="$HTTPS_PORT" "$LOCAL"; then
-  echo "Funnel চালু হয়নি। উপরের message দেখুন।"
+  echo "Funnel did not start. See the message above."
   exit 1
 fi
 DNS=$(tailscale status --json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["Self"]["DNSName"].rstrip("."))' 2>/dev/null)
-[ -n "$DNS" ] || { echo "Address পাওয়া যায়নি: tailscale funnel status দেখুন"; exit 1; }
+[ -n "$DNS" ] || { echo "No address found: check  tailscale funnel status"; exit 1; }
 URL="https://$DNS:$HTTPS_PORT"
 echo "$URL" > /etc/cctv/public_url
 chmod 644 /etc/cctv/public_url
 echo
-echo "হয়ে গেছে! যেকোনো জায়গা থেকে খুলুন: $URL"
-echo "Android app → Server ঠিকানা → 'বাইরের ঠিকানা'-তে এটা বসান।"
-echo "বন্ধ করতে: sudo cctv-funnel off"
+echo "Done! Open from anywhere: $URL"
+echo "Android app → Server address → put this in 'Outside address'."
+echo "To turn it off: sudo cctv-funnel off"

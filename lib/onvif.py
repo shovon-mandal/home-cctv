@@ -51,7 +51,7 @@ def _esc(s):
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
-def _call(url, body, user, password, timeout=4):
+def _call(url, body, user, password, timeout=3):
     env = (
         '<?xml version="1.0" encoding="UTF-8"?>'
         '<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">'
@@ -84,14 +84,14 @@ def _media_url(host, port, user, password):
 
 def find_streams(host, user, password, ports=None):
     ports = [int(p) for p in (ports or DEFAULT_PORTS)]
-    last = "camera পাওয়া যায়নি (ONVIF চালু আছে তো?)"
+    last = "Camera not found (is ONVIF on?) || camera পাওয়া যায়নি (ONVIF চালু আছে তো?)"
     for port in ports:
         try:
             media = _media_url(host, port, user, password)
             root = _call(media, '<GetProfiles xmlns="http://www.onvif.org/ver10/media/wsdl"/>', user, password)
         except OnvifError as e:
             if str(e) == "auth":
-                last = "ONVIF পাওয়া গেছে কিন্তু username/password ভুল"
+                last = "ONVIF found but username/password is wrong || ONVIF পাওয়া গেছে কিন্তু username/password ভুল"
                 break
             last = f"port {port}: {e}"
             continue
@@ -122,5 +122,67 @@ def find_streams(host, user, password, ports=None):
         if streams:
             streams.sort(key=lambda s: s["width"] * s["height"], reverse=True)
             return {"onvif_port": port, "streams": streams}
-        last = f"port {port}-এ ONVIF আছে, কিন্তু কোনো stream দেয়নি"
+        last = f"ONVIF on port {port} returned no streams || port {port}-এ ONVIF আছে, কিন্তু কোনো stream দেয়নি"
     raise OnvifError(last)
+
+
+# ---------------------------------------------------------------- PTZ
+_ptz_cache = {}
+
+
+def _ptz_target(host, user, password, port=None):
+    """(ptz_url, profile_token), cached per camera."""
+    key = (host, user, password, port)
+    if key in _ptz_cache:
+        return _ptz_cache[key]
+    ports = [int(port)] if port else DEFAULT_PORTS
+    last = "PTZ not found || PTZ পাওয়া যায়নি"
+    for p in ports:
+        dev = f"http://{host}:{p}/onvif/device_service"
+        try:
+            root = _call(dev, '<GetCapabilities xmlns="http://www.onvif.org/ver10/device/wsdl">'
+                              "<Category>All</Category></GetCapabilities>", user, password, timeout=3)
+        except OnvifError as e:
+            if str(e) == "auth":
+                raise OnvifError("ONVIF username/password wrong || ONVIF username/password ভুল") from None
+            continue
+        except (OSError, ET.ParseError):
+            continue
+        ptz = root.find(".//tt:PTZ/tt:XAddr", NS)
+        media = root.find(".//tt:Media/tt:XAddr", NS)
+        if ptz is None or not ptz.text:
+            last = "This camera does not support PTZ over ONVIF || এই camera ONVIF দিয়ে ঘোরানো যায় না"
+            break
+        fix = lambda u: f"http://{host}:{p}{urlparse(u.strip()).path}"
+        media_url = fix(media.text) if media is not None and media.text else dev
+        prof = _call(media_url, '<GetProfiles xmlns="http://www.onvif.org/ver10/media/wsdl"/>', user, password)
+        tok = None
+        for pr in prof.findall(".//trt:Profiles", NS):
+            if pr.find(".//tt:PTZConfiguration", NS) is not None:
+                tok = pr.get("token")
+                break
+        if tok is None:
+            first = prof.find(".//trt:Profiles", NS)
+            tok = first.get("token") if first is not None else None
+        if not tok:
+            break
+        _ptz_cache[key] = (fix(ptz.text), tok)
+        return _ptz_cache[key]
+    raise OnvifError(last)
+
+
+def ptz_move(host, user, password, x=0.0, y=0.0, zoom=0.0, port=None):
+    url, tok = _ptz_target(host, user, password, port)
+    zoom_xml = f'<Zoom x="{zoom:.2f}" xmlns="http://www.onvif.org/ver10/schema"/>' if zoom else ""
+    body = ('<ContinuousMove xmlns="http://www.onvif.org/ver20/ptz/wsdl">'
+            f"<ProfileToken>{_esc(tok)}</ProfileToken><Velocity>"
+            f'<PanTilt x="{x:.2f}" y="{y:.2f}" xmlns="http://www.onvif.org/ver10/schema"/>{zoom_xml}'
+            "</Velocity><Timeout>PT3S</Timeout></ContinuousMove>")
+    _call(url, body, user, password, timeout=4)
+
+
+def ptz_stop(host, user, password, port=None):
+    url, tok = _ptz_target(host, user, password, port)
+    body = ('<Stop xmlns="http://www.onvif.org/ver20/ptz/wsdl">'
+            f"<ProfileToken>{_esc(tok)}</ProfileToken><PanTilt>true</PanTilt><Zoom>true</Zoom></Stop>")
+    _call(url, body, user, password, timeout=4)

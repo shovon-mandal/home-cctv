@@ -8,7 +8,7 @@ UPDATE=0; [ "${1:-}" = "--update" ] && UPDATE=1
 GO2RTC_VERSION=${GO2RTC_VERSION:-v1.9.9}
 HERE=$(cd "$(dirname "$0")" && pwd)
 
-[ "$(id -u)" -eq 0 ] || { echo "sudo দিয়ে চালান:  sudo ./install.sh"; exit 1; }
+[ "$(id -u)" -eq 0 ] || { echo "Run with sudo:  sudo ./install.sh"; exit 1; }
 
 case "$(uname -m)" in
   armv7l|armv7*) ARCH=arm ;;
@@ -18,6 +18,15 @@ case "$(uname -m)" in
   *) echo "Unsupported CPU: $(uname -m)"; exit 1 ;;
 esac
 echo "==> CPU: $(uname -m)  (go2rtc build: $ARCH)"
+
+# Recordings are named by local time, so the board should use your time zone.
+if [ "$UPDATE" = 0 ]; then
+  CUR_TZ=$(timedatectl show -p Timezone --value 2>/dev/null || echo UTC)
+  if [ "$CUR_TZ" = "Etc/UTC" ] || [ "$CUR_TZ" = "UTC" ]; then
+    read -r -p "Time zone for recordings [Asia/Dhaka]: " NEW_TZ || true
+    timedatectl set-timezone "${NEW_TZ:-Asia/Dhaka}" && echo "Time zone: $(timedatectl show -p Timezone --value)"
+  fi
+fi
 
 echo "==> Packages"
 need_apt=1
@@ -76,7 +85,7 @@ install -m 644 "$HERE"/systemd/* /etc/systemd/system/
 systemctl daemon-reload
 /opt/cctv/bin/cctv-storage || true
 /opt/cctv/bin/cctv-apply --no-restart
-systemctl enable -q cctv-go2rtc cctv-motion cctv-web cctv-storage.timer cctv-upload.timer cctv-drive-clean.timer cctv-apply.path
+systemctl enable -q cctv-go2rtc cctv-motion cctv-recorder cctv-web cctv-storage.timer cctv-upload.timer cctv-drive-clean.timer cctv-apply.path
 if [ -d "$HERE/.git" ]; then
   [ "$HERE" = /opt/cctv-src ] || ln -sfn "$HERE" /opt/cctv-src
   git config --global --add safe.directory /opt/cctv-src 2>/dev/null || true
@@ -84,17 +93,18 @@ if [ -d "$HERE/.git" ]; then
   systemctl enable -q cctv-update.timer cctv-update.path
   systemctl restart cctv-update.timer cctv-update.path
 fi
-systemctl restart cctv-go2rtc cctv-web cctv-storage.timer cctv-upload.timer cctv-drive-clean.timer cctv-apply.path
-systemctl restart cctv-motion || true
+systemctl restart cctv-storage.timer cctv-upload.timer cctv-drive-clean.timer cctv-apply.path
+# restarts go2rtc, web, motion and one recorder per camera
+/opt/cctv/bin/cctv-apply || true
 
 has_admin() {
   python3 -c 'import json,sys; d=json.load(open("/etc/cctv/auth/users.json")); sys.exit(0 if any(u.get("role")=="admin" for u in d["users"].values()) else 1)' 2>/dev/null
 }
 if [ "$UPDATE" = 0 ] && ! has_admin; then
   echo
-  echo "==> Dashboard-এর admin account বানান"
+  echo "==> Create the dashboard admin account"
   read -r -p "Admin username [admin]: " ADMIN_NAME
-  /opt/cctv/bin/cctv-user add "${ADMIN_NAME:-admin}" --admin || echo "পরে বানাতে: sudo cctv-user add admin --admin"
+  /opt/cctv/bin/cctv-user add "${ADMIN_NAME:-admin}" --admin || echo "Create it later with: sudo cctv-user add admin --admin"
 fi
 chown -R cctv:cctv /etc/cctv/auth
 
@@ -102,15 +112,15 @@ IP=$(hostname -I | awk '{print $1}')
 TS=$(command -v tailscale >/dev/null && tailscale ip -4 2>/dev/null | head -1 || true)
 echo
 echo "============================================================"
-echo " Install শেষ!"
-echo " Dashboard (বাসার Wi-Fi):   http://$IP:8085"
+echo " Install finished!"
+echo " Dashboard (home Wi-Fi):   http://$IP:8085"
 [ -n "$TS" ] && echo " Dashboard (Tailscale):     http://$TS:8085"
 echo
 if [ "${FIRST_INSTALL:-0}" = 1 ]; then
-  echo " পরের ধাপ:"
-  echo "  1) Dashboard-এ admin দিয়ে login → ⚙️ Settings → Cameras: IP/password দিয়ে Save"
-  echo "  2) SSD (data মুছবে না):  sudo cctv-ssd-setup"
-  echo "  3) Google Drive: README-র 'Google Drive' অংশ দেখুন"
+  echo " Next steps:"
+  echo "  1) Log in as admin → Settings → Cameras: enter IP/password, Test, Save"
+  echo "  2) SSD (keeps your files):  sudo cctv-ssd-setup"
+  echo "  3) Google Drive: Settings → Google Drive → Connect with Google"
 fi
-echo " অবস্থা দেখতে:  cctv-status"
+echo " Health check:  cctv-status"
 echo "============================================================"

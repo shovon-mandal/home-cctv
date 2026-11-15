@@ -64,43 +64,55 @@ def save(data):
         _cache["mtime"] = None
 
 
-def set_user(data, name, password=None, role="viewer", cameras="*", recordings=True):
+def set_user(data, name, password=None, role="viewer", cameras="*", recordings=True, ptz=None):
     if not NAME_RE.match(name):
-        raise ValueError("username: 2-32 অক্ষর, শুধু a-z 0-9 _ . -")
+        raise ValueError("Username: 2-32 characters, only a-z 0-9 _ . - || username: 2-32 অক্ষর, শুধু a-z 0-9 _ . -")
     if role not in ("admin", "viewer"):
         raise ValueError("role must be admin or viewer")
     u = data["users"].get(name)
     if u is None:
         if not password:
-            raise ValueError("নতুন user-এর password লাগবে")
+            raise ValueError("A new user needs a password || নতুন user-এর password লাগবে")
         u = {"ver": 0}
     if password:
         if len(password) < 6:
-            raise ValueError("password কমপক্ষে ৬ অক্ষর")
+            raise ValueError("Password must be at least 6 characters || password কমপক্ষে ৬ অক্ষর")
         u["hash"] = hash_password(password)
         u["ver"] = u.get("ver", 0) + 1          # logs out old sessions
     u["role"] = role
     u["cameras"] = "*" if role == "admin" or cameras in ("*", None) else sorted(set(cameras))
     u["recordings"] = True if role == "admin" else bool(recordings)
+    if ptz is not None or "ptz" not in u:
+        u["ptz"] = True if role == "admin" else bool(ptz)
+    if role == "admin":
+        u["ptz"] = True
     data["users"][name] = u
     if not any(x["role"] == "admin" for x in data["users"].values()):
-        raise ValueError("কমপক্ষে একজন admin থাকতে হবে")
+        raise ValueError("There must be at least one admin || কমপক্ষে একজন admin থাকতে হবে")
     return data
 
 
 def delete_user(data, name):
     if name not in data["users"]:
-        raise ValueError("user নেই")
+        raise ValueError("No such user || user নেই")
     rest = {k: v for k, v in data["users"].items() if k != name}
     if not any(x["role"] == "admin" for x in rest.values()):
-        raise ValueError("শেষ admin মোছা যাবে না")
+        raise ValueError("The last admin cannot be deleted || শেষ admin মোছা যাবে না")
     data["users"] = rest
     return data
 
 
 def public_view(name, u):
     return {"name": name, "role": u["role"], "cameras": u.get("cameras", "*"),
-            "recordings": u.get("recordings", True)}
+            "recordings": u.get("recordings", True),
+            "ptz": u["role"] == "admin" or u.get("ptz", False), "lang": u.get("lang", "en")}
+
+
+def set_lang(data, name, lang):
+    if lang not in ("en", "bn"):
+        raise ValueError("lang must be en or bn")
+    data["users"][name]["lang"] = lang
+    return data
 
 
 # ---------------- sessions ----------------

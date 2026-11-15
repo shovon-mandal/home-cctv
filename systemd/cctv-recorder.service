@@ -1,0 +1,17 @@
+[Unit]
+Description=CCTV continuous recording (ffmpeg, 1-minute segments)
+After=cctv-go2rtc.service cctv-storage.service
+Wants=cctv-go2rtc.service
+
+[Service]
+User=cctv
+ExecStart=/usr/bin/python3 /opt/cctv/bin/cctv-recorder
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=20
+Nice=5
+MemoryMax=300M
+
+[Install]
+WantedBy=multi-user.target

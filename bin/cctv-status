@@ -4,6 +4,15 @@ echo "== Services =="
 for s in cctv-go2rtc cctv-motion cctv-web cctv-storage.timer cctv-upload.timer cctv-drive-clean.timer cctv-apply.path cctv-update.timer; do
   printf '  %-24s %s\n' "$s" "$(systemctl is-active "$s")"
 done
+printf '  %-24s %s\n' cctv-recorder "$(systemctl is-active cctv-recorder)"
+echo "== Recording =="
+python3 -c '
+import json
+d = json.load(open("/run/cctv/recorder.json"))
+for k, v in d.items():
+    if k.startswith("cam"):
+        print(f"  {k}: {\"recording\" if v[\"recording\"] else \"NOT recording\"}  {v.get(\"codec\") or \"\"}  {\"+audio\" if v.get(\"audio\") else \"\"}  {v.get(\"error\") or \"\"}")
+' 2>/dev/null || echo "  (no recorder status yet)"
 echo "== Storage =="
 cat /run/cctv/storage.json 2>/dev/null | python3 -c '
 import json,sys
@@ -18,4 +27,4 @@ echo "== Load =="
 uptime
 free -h | head -2
 echo
-echo "Logs: journalctl -u cctv-motion -n 50   |   journalctl -u cctv-go2rtc -n 50"
+echo "Logs: journalctl -u cctv-recorder -n 30   |   journalctl -u cctv-motion -n 30   |   journalctl -u cctv-go2rtc -n 30"

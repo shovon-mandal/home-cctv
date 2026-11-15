@@ -103,18 +103,10 @@ if [ "$MODE" = ssd ]; then
 fi
 
 # ---- 4. cleanup: delete oldest clips when space runs low ------------------
-# free_bytes DIR NEED : delete oldest clips in DIR until at least NEED bytes are freed
+# free_bytes DIR NEED : delete old segments until NEED bytes are free (no-motion ones first)
 free_bytes() {
-  local dir=$1 need=$2 n=0
-  [ "$need" -gt 0 ] || return 0
-  while IFS= read -r f; do
-    rm -f -- "$f" && n=$((n+1))
-  done < <(find "$dir" -type f \( -name '*.mp4' -o -name '*.mkv' -o -name '*.avi' \) -mmin +1 \
-             -printf '%T@\t%s\t%p\n' 2>/dev/null | sort -n \
-           | awk -F'\t' -v need="$need" '{ if (got >= need) exit; got += $2; print $3 }')
-  find "$dir" -mindepth 1 -type d -empty -delete 2>/dev/null
-  [ "$n" -gt 0 ] && log "deleted $n old clip(s) from $dir"
-  return 0
+  [ "$2" -gt 0 ] 2>/dev/null || return 0
+  ${CCTV_CLEAN_CMD:-/opt/cctv/bin/cctv-clean} "$1" "$2"
 }
 
 if [ "$MODE" = ssd ]; then

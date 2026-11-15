@@ -25,6 +25,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 import cctvconf  # noqa: E402
 import cctvusers  # noqa: E402
 import onvif  # noqa: E402
+import cctvrec  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 GEN = os.environ.get("CCTV_GEN_DIR", "/etc/cctv/generated")
@@ -64,9 +65,9 @@ def probe(url):
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
     except FileNotFoundError:
-        return {"ok": False, "error": "ffprobe install নেই (sudo apt install ffmpeg)"}
+        return {"ok": False, "error": "ffprobe is not installed (sudo apt install ffmpeg) || ffprobe install নেই (sudo apt install ffmpeg)"}
     except subprocess.TimeoutExpired:
-        return {"ok": False, "error": "সময় শেষ: camera সাড়া দিচ্ছে না (IP/port দেখুন)"}
+        return {"ok": False, "error": "Timed out: camera not answering (check IP/port) || সময় শেষ: camera সাড়া দিচ্ছে না (IP/port দেখুন)"}
     try:
         st = json.loads(r.stdout or "{}").get("streams", [])
     except ValueError:
@@ -74,20 +75,20 @@ def probe(url):
     if r.returncode == 0 and st:
         return {"ok": True, "codec": st[0].get("codec_name"), "width": st[0].get("width"), "height": st[0].get("height")}
     err = (r.stderr or "").strip().splitlines()
-    msg = err[-1] if err else "stream পাওয়া যায়নি"
+    msg = err[-1] if err else "No stream found || stream পাওয়া যায়নি"
     msg = re.sub(r"rtsp://\S+: ", "", msg)                   # drop the URL (it contains the password)
     msg = re.sub(r"//[^@/\s]+@", "//***@", msg)
     if "401" in msg or "Unauthorized" in msg:
-        msg = "username/password ভুল"
+        msg = "Wrong username/password || username/password ভুল"
     elif "404" in msg or "Not Found" in msg:
-        msg = "path ভুল (camera এই stream চেনে না)"
+        msg = "Wrong path (camera does not know this stream) || path ভুল (camera এই stream চেনে না)"
     elif "Connection refused" in msg:
-        msg = "port বন্ধ (RTSP/ONVIF চালু আছে তো?)"
+        msg = "Port closed (is RTSP/ONVIF on?) || port বন্ধ (RTSP/ONVIF চালু আছে তো?)"
     elif "Invalid data found" in msg:
-        msg = ("camera সাড়া দিচ্ছে কিন্তু video পড়া যাচ্ছে না। Imou হলে app-এ 'Video Encryption' / "
-               "'Stream Encryption' বন্ধ করুন; অথবা RTSP বন্ধ আছে")
+        msg = ("Camera answers but the video can't be read. On Imou turn off 'Video/Stream Encryption' in the app || "
+               "camera সাড়া দিচ্ছে কিন্তু video পড়া যাচ্ছে না। Imou হলে app-এ 'Video Encryption' বন্ধ করুন")
     elif "No route" in msg or "timed out" in msg.lower() or "Network is unreachable" in msg:
-        msg = "camera পাওয়া যাচ্ছে না (IP ঠিক আছে তো?)"
+        msg = "Camera not reachable (is the IP right?) || camera পাওয়া যাচ্ছে না (IP ঠিক আছে তো?)"
     return {"ok": False, "error": msg[:200]}
 
 
@@ -124,7 +125,7 @@ def drive_start():
             break
         time.sleep(0.1)
     if not local:
-        raise ValueError("rclone চালু হয়নি: " + "".join(_drive["out"])[-200:])
+        raise ValueError("rclone did not start: " + "".join(_drive["out"])[-200:])
 
     class NoRedirect(urllib.request.HTTPRedirectHandler):
         def redirect_request(self, *a, **k):
@@ -135,7 +136,7 @@ def drive_start():
         loc = e.headers.get("Location")
         if loc and loc.startswith("https://accounts.google.com/"):
             return loc
-    raise ValueError("Google login link পাওয়া যায়নি")
+    raise ValueError("Could not get the Google login link || Google login link পাওয়া যায়নি")
 
 
 def drive_finish(pasted):
@@ -145,10 +146,10 @@ def drive_finish(pasted):
     q = parse_qs(urlparse(pasted.strip()).query)
     code, state = (q.get("code") or [""])[0], (q.get("state") or [""])[0]
     if not code:
-        raise ValueError("Link-এ 'code=' নেই। Allow চাপার পরে address bar-এর পুরো link copy করুন।")
+        raise ValueError("The link has no 'code='. After Allow, copy the whole address bar link || Link-এ 'code=' নেই। Allow চাপার পরে address bar-এর পুরো link copy করুন।")
     p = _drive["proc"]
     if not p or p.poll() is not None or state != _drive["state"]:
-        raise ValueError("সময় শেষ হয়ে গেছে। আবার 'Google দিয়ে connect' চাপুন।")
+        raise ValueError("Timed out. Press 'Connect with Google' again || সময় শেষ হয়ে গেছে। আবার 'Google দিয়ে connect' চাপুন।")
     params = {"state": state, "code": code}
     if q.get("scope"):
         params["scope"] = q["scope"][0]
@@ -164,8 +165,8 @@ def drive_finish(pasted):
     m = re.search(r"--->\s*(.+?)\s*<---End paste", out, re.S)
     if not m:
         if "failed to get token" in out:
-            raise ValueError("Google থেকে token নেওয়া যায়নি (link পুরোনো হয়ে গেছে বা internet নেই)। আবার 'Google দিয়ে connect' চাপুন।")
-        raise ValueError("Token পাওয়া যায়নি: " + out.strip().splitlines()[-1][-200:])
+            raise ValueError("Google did not give a token (link expired or no internet). Press 'Connect with Google' again || Google থেকে token নেওয়া যায়নি। আবার 'Google দিয়ে connect' চাপুন।")
+        raise ValueError("No token received: " + out.strip().splitlines()[-1][-200:])
     blob = m.group(1).strip()
     token = blob
     if not blob.startswith("{"):
@@ -234,10 +235,10 @@ class Handler(BaseHTTPRequestHandler):
     def require(self, admin=False):
         who = self.current_user()
         if not who:
-            self.send_error_json(401, "login দরকার")
+            self.send_error_json(401, "Please log in || login দরকার")
             return None
         if admin and who[1]["role"] != "admin":
-            self.send_error_json(403, "শুধু admin পারবে")
+            self.send_error_json(403, "Admins only || শুধু admin পারবে")
             return None
         return who
 
@@ -263,8 +264,17 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def lang(self):
+        lg = self.headers.get("X-Lang", "")
+        return lg if lg in ("en", "bn") else "en"
+
+    def tr(self, msg):
+        msg = re.sub(r"^\[cam\d+\] ", "", str(msg))
+        parts = msg.split(" || ", 1)
+        return parts[0] if len(parts) == 1 else (parts[1] if self.lang() == "bn" else parts[0])
+
     def send_error_json(self, code, msg):
-        self.send_json({"error": msg}, code)
+        self.send_json({"error": self.tr(msg)}, code)
 
     # ---------- routing ----------
     def do_GET(self):
@@ -288,6 +298,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self.ws_proxy(q, user)
             if p == "/api/cameras":
                 return self.send_json(self.my_cameras(user))
+            if p == "/api/motion":
+                root = self.rec_root()
+                return self.send_json({"live": [c["id"] for c in self.my_cameras(user)
+                                                if cctvrec.motion_active(root, c["id"])]})
+            if p == "/api/timeline":
+                return self.timeline(q, user)
             if p == "/api/status":
                 return self.status()
             if p == "/api/recordings":
@@ -296,11 +312,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self.serve_recording(unquote(p[5:]), user)
             if p == "/api/admin/cameras":
                 if user["role"] != "admin":
-                    return self.send_error_json(403, "শুধু admin পারবে")
+                    return self.send_error_json(403, "Admins only || শুধু admin পারবে")
                 return self.admin_cameras()
             if p == "/api/admin/update":
                 if user["role"] != "admin":
-                    return self.send_error_json(403, "শুধু admin পারবে")
+                    return self.send_error_json(403, "Admins only || শুধু admin পারবে")
                 d = read_json(os.path.join(RUN, "update.json"), {})
                 try:
                     d["public_url"] = open("/etc/cctv/public_url").read().strip()
@@ -309,13 +325,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(d)
             if p == "/api/admin/drive":
                 if user["role"] != "admin":
-                    return self.send_error_json(403, "শুধু admin পারবে")
+                    return self.send_error_json(403, "Admins only || শুধু admin পারবে")
                 return self.send_json(drive_status(check="check" in q))
             if p == "/api/admin/apply":
                 return self.send_json(read_json(os.path.join(RUN, "apply.json"), {}))
             if p == "/api/users":
                 if user["role"] != "admin":
-                    return self.send_error_json(403, "শুধু admin পারবে")
+                    return self.send_error_json(403, "Admins only || শুধু admin পারবে")
                 data = cctvusers.load()
                 return self.send_json([cctvusers.public_view(n, x) for n, x in sorted(data["users"].items())])
             self.send_error_json(404, "not found")
@@ -344,12 +360,25 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 name, u = who
                 if not cctvusers.check_password(str(body.get("old", "")), u.get("hash", "")):
-                    return self.send_error_json(400, "পুরোনো password ভুল")
+                    return self.send_error_json(400, "Current password is wrong || পুরোনো password ভুল")
                 data = cctvusers.load()
-                cctvusers.set_user(data, name, str(body.get("new", "")), u["role"], u.get("cameras"), u.get("recordings"))
+                cctvusers.set_user(data, name, str(body.get("new", "")), u["role"], u.get("cameras"), u.get("recordings"), u.get("ptz"))
                 cctvusers.save(data)
                 tok = cctvusers.make_token(name, data["users"][name])
                 return self.send_json({"ok": True}, headers=[("Set-Cookie", self.cookie(tok))])
+            if p == "/api/prefs":
+                who = self.require()
+                if not who:
+                    return
+                data = cctvusers.load()
+                cctvusers.set_lang(data, who[0], str(body.get("lang", "en")))
+                cctvusers.save(data)
+                return self.send_json({"ok": True})
+            if p == "/api/ptz":
+                who = self.require()
+                if not who:
+                    return
+                return self.ptz(body, who[1])
             who = self.require(admin=True)
             if not who:
                 return
@@ -361,7 +390,7 @@ class Handler(BaseHTTPRequestHandler):
                     valid = {c["id"] for c in cameras()}
                     cams = [c for c in cams if c in valid]
                 cctvusers.set_user(data, name, body.get("password") or None, body.get("role", "viewer"),
-                                   cams, bool(body.get("recordings", True)))
+                                   cams, bool(body.get("recordings", True)), bool(body.get("ptz", False)))
                 cctvusers.save(data)
                 return self.send_json({"ok": True})
             if p == "/api/users/delete":
@@ -393,7 +422,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.delete_recording(body)
             self.send_error_json(404, "not found")
         except ValueError as e:
-            self.send_error_json(400, re.sub(r"^\[cam\d+\] ", "", str(e)))
+            self.send_error_json(400, str(e))
 
     def via_proxy(self):
         """True when the request came through Tailscale Funnel/serve (a local reverse proxy)."""
@@ -412,7 +441,7 @@ class Handler(BaseHTTPRequestHandler):
         data = cctvusers.load()
         who = self.current_user()
         if not who:
-            return self.send_json({"error": "login দরকার", "needs_setup": not data["users"]}, 401)
+            return self.send_json({"error": self.tr("Please log in || login দরকার"), "needs_setup": not data["users"]}, 401)
         return self.send_json(cctvusers.public_view(*who))
 
     def login(self, body):
@@ -422,14 +451,14 @@ class Handler(BaseHTTPRequestHandler):
             recent = [t for t in _fails.get(ip, []) if now - t < 600]
             _fails[ip] = recent
             if len(recent) >= 5:
-                return self.send_error_json(429, "অনেকবার ভুল হয়েছে, ১০ মিনিট পর চেষ্টা করুন")
+                return self.send_error_json(429, "Too many attempts, try again in 10 minutes || অনেকবার ভুল হয়েছে, ১০ মিনিট পর চেষ্টা করুন")
         name = str(body.get("user", "")).strip()
         u = cctvusers.load()["users"].get(name)
         if not u or not cctvusers.check_password(str(body.get("pass", "")), u.get("hash", "")):
             with _fails_lock:
                 _fails.setdefault(ip, []).append(now)
             time.sleep(1)
-            return self.send_error_json(401, "username বা password ভুল")
+            return self.send_error_json(401, "Wrong username or password || username বা password ভুল")
         with _fails_lock:
             _fails.pop(ip, None)
         self.send_json(cctvusers.public_view(name, u), headers=[("Set-Cookie", self.cookie(cctvusers.make_token(name, u)))])
@@ -452,10 +481,22 @@ class Handler(BaseHTTPRequestHandler):
         for c in cctvconf.load_cameras():
             d = {k: c.get(k, "") for k in cctvconf.CAM_FIELDS if k != "password"}
             d.update(id=c["id"], has_password=bool(c.get("password")),
-                     custom_url=bool(c.get("main")), enabled=c["enabled"])
+                     custom_url=bool(c.get("main")), enabled=c["enabled"], ptz=c["ptz"])
+            d["recording"] = self.rec_status(c)
             cams.append(d)
         presets = {k: {kk: vv for kk, vv in v.items()} for k, v in cctvconf.PRESETS.items()}
         self.send_json({"cameras": cams, "presets": presets})
+
+    def rec_status(self, c):
+        if not c["enabled"] or c["mode"] == "off":
+            return {"state": "off"}
+        st = read_json(os.path.join(RUN, "recorder.json"), {}).get(c["id"], {})
+        date = time.strftime("%Y-%m-%d")
+        segs = cctvrec.segments(os.path.join(self.rec_root(), c["id"], date), date)
+        age = time.time() - segs[-1]["mtime"] if segs else None
+        state = "ok" if age is not None and age < 90 else ("starting" if st.get("recording") else "error")
+        return {"state": state, "error": st.get("error", ""), "codec": st.get("codec"), "audio": st.get("audio"),
+                "last_write_age": int(age) if age is not None else None}
 
     def _cam_from_body(self, body, existing):
         """Merge the form into the existing camera; empty password = keep the old one."""
@@ -463,6 +504,8 @@ class Handler(BaseHTTPRequestHandler):
         for k in cctvconf.CAM_FIELDS:
             if k in body and k != "password":
                 v = body[k]
+                if k == "ptz":
+                    v = bool(v)
                 raw[k] = ("yes" if v else "no") if isinstance(v, bool) else str(v).strip()
         if body.get("password"):
             raw["password"] = str(body["password"])
@@ -485,14 +528,14 @@ class Handler(BaseHTTPRequestHandler):
         cams, by_id = self._cams_by_id()
         cid = str(body.get("id") or "")
         if cid and cid not in by_id:
-            return self.send_error_json(404, "camera নেই")
+            return self.send_error_json(404, "No such camera || camera নেই")
         if not cid:
             used = {int(c["id"][3:]) for c in cams}
             n = next(i for i in range(1, 100) if i not in used)
             cid = f"cam{n}"
         raw = self._cam_from_body(body, by_id.get(cid))
         if not raw.get("name"):
-            raise ValueError("camera-র নাম দিন")
+            raise ValueError("Give the camera a name || camera-র নাম দিন")
         c = cctvconf.normalize_cam(cid, raw)            # validates
         new = [x for x in cams if x["id"] != cid] + [dict(raw, id=cid)]
         cctvconf.save_cameras(new)
@@ -503,7 +546,7 @@ class Handler(BaseHTTPRequestHandler):
         cams, by_id = self._cams_by_id()
         cid = str(body.get("id", ""))
         if cid not in by_id:
-            return self.send_error_json(404, "camera নেই")
+            return self.send_error_json(404, "No such camera || camera নেই")
         cctvconf.save_cameras([c for c in cams if c["id"] != cid])
         self._request_apply()
         self.send_json({"ok": True, "requested": time.time()})
@@ -522,6 +565,8 @@ class Handler(BaseHTTPRequestHandler):
                 out["sub"] = dict(out["main"], same=True)
                 break
             out[which] = probe(url)
+            if out[which].get("error"):
+                out[which]["error"] = self.tr(out[which]["error"])
         self.send_json(out)
 
     def cam_onvif(self, body):
@@ -529,7 +574,7 @@ class Handler(BaseHTTPRequestHandler):
         old = by_id.get(str(body.get("id") or "")) or {}
         host = str(body.get("host", "")).strip()
         if not cctvconf.HOST_RE.match(host):
-            return self.send_error_json(400, "IP ঠিক নেই")
+            return self.send_error_json(400, "Invalid IP || IP ঠিক নেই")
         user = str(body.get("user", old.get("user", "")))
         pw = str(body.get("password") or old.get("password", ""))
         ports = [int(body["onvif_port"])] if str(body.get("onvif_port", "")).isdigit() else None
@@ -538,6 +583,56 @@ class Handler(BaseHTTPRequestHandler):
         except onvif.OnvifError as e:
             return self.send_error_json(400, str(e))
         self.send_json(res)
+
+    # ---------- PTZ ----------
+    def ptz(self, body, user):
+        if not (user["role"] == "admin" or user.get("ptz")):
+            return self.send_error_json(403, "You are not allowed to move cameras || camera ঘোরানোর অনুমতি নেই")
+        cid = str(body.get("cam", ""))
+        if not cctvusers.can_see(user, cid):
+            return self.send_error_json(403, "No permission || অনুমতি নেই")
+        c = {x["id"]: x for x in cctvconf.load_cameras()}.get(cid)
+        if not c or not c["ptz"]:
+            return self.send_error_json(400, "PTZ is off for this camera || এই camera-য় PTZ বন্ধ")
+        port = c.get("onvif_port") or None
+        try:
+            if body.get("stop"):
+                onvif.ptz_stop(c["host"], c["user"], c["password"], port)
+            else:
+                clamp = lambda v: max(-1.0, min(1.0, float(v or 0)))
+                onvif.ptz_move(c["host"], c["user"], c["password"],
+                               clamp(body.get("x")), clamp(body.get("y")), clamp(body.get("z")), port)
+        except onvif.OnvifError as e:
+            return self.send_error_json(400, str(e))
+        except OSError:
+            return self.send_error_json(502, "Camera did not answer || camera সাড়া দেয়নি")
+        self.send_json({"ok": True})
+
+    # ---------- timeline ----------
+    def timeline(self, q, user):
+        if not user.get("recordings"):
+            return self.send_error_json(403, "No permission for recordings || recordings দেখার অনুমতি নেই")
+        cam = (q.get("cam") or [""])[0]
+        date = (q.get("date") or [""])[0]
+        if not cctvusers.can_see(user, cam) or cam not in {c["id"] for c in cameras()}:
+            return self.send_error_json(403, "No permission || অনুমতি নেই")
+        root = self.rec_root()
+        days = cctvrec.dates_of(root, cam)
+        if not DATE_RE.match(date):
+            date = days[0] if days else time.strftime("%Y-%m-%d")
+        d = os.path.join(root, cam, date)
+        now = time.time()
+        base = f"/rec/{cam}/{date}/"
+        segs = []
+        for s in cctvrec.segments(d, date, now):
+            jpg = s["name"][:-4] + ".jpg"
+            has = os.path.exists(os.path.join(d, jpg)) and os.path.getsize(os.path.join(d, jpg)) > 0
+            segs.append({"start": s["start"], "end": s["end"], "size": s["size"], "done": s["done"],
+                         "url": base + s["name"], "thumb": base + jpg if has else None})
+        evs = [{"start": a, "end": b, "live": b is None, "pic": base + pic if pic else None}
+               for a, b, pic in cctvrec.read_events(d, now)]
+        self.send_json({"cam": cam, "date": date, "day_start": cctvrec.midnight(date),
+                        "dates": days, "segments": segs, "events": evs, "now": now})
 
     # ---------- live view: websocket proxy to go2rtc ----------
     def ws_proxy(self, q, user):
@@ -592,7 +687,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def recordings(self, q, user):
         if not user.get("recordings"):
-            return self.send_error_json(403, "recordings দেখার অনুমতি নেই")
+            return self.send_error_json(403, "No permission for recordings || recordings দেখার অনুমতি নেই")
         root = self.rec_root()
         cam = (q.get("cam") or [""])[0]
         date = (q.get("date") or [""])[0]
@@ -624,7 +719,7 @@ class Handler(BaseHTTPRequestHandler):
         if len(parts) != 3 or not all(SAFE_NAME.match(x) for x in parts):
             return self.send_error_json(400, "bad path")
         if not user.get("recordings") or not cctvusers.can_see(user, parts[0]):
-            return self.send_error_json(403, "অনুমতি নেই")
+            return self.send_error_json(403, "No permission || অনুমতি নেই")
         root = self.rec_root()
         fp = os.path.realpath(os.path.join(root, *parts))
         if not fp.startswith(root + os.sep) or not os.path.isfile(fp):

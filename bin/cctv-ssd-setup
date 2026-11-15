@@ -13,11 +13,11 @@ FOLDER=CCTV-Recordings
 mkdir -p /run/cctv "$MNT"
 
 list() {
-  echo "USB disk আর partition:"
+  echo "USB disks and partitions:"
   lsblk -o NAME,SIZE,FSTYPE,LABEL,MOUNTPOINT,TRAN -e 7 | awk 'NR==1 || /usb/ || /^[^a-z]*sd/'
   echo
-  echo "Data রেখে ব্যবহার (recommended):  sudo cctv-ssd-setup /dev/sdXN    (যেমন /dev/sda1)"
-  echo "সব মুছে format:                   sudo cctv-ssd-setup --format /dev/sdX"
+  echo "Use it and KEEP your files (recommended):  sudo cctv-ssd-setup /dev/sdXN   (e.g. /dev/sda1)"
+  echo "Erase everything and format:              sudo cctv-ssd-setup --format /dev/sdX"
 }
 
 rootdisk() { echo "/dev/$(lsblk -no PKNAME "$(findmnt -no SOURCE /)" | head -1)"; }
@@ -26,7 +26,7 @@ finish() {  # $1 = partition
   local part=$1 uuid fstype u g
   uuid=$(blkid -o value -s UUID "$part" || true)
   fstype=$(blkid -o value -s TYPE "$part" || true)
-  [ -n "$uuid" ] || { echo "UUID পাওয়া যায়নি: $part"; exit 1; }
+  [ -n "$uuid" ] || { echo "No UUID found: $part"; exit 1; }
   printf 'SSD_UUID=%s\nSSD_FSTYPE=%s\n' "$uuid" "$fstype" > "$SSD_ENV"
   chmod 644 "$SSD_ENV"
   rm -f /run/cctv/ejected
@@ -34,8 +34,8 @@ finish() {  # $1 = partition
   # let cctv-storage mount it with the right options
   /opt/cctv/bin/cctv-storage
   if ! mountpoint -q "$MNT"; then
-    echo "Mount হয়নি। Filesystem: $fstype"
-    echo "exFAT হলে: sudo apt install exfatprogs   |   NTFS হলে: sudo apt install ntfs-3g"
+    echo "Mount failed. Filesystem: $fstype"
+    echo "exFAT: sudo apt install exfatprogs   |   NTFS: sudo apt install ntfs-3g"
     exit 1
   fi
   mkdir -p "$MNT/$FOLDER"
@@ -43,22 +43,22 @@ finish() {  # $1 = partition
   chown -R cctv:cctv "$MNT/$FOLDER" 2>/dev/null || true
   /opt/cctv/bin/cctv-storage
   echo
-  df -h "$MNT" | tail -1 | awk '{print "SSD: মোট " $2 ", খালি " $4}'
-  echo "Recording folder: $FOLDER  (সর্বোচ্চ ${CFG_SSD_MAX_GB} GB, /etc/cctv/cctv.conf-এ ssd_max_gb বদলানো যায়)"
-  echo "Done. Recording এখন SSD-তে যাবে।  SSD খোলার আগে:  sudo cctv-ssd-eject"
+  df -h "$MNT" | tail -1 | awk '{print "SSD: size " $2 ", free " $4}'
+  echo "Recording folder: $FOLDER  (max ${CFG_SSD_MAX_GB} GB, change ssd_max_gb in /etc/cctv/cctv.conf)"
+  echo "Done. Recordings now go to the SSD.  Before unplugging:  sudo cctv-ssd-eject"
 }
 
 [ $# -ge 1 ] || { list; exit 0; }
 
 if [ "$1" = "--format" ]; then
   DISK=${2:-}
-  [ -b "$DISK" ] || { echo "Disk দিন, যেমন: sudo cctv-ssd-setup --format /dev/sda"; exit 1; }
-  [ "$DISK" != "$(rootdisk)" ] || { echo "এটা system disk, বাতিল।"; exit 1; }
+  [ -b "$DISK" ] || { echo "Give a disk, e.g.: sudo cctv-ssd-setup --format /dev/sda"; exit 1; }
+  [ "$DISK" != "$(rootdisk)" ] || { echo "That is the system disk, cancelled."; exit 1; }
   lsblk -o NAME,SIZE,FSTYPE,LABEL "$DISK"
   echo
-  echo "!!! $DISK-এর সব data চিরতরে মুছে যাবে !!!"
-  read -r -p "নিশ্চিত হলে ERASE লিখুন: " ans
-  [ "$ans" = "ERASE" ] || { echo "বাতিল।"; exit 1; }
+  echo "!!! ALL DATA ON $DISK WILL BE ERASED !!!"
+  read -r -p "Type ERASE to continue: " ans
+  [ "$ans" = "ERASE" ] || { echo "Cancelled."; exit 1; }
   touch /run/cctv/ejected
   umount -l "$MNT" 2>/dev/null || true
   for p in $(lsblk -lnpo NAME "$DISK" | tail -n +2); do umount -l "$p" 2>/dev/null || true; done
@@ -72,24 +72,24 @@ if [ "$1" = "--format" ]; then
 fi
 
 PART=$1
-[ -b "$PART" ] || { echo "পাওয়া যায়নি: $PART"; list; exit 1; }
+[ -b "$PART" ] || { echo "Not found: $PART"; list; exit 1; }
 [ "$PART" != "$(rootdisk)" ] && [ "$(lsblk -no PKNAME "$PART")" != "$(basename "$(rootdisk)")" ] \
-  || { echo "এটা system disk, বাতিল।"; exit 1; }
+  || { echo "That is the system disk, cancelled."; exit 1; }
 # whole disk given: use its only partition
 if [ "$(lsblk -no TYPE "$PART" | head -1)" = "disk" ]; then
   parts=$(lsblk -lnpo NAME,TYPE "$PART" | awk '$2=="part"{print $1}')
   if [ "$(echo "$parts" | grep -c .)" = 1 ]; then
     PART=$parts; echo "Partition: $PART"
   else
-    echo "এই disk-এ একাধিক partition আছে, কোনটা ব্যবহার করবেন সেটা দিন:"; lsblk "$PART"; exit 1
+    echo "This disk has several partitions, give the one to use:"; lsblk "$PART"; exit 1
   fi
 fi
 FST=$(blkid -o value -s TYPE "$PART" || true)
 case "$FST" in
   ext4|ext3|ext2|xfs|btrfs|exfat|ntfs) ;;
-  vfat) echo "সতর্কতা: FAT32-এ ৪GB-এর বড় file রাখা যায় না; clip ছোট রাখা হবে (max_clip_minutes)।" ;;
-  "") echo "এই partition-এ কোনো filesystem নেই। Format করতে: sudo cctv-ssd-setup --format /dev/sdX"; exit 1 ;;
-  *) echo "Filesystem '$FST' চেনা নেই।"; exit 1 ;;
+  vfat) echo "Warning: FAT32 cannot hold files over 4 GB (clips are 2 minutes, so this is fine)." ;;
+  "") echo "This partition has no filesystem. To format: sudo cctv-ssd-setup --format /dev/sdX"; exit 1 ;;
+  *) echo "Unknown filesystem '$FST'."; exit 1 ;;
 esac
-echo "Filesystem: $FST — আপনার আগের file মুছবে না, শুধু '$FOLDER' folder বানানো হবে।"
+echo "Filesystem: $FST — your files stay; only a '$FOLDER' folder is created."
 finish "$PART"

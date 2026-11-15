@@ -1,0 +1,215 @@
+#!/usr/bin/env python3
+"""Continuous recorder: one ffmpeg per camera copies the stream from go2rtc into
+1-minute MP4 segments (no re-encoding, very little CPU), plus a small JPEG
+thumbnail for every finished segment.
+
+Reads  /etc/cctv/generated/recorder.json  (written by cctv-apply; reloaded on change)
+Writes /srv/cctv/rec/<cam>/<date>/HH-MM-SS.mp4 (+ .jpg)  and  /run/cctv/recorder.json
+"""
+import json
+import os
+import signal
+import subprocess
+import sys
+import time
+from datetime import datetime
+
+sys.path.insert(0, "/opt/cctv/lib")
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+import cctvrec  # noqa: E402
+
+GEN = os.environ.get("CCTV_GEN_DIR", "/etc/cctv/generated")
+RUN = os.environ.get("CCTV_RUN", "/run/cctv")
+REC = os.environ.get("CCTV_REC", "/srv/cctv/rec")
+CONF = os.path.join(GEN, "recorder.json")
+SEG = cctvrec.SEGMENT_SECONDS
+
+
+def log(*a):
+    print("cctv-recorder:", *a, flush=True)
+
+
+def probe_codec(url):
+    try:
+        net = ["-rtsp_transport", "tcp", "-timeout", "8000000"] if url.startswith("rtsp://") else []
+        r = subprocess.run(["ffprobe", "-v", "error", *net,
+                            "-select_streams", "v:0", "-show_entries", "stream=codec_name", "-of", "csv=p=0", url],
+                           capture_output=True, text=True, timeout=20)
+        return r.stdout.strip().splitlines()[0] if r.returncode == 0 and r.stdout.strip() else None
+    except (subprocess.TimeoutExpired, OSError, IndexError):
+        return None
+
+
+class Cam:
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.id = cfg["id"]
+        self.proc = None
+        self.started = 0
+        self.fails = 0
+        self.audio = cfg.get("audio", True)
+        self.codec = None
+        self.next_try = 0
+        self.error = ""
+
+    def url(self):
+        return self.cfg["src"]
+
+    def start(self):
+        url = self.url()
+        if not self.codec:
+            self.codec = probe_codec(url)
+            if not self.codec:
+                self.fail("stream not reachable")
+                return
+        pattern = os.path.join(REC, self.id, "%Y-%m-%d", "%H-%M-%S.mp4")
+        src = ["-rtsp_transport", "tcp", "-timeout", "10000000", "-i", url] if url.startswith("rtsp://") \
+            else ["-re", "-stream_loop", "-1", "-i", url]
+        cmd = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", *src,
+               "-map", "0:v:0"]
+        if self.audio:
+            # cameras send G.711 audio, which MP4 can't hold: re-encode only the sound (cheap)
+            cmd += ["-map", "0:a:0?", "-c:v", "copy", "-c:a", "aac", "-b:a", "32k", "-ac", "1"]
+        else:
+            cmd += ["-c:v", "copy", "-an"]
+        if self.codec in ("hevc", "h265"):
+            cmd += ["-tag:v", "hvc1"]               # needed for browsers to play H.265 in MP4
+        cmd += ["-f", "segment", "-segment_time", str(SEG), "-segment_atclocktime", "1",
+                "-reset_timestamps", "1", "-strftime", "1", "-segment_format", "mp4",
+                "-segment_format_options", "movflags=+frag_keyframe+empty_moov+default_base_moof",
+                pattern]
+        ensure_dirs(self.id)
+        self.logpath = os.path.join(RUN, f"rec-{self.id}.log")
+        self.proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=open(self.logpath, "w"))
+        self.started = time.time()
+        log(f"{self.id}: recording ({self.codec}{', audio' if self.audio else ''})")
+
+    def fail(self, msg):
+        self.error = msg
+        self.fails += 1
+        if self.fails >= 3 and self.audio:
+            self.audio = False                       # camera without (usable) audio
+            self.codec = None
+            self.fails = 0
+            log(f"{self.id}: retrying without audio")
+        delay = min(60, 3 * 2 ** min(self.fails, 4))
+        self.next_try = time.time() + delay
+        log(f"{self.id}: {msg}; retry in {delay}s")
+
+    def poll(self):
+        if self.proc is None:
+            if time.time() >= self.next_try:
+                self.start()
+            return
+        rc = self.proc.poll()
+        if rc is None:
+            if time.time() - self.started > 120:
+                self.fails = 0
+                self.error = ""
+            return
+        try:
+            err = open(self.logpath, errors="replace").read().strip().splitlines()
+        except OSError:
+            err = []
+        self.proc = None
+        self.fail(err[-1][:200] if err else f"ffmpeg exited ({rc})")
+
+    def stop(self):
+        if self.proc and self.proc.poll() is None:
+            self.proc.send_signal(signal.SIGINT)      # lets ffmpeg close the current file
+            try:
+                self.proc.wait(timeout=8)
+            except subprocess.TimeoutExpired:
+                self.proc.kill()
+        self.proc = None
+
+    def status(self):
+        return {"recording": self.proc is not None and self.proc.poll() is None,
+                "audio": self.audio, "codec": self.codec, "error": self.error}
+
+
+def ensure_dirs(cam):
+    """ffmpeg does not create folders: make today's and the next minute's."""
+    for t in (time.time(), time.time() + 90):
+        d = os.path.join(REC, cam, datetime.fromtimestamp(t).strftime("%Y-%m-%d"))
+        try:
+            os.makedirs(d, exist_ok=True)
+        except OSError:
+            pass
+
+
+def make_thumbs(cam, limit=3):
+    """Thumbnail for finished segments that do not have one yet (newest first)."""
+    made = 0
+    for date in cctvrec.dates_of(REC, cam)[:2]:
+        d = os.path.join(REC, cam, date)
+        for s in reversed(cctvrec.segments(d, date)):
+            if not s["done"]:
+                continue
+            jpg = s["path"][:-4] + ".jpg"
+            if os.path.exists(jpg):
+                return made                          # older ones are done already
+            subprocess.run(["nice", "-n", "15", "ffmpeg", "-nostdin", "-loglevel", "error", "-y",
+                            "-ss", "1", "-i", s["path"], "-frames:v", "1",
+                            "-vf", "scale=240:-2", "-q:v", "7", jpg],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
+            if not os.path.exists(jpg):
+                open(jpg, "wb").close()              # unreadable segment: don't retry forever
+            made += 1
+            if made >= limit:
+                return made
+    return made
+
+
+def load_conf():
+    try:
+        with open(CONF, encoding="utf-8") as f:
+            return [c for c in json.load(f) if c.get("record")]
+    except (OSError, ValueError):
+        return []
+
+
+def main():
+    cams, mtime = {}, None
+    stopping = []
+    signal.signal(signal.SIGTERM, lambda *a: stopping.append(1))
+    last_thumb = 0
+    while not stopping:
+        try:
+            m = os.stat(CONF).st_mtime
+        except OSError:
+            m = None
+        if m != mtime:                               # config changed: reconcile
+            mtime = m
+            want = {c["id"]: c for c in load_conf()}
+            for cid in list(cams):
+                if cid not in want or cams[cid].cfg != want[cid]:
+                    cams.pop(cid).stop()
+            for cid, c in want.items():
+                if cid not in cams:
+                    cams[cid] = Cam(c)
+            log(f"{len(cams)} camera(s) to record")
+        for c in cams.values():
+            ensure_dirs(c.id)
+            c.poll()
+        if time.time() - last_thumb > 20:
+            last_thumb = time.time()
+            for c in cams.values():
+                try:
+                    make_thumbs(c.id)
+                except Exception as e:  # noqa: BLE001
+                    log(f"{c.id}: thumbnail error {e}")
+        try:
+            tmp = os.path.join(RUN, "recorder.json.tmp")
+            with open(tmp, "w") as f:
+                json.dump({cid: c.status() for cid, c in cams.items()} | {"_time": int(time.time())}, f)
+            os.replace(tmp, os.path.join(RUN, "recorder.json"))
+        except OSError:
+            pass
+        time.sleep(2)
+    for c in cams.values():
+        c.stop()
+
+
+if __name__ == "__main__":
+    main()

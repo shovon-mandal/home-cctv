@@ -20,11 +20,11 @@ import cctvusers  # noqa: E402
 def ask_password():
     while True:
         a = getpass.getpass("Password: ")
-        b = getpass.getpass("Password আবার: ")
+        b = getpass.getpass("Password again: ")
         if a != b:
-            print("দুটো password মেলেনি, আবার দিন।")
+            print("Passwords do not match, try again.")
         elif len(a) < 6:
-            print("কমপক্ষে ৬ অক্ষর দিন।")
+            print("Use at least 6 characters.")
         else:
             return a
 
@@ -47,8 +47,9 @@ def main():
     g = a.add_mutually_exclusive_group()
     g.add_argument("--admin", action="store_true")
     g.add_argument("--viewer", action="store_true")
-    a.add_argument("--cams", help="viewer-এর জন্য, যেমন cam1,cam3 (default: সব)")
-    a.add_argument("--no-recordings", action="store_true", help="viewer recordings দেখতে পারবে না")
+    a.add_argument("--cams", help="for viewers, e.g. cam1,cam3 (default: all)")
+    a.add_argument("--no-recordings", action="store_true", help="viewer cannot open recordings")
+    a.add_argument("--ptz", action="store_true", help="viewer may move PTZ cameras")
     a.add_argument("--password", help=argparse.SUPPRESS)
     p = sub.add_parser("passwd")
     p.add_argument("name")
@@ -60,34 +61,35 @@ def main():
     try:
         if args.cmd == "list":
             if not data["users"]:
-                print("কোনো user নেই। বানান: sudo cctv-user add admin --admin")
+                print("No users. Create one: sudo cctv-user add admin --admin")
             for n, u in sorted(data["users"].items()):
-                cams = "সব" if u.get("cameras") == "*" else ",".join(u.get("cameras", []))
-                rec = "হ্যাঁ" if u.get("recordings") else "না"
-                print(f"  {n:16} {u['role']:7} cameras: {cams:20} recordings: {rec}")
+                cams = "all" if u.get("cameras") == "*" else ",".join(u.get("cameras", []))
+                rec = "yes" if u.get("recordings") else "no"
+                print(f"  {n:16} {u['role']:7} cameras: {cams:20} recordings: {rec}  ptz: {'yes' if u.get('ptz') or u['role']=='admin' else 'no'}")
             return 0
         if args.cmd == "add":
             existing = data["users"].get(args.name)
             pw = args.password or (None if existing else ask_password())
             role = "admin" if args.admin else "viewer" if args.viewer else (existing or {}).get("role", "viewer")
             cams = args.cams.split(",") if args.cams else (existing or {}).get("cameras", "*")
-            cctvusers.set_user(data, args.name, pw, role, cams, not args.no_recordings)
+            cctvusers.set_user(data, args.name, pw, role, cams, not args.no_recordings,
+                               True if args.ptz else (existing or {}).get("ptz", False))
             cctvusers.save(data)
             print(f"OK: {args.name} ({role})")
         elif args.cmd == "passwd":
             u = data["users"].get(args.name)
             if not u:
-                print("user নেই")
+                print("No such user")
                 return 1
-            cctvusers.set_user(data, args.name, ask_password(), u["role"], u.get("cameras"), u.get("recordings"))
+            cctvusers.set_user(data, args.name, ask_password(), u["role"], u.get("cameras"), u.get("recordings"), u.get("ptz"))
             cctvusers.save(data)
-            print("Password বদলানো হয়েছে (পুরোনো login গুলো logout হয়ে যাবে)")
+            print("Password changed (old logins are signed out)")
         elif args.cmd == "del":
             cctvusers.delete_user(data, args.name)
             cctvusers.save(data)
-            print(f"{args.name} মুছে ফেলা হয়েছে")
+            print(f"{args.name} deleted")
     except ValueError as e:
-        print(f"Error: {e}")
+        print(f"Error: {str(e).replace(' || ', ' / ')}")
         return 1
     fix_owner()
     return 0

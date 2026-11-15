@@ -1,0 +1,70 @@
+#!/usr/bin/env python3
+"""Free space in a recordings folder.
+
+  cctv-clean <dir> <bytes>
+
+Deletes the oldest 1-minute segments first, but segments WITHOUT motion go
+before segments WITH motion, so motion footage is kept the longest.
+Thumbnails go with their segment; empty day folders are removed.
+"""
+import os
+import sys
+import time
+
+sys.path.insert(0, "/opt/cctv/lib")
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+import cctvrec  # noqa: E402
+
+
+def main():
+    if len(sys.argv) != 3:
+        print(__doc__)
+        return 1
+    root, need = sys.argv[1], int(sys.argv[2])
+    if need <= 0:
+        return 0
+    now = time.time()
+    segs = [s for s in cctvrec.all_segments(root, now) if s["done"]]
+    motion = {}
+    for s in segs:
+        key = (s["cam"], s["date"])
+        if key not in motion:
+            motion[key] = cctvrec.read_events(os.path.join(root, s["cam"], s["date"]), now)
+        s["motion"] = cctvrec.overlaps(s["start"] - 5, s["end"] + 5, [(a, b) for a, b, _ in motion[key]])
+    segs.sort(key=lambda s: (s["motion"], s["start"]))
+    freed = n = nm = 0
+    for s in segs:
+        if freed >= need:
+            break
+        for p in (s["path"], s["path"][:-4] + ".jpg"):
+            try:
+                freed += os.path.getsize(p)
+                os.remove(p)
+            except OSError:
+                pass
+        n += 1
+        nm += s["motion"]
+    # old motion snapshots and empty folders
+    today = time.strftime("%Y-%m-%d")
+    for cam in cctvrec.cams_in(root):
+        for date in cctvrec.dates_of(root, cam):
+            if date >= today:                     # today's folder may be empty for a moment
+                continue
+            d = os.path.join(root, cam, date)
+            if not any(cctvrec.SEG_RE.match(f) for f in os.listdir(d)):
+                for f in os.listdir(d):
+                    try:
+                        os.remove(os.path.join(d, f))
+                    except OSError:
+                        pass
+                try:
+                    os.rmdir(d)
+                except OSError:
+                    pass
+    if n:
+        print(f"cctv-clean: deleted {n} segment(s) ({nm} with motion), {freed / 1024**2:.0f} MB freed in {root}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

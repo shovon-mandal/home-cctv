@@ -1,0 +1,38 @@
+#!/usr/bin/env python3
+"""Motion hook: log motion start/end and the event snapshot into events.jsonl.
+
+  cctv-event start <camera_id>
+  cctv-event end   <camera_id> <event_gap_seconds>
+  cctv-event pic   <camera_id> <file>
+"""
+import json
+import os
+import sys
+import time
+from datetime import datetime
+
+REC = os.environ.get("CCTV_REC", "/srv/cctv/rec")
+
+
+def main():
+    if len(sys.argv) < 3:
+        return 1
+    kind, cam = sys.argv[1], f"cam{int(sys.argv[2])}"
+    now = time.time()
+    rec = {"e": kind, "t": round(now, 1)}
+    if kind == "end":
+        gap = float(sys.argv[3]) if len(sys.argv) > 3 else 0
+        rec["t"] = round(now - gap, 1)      # Motion reports the end only after event_gap quiet seconds
+    elif kind == "pic":
+        rec["f"] = os.path.basename(sys.argv[3]) if len(sys.argv) > 3 else ""
+    elif kind != "start":
+        return 1
+    d = os.path.join(REC, cam, datetime.fromtimestamp(rec["t"]).strftime("%Y-%m-%d"))
+    os.makedirs(d, exist_ok=True)
+    with open(os.path.join(d, "events.jsonl"), "a", encoding="utf-8") as f:
+        f.write(json.dumps(rec) + "\n")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

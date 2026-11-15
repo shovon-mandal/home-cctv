@@ -1,38 +1,115 @@
-#!/bin/bash
-# Upload finished clips to Google Drive (rclone). Runs as user cctv every minute.
-# SD mode: always uploads. SSD mode: uploads when drive_backup_when_ssd = yes (default).
-set -u
-RUN=${CCTV_RUN:-/run/cctv}
-RCLONE_CONF=${RCLONE_CONF:-/etc/cctv/rclone.conf}
-eval "$(/opt/cctv/bin/cctv-config)" || exit 1
+#!/usr/bin/env python3
+"""Every minute (user cctv):
+ 1. cameras in "motion" mode: delete finished segments without motion (after a few minutes)
+ 2. upload every finished segment that overlaps a motion event (plus its motion snapshot)
+    to Google Drive, once each. Even the smallest motion counts.
+"""
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import time
+from datetime import datetime, timedelta
 
-status() {  # $1 = state, $2 = message
-  printf '{"state":"%s","message":"%s","time":%s}\n' "$1" "$2" "$(date +%s)" > "$RUN/upload.json.tmp" \
-    && mv "$RUN/upload.json.tmp" "$RUN/upload.json"
-}
+sys.path.insert(0, "/opt/cctv/lib")
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+import cctvconf  # noqa: E402
+import cctvrec  # noqa: E402
 
-case "${CFG_DRIVE_ENABLED,,}" in yes|on|true|1) ;; *) status off "Drive upload বন্ধ"; exit 0;; esac
-[ -s "$RCLONE_CONF" ] || { status error "rclone setup করা হয়নি"; exit 0; }
+RUN = os.environ.get("CCTV_RUN", "/run/cctv")
+REC = os.environ.get("CCTV_REC", "/srv/cctv/rec")
+RCLONE_CONF = os.environ.get("RCLONE_CONF", "/etc/cctv/rclone.conf")
+STATE = os.environ.get("CCTV_UPLOADED", "/srv/cctv/uploaded.txt")
 
-MODE=$(cat "$RUN/mode" 2>/dev/null || echo sd)
-if [ "$MODE" = ssd ]; then
-  case "${CFG_DRIVE_BACKUP_WHEN_SSD,,}" in yes|on|true|1) ;; *) status idle "SSD চালু, Drive upload দরকার নেই"; exit 0;; esac
-fi
 
-exec 9>"$RUN/upload.lock"
-flock -n 9 || exit 0
+def status(state, en, bn):
+    tmp = os.path.join(RUN, "upload.json.tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump({"state": state, "message": f"{en} || {bn}", "time": int(time.time())}, f, ensure_ascii=False)
+    os.replace(tmp, os.path.join(RUN, "upload.json"))
 
-SRC=$(readlink -f /srv/cctv/rec)
-[ -d "$SRC" ] || exit 0
 
-# --min-age skips clips still being written; --max-age keeps each run cheap.
-if out=$(nice -n 15 rclone copy "$SRC/" "$CFG_DRIVE_REMOTE" --config "$RCLONE_CONF" \
-      --min-age 45s --max-age 48h --no-traverse --transfers 2 --checkers 4 \
-      --bwlimit "$CFG_DRIVE_BWLIMIT" --stats-one-line -v 2>&1); then
-  n=$(grep -c "Copied (new)" <<<"$out")
-  status ok "শেষ upload ঠিক আছে ($n টা নতুন clip)"
-else
-  echo "$out" | tail -5
-  status error "upload ব্যর্থ, internet বা rclone চেক করুন"
-  exit 1
-fi
+def main():
+    g, cams = cctvconf.load()
+    now = time.time()
+    pre, post = float(g["pre_capture_sec"]), float(g["post_capture_sec"])
+    keep = float(g["motion_only_keep_minutes"]) * 60
+    days = [(datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d") for i in (1, 0)]
+    root = os.path.realpath(REC)
+
+    to_upload, pruned = [], 0
+    for c in cams:
+        if not c["enabled"] or c["mode"] == "off":
+            continue
+        for day in days:
+            d = os.path.join(root, c["id"], day)
+            evs = cctvrec.read_events(d, now)
+            ivs = [(s - pre, (e + post) if e is not None else None) for s, e, _ in evs]
+            for s in cctvrec.segments(d, day, now):
+                if not s["done"]:
+                    continue
+                if cctvrec.overlaps(s["start"], s["end"], ivs):
+                    to_upload.append(os.path.relpath(s["path"], root))
+                elif c["mode"] == "motion" and now - s["end"] > keep:
+                    for p in (s["path"], s["path"][:-4] + ".jpg"):
+                        try:
+                            os.remove(p)
+                        except OSError:
+                            pass
+                    pruned += 1
+            for _, _, pic in evs:                   # motion snapshots
+                if pic and os.path.exists(os.path.join(d, pic)):
+                    to_upload.append(os.path.relpath(os.path.join(d, pic), root))
+    if pruned:
+        print(f"cctv-upload: removed {pruned} segment(s) without motion")
+
+    if not cctvconf.yes(g["drive_enabled"]):
+        return status("off", "Drive upload is off", "Drive upload বন্ধ")
+    if not (os.path.exists(RCLONE_CONF) and os.path.getsize(RCLONE_CONF)):
+        return status("error", "Google Drive is not connected", "Google Drive connect করা হয়নি")
+    mpath = os.path.join(RUN, "mode")
+    mode = open(mpath).read().strip() if os.path.exists(mpath) else "sd"
+    if mode == "ssd" and not cctvconf.yes(g["drive_backup_when_ssd"]):
+        return status("idle", "SSD connected, Drive backup off", "SSD চালু, Drive backup বন্ধ")
+
+    done = set()
+    if os.path.exists(STATE):
+        with open(STATE) as f:
+            done = {ln.strip() for ln in f if ln.strip()}
+    todo = [p for p in to_upload if p not in done]
+    if not todo:
+        return status("ok", "Drive has every motion clip", "Drive-এ সব motion clip আছে")
+
+    with tempfile.NamedTemporaryFile("w", delete=False, suffix=".txt") as lst:
+        lst.write("\n".join(todo) + "\n")
+    try:
+        r = subprocess.run(["nice", "-n", "15", "rclone", "copy", root + "/", g["drive_remote"],
+                            "--config", RCLONE_CONF, "--files-from", lst.name, "--no-traverse",
+                            "--transfers", "2", "--bwlimit", g["drive_bwlimit"], "--retries", "2"],
+                           capture_output=True, text=True, timeout=3600)
+    finally:
+        os.unlink(lst.name)
+    if r.returncode != 0:
+        print(r.stderr[-800:])
+        return status("error", "Upload failed: check internet / Drive", "Upload ব্যর্থ: internet বা Drive দেখুন")
+
+    keep_days = set(days)
+    done = {p for p in done | set(todo) if len(p.split("/")) > 1 and p.split("/")[1] in keep_days}
+    with open(STATE + ".tmp", "w") as f:
+        f.write("\n".join(sorted(done)) + "\n")
+    os.replace(STATE + ".tmp", STATE)
+    n = sum(1 for p in todo if p.endswith(".mp4"))
+    status("ok", f"Uploaded {n} motion clip(s)", f"{n}টা motion clip upload হয়েছে")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:  # noqa: BLE001
+        print("cctv-upload:", e)
+        try:
+            status("error", f"Upload error: {e}", f"Upload সমস্যা: {e}")
+        except OSError:
+            pass
+        sys.exit(1)

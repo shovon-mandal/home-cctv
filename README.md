@@ -1,165 +1,125 @@
-# 📹 Home CCTV: Tinker Board NVR
+# 📹 Home CCTV: a self-hosted NVR for the Asus Tinker Board
 
-Asus Tinker Board-এ চলা একটা সম্পূর্ণ free আর open-source CCTV system। এতে যা যা আছে:
+A complete, free and open-source CCTV system for cheap Wi-Fi cameras (Imou, Meari, V380, Tapo, …).
+English by default, with a one-tap **বাংলা** switch everywhere (dashboard, viewer accounts, Android app).
+**বাংলা setup guide:** [SETUP-BN.md](SETUP-BN.md)
 
-- **এক screen-এ সব camera live**, delay ১ সেকেন্ডের কম। Phone, PC আর Android app সবখানে চলে।
-- যেকোনো camera-র view on/off করা, tap করে বড় করা, SD/HD বদলানো আর fullscreen দেখা।
-- **Motion হলে recording**, যতক্ষণ motion থাকে ততক্ষণ চলে। লম্বা motion ৩ মিনিটের টুকরোয় ভাগ হয়।
-- **Storage নিজে থেকে বদলায়:**
-  - SSD লাগানো থাকলে recording SSD-তে যায়
-  - SSD না থাকলে Tinker Board-এর SD card-এ যায় (সর্বোচ্চ ৭GB)
-  - দুই অবস্থাতেই **Google Drive-এ upload হয়** (একটা folder-এ, সর্বোচ্চ ১২GB)
-- **SSD format হয় না।** আপনার SSD-র আগের file যেমন আছে তেমনই থাকে, recording যায় শুধু `CCTV-Recordings` folder-এ।
-- **Admin আর Viewer account।** Viewer শুধু সেই camera-গুলো দেখে যেগুলো admin অনুমতি দেয়।
-- **Dashboard থেকেই camera যোগ করা, IP বা password বদলানো, আর connection test** করা যায়। ONVIF দিয়ে camera-র stream path নিজে খুঁজে নেয়।
-- **Google Drive connect হয় Google login দিয়ে**, কোনো API key লাগে না।
-- **GitHub থেকে auto-update।** নতুন version এলে board নিজে থেকেই নামিয়ে নেয়।
-- Camera-র নিজের app (Imou/Meari/V380) আর SD card আগের মতোই চলে।
+## Features
+
+- **Live view** of every camera on one screen (phone, PC, Android app), under 1 s delay. Show/hide any camera, tap to enlarge, SD/HD switch, fullscreen.
+- **Sound**: 🔊 per camera in live view; recordings keep the sound too.
+- **PTZ**: hold the arrows to pan and tilt the camera (ONVIF), for example on the Imou Ranger 2.
+- **24/7 recording** in 1-minute segments (stream copied, no re-encoding, very low CPU).
+- **Motion detection** with a red "Motion" badge in live view, motion events with snapshots, and an "only when motion" recording mode.
+- **Timeline**: a 24-hour bar per day where recorded time is grey and motion is red. You get thumbnails for every minute and per-hour navigation; tap anywhere to play, and playback continues across minutes.
+- **Storage**:
+  - SSD plugged in → recordings go to the SSD. It is **not formatted**; they go into a `CCTV-Recordings` folder.
+  - No SSD → recordings go to a capped buffer on the SD card (7 GB).
+  - When space runs low, minutes **without** motion are deleted first.
+- **Google Drive**: every minute that contains motion (even a tiny one) is uploaded, together with its snapshot, into one folder (12 GB cap). Everything else stays local. You connect with your Google login; no API keys.
+- **Accounts**: admins can do everything. Viewers only see the cameras you tick, and you decide whether they can open recordings and move PTZ cameras.
+- **Camera manager**: add cameras, change IP or password, test the connection, and find stream paths automatically via ONVIF.
+- **Access from anywhere**: a public https link through Tailscale Funnel. No real IP and no VPN app on the phone.
+- **Auto-update from GitHub**, with automatic rollback if an update fails.
+- The cameras' own apps and SD cards keep working as before.
 
 ```
-Camera ──RTSP──► go2rtc ──► Dashboard / Android app (live)
-                   │
-                   └──► Motion ──► SSD বা SD card ──► Google Drive
+camera ──RTSP──► go2rtc ──► dashboard / app (live, sound)
+                   ├──► ffmpeg recorder ──► 1-min MP4 + thumbnail ──► SSD or SD card
+                   └──► Motion (sub stream) ──► motion events + snapshot
+                                                     └──► minutes with motion ──► Google Drive
 ```
 
-ব্যবহৃত open-source: [go2rtc](https://github.com/AlexxIT/go2rtc) · [Motion](https://motion-project.github.io/) · [rclone](https://rclone.org/) · [Tailscale](https://tailscale.com/)
+Built with [go2rtc](https://github.com/AlexxIT/go2rtc), [FFmpeg](https://ffmpeg.org), [Motion](https://motion-project.github.io/), [rclone](https://rclone.org/) and [Tailscale](https://tailscale.com/).
 
----
+## 1. Camera apps
 
-## ১. Camera app-এ যা করবেন
+| Camera | What to do |
+|---|---|
+| **Imou** (Imou Life) | Username `admin`, password = the **Safety Code** on the sticker. Turn on ONVIF/RTSP if the setting exists and **turn off "Video Encryption"**. Prefer H.264. |
+| **Meari** (Meari app) | Settings → **Onvif Settings** → on, set a password. |
+| **V380** (V380 Pro) | Settings → Advanced → **Onvif setting** → on. |
 
-**Imou (Imou Life app)**
-- Camera-র নিচের sticker-এর **Safety Code** লিখে রাখুন। এটাই RTSP password।
-- Settings-এ ONVIF/RTSP option থাকলে চালু করুন। Video encoding বদলানোর option থাকলে **H.264** দিন।
+Give every camera and the Tinker Board a **fixed IP** in your router (DHCP reservation).
 
-**Meari (Meari app)**
-- Camera → Settings → **Onvif Settings** চালু করুন, তারপর একটা password দিয়ে OK চাপুন।
-
-**V380 (V380 Pro app)**
-- Settings → Advanced settings → **Onvif setting** চালু করুন।
-
-**Router-এ:** প্রতিটা camera আর Tinker Board-কে **fixed IP** দিন (DHCP reservation)।
-
-## ২. Tinker Board-এ install
+## 2. Install on the Tinker Board
 
 ```bash
 sudo apt update && sudo apt install -y git
 sudo git clone https://github.com/shovon-mandal/home-cctv /opt/cctv-src
 sudo /opt/cctv-src/install.sh
 ```
+The installer asks for your time zone (recordings are named by local time) and for the **admin username and password**. At the end it prints the dashboard address, `http://<board-ip>:8085`.
 
-Install-এর সময় **admin username আর password** চাওয়া হবে। শেষে dashboard-এর link দেখাবে: `http://<tinker-board-IP>:8085`
+## 3. Add cameras (dashboard)
 
-এরপর থেকে board প্রতি ১০ মিনিট পর পর GitHub-এ নতুন version আছে কিনা দেখবে, থাকলে নিজে থেকেই update করবে। Update-এ সমস্যা হলে আগের চালু version-এ ফিরে যাবে। আপনার setting, camera, user আর recording-এ কখনো হাত পড়ে না।
+Log in as admin → **⚙️ Settings → Cameras**:
+1. Pick the **brand**: port, user and paths are filled in for you.
+2. Enter the **IP** and **password**. For Meari or unknown cameras, press **🔍 Find stream paths via ONVIF**.
+3. Choose the recording mode: **24/7**, **only when motion**, or **off**. Then tick **Sound** and **Pan/tilt (PTZ)** if the camera has them.
+4. Press **▶ Test**. When it shows ✅, tick **Enabled** and press **Save**. The change applies within seconds.
 
-## ৩. Dashboard থেকে camera যোগ করা
+## 4. SSD (keeps your files)
 
-Admin দিয়ে login করে **⚙️ Settings → Cameras**-এ যান:
-1. যে camera বসাবেন তার **Edit** চাপুন, অথবা নতুন camera-র জন্য নিচের form ব্যবহার করুন।
-2. **Brand** বাছুন, এতে port আর path নিজে বসে যাবে।
-3. **IP** আর **Password** দিন।
-4. Meari বা অজানা camera হলে **🔍 ONVIF থেকে stream path খুঁজুন** চাপুন।
-5. **▶ Test** চাপুন। ✅ দেখালে **চালু**-তে টিক দিয়ে **Save** করুন।
-
-পরে IP বদলাতে চাইলে Edit করে নতুন IP বসিয়ে Save দিলেই হবে। কয়েক সেকেন্ডের মধ্যে নতুন setting চালু হয়ে যাবে।
-
-## ৪. SSD (data মুছবে না)
-
-SSD-টা Tinker Board-এর USB-তে লাগিয়ে:
 ```bash
-sudo cctv-ssd-setup              # USB disk আর partition-এর list দেখাবে
-sudo cctv-ssd-setup /dev/sda1    # list-এ যেটা আপনার SSD-র partition
+sudo cctv-ssd-setup              # lists USB disks
+sudo cctv-ssd-setup /dev/sda1    # use that partition (exFAT / NTFS / ext4)
+sudo cctv-ssd-eject              # ALWAYS run before unplugging
 ```
-- exFAT, NTFS আর ext4, যেকোনো format চলবে। **আপনার আগের file মুছবে না।**
-- Recording যাবে `CCTV-Recordings` folder-এ, সর্বোচ্চ ২০০GB। এটা `/etc/cctv/cctv.conf`-এর `ssd_max_gb` দিয়ে বদলানো যায়। ভরে গেলে শুধু ওই folder-এর পুরোনো clip মুছবে।
-- **SSD খোলার আগে অবশ্যই এটা চালান:** `sudo cctv-ssd-eject`
-- (চাইলে পুরো SSD মুছে ext4 করতে পারেন, তাতে একটু দ্রুত চলে: `sudo cctv-ssd-setup --format /dev/sda`)
+`ssd_max_gb` in `/etc/cctv/cctv.conf` limits the recordings folder (default 200 GB).
 
-## ৫. Google Drive (Google login দিয়ে)
+## 5. Google Drive
 
-**⚙️ Settings → ☁️ Google Drive → "Google দিয়ে connect"** চাপুন:
-1. **"Google দিয়ে login"** চাপুন, আপনার Google account বাছুন, তারপর **Allow** দিন।
-2. এরপর একটা "can't be reached / পাওয়া যাচ্ছে না" page আসবে। **এটাই স্বাভাবিক।**
-3. ওই page-এর **address bar-এর পুরো link** copy করে dashboard-এ paste করুন, তারপর **Connect শেষ করুন** চাপুন।
+**⚙️ Settings → Google Drive → Connect with Google** → log in and press **Allow**. A "can't be reached" page opens next, which is expected. Copy the whole link from the address bar, paste it, then press **Finish connecting**. Only the `drive.file` permission is requested, so the system can't see any of your other Drive files.
 
-শুধু `drive.file` অনুমতি চাওয়া হয়, তাই এই system আপনার Drive-এর অন্য কোনো file দেখতে পায় না। সব clip যায় **CCTV** folder-এ। ১২GB ভরে গেলে সবচেয়ে পুরোনো clip মুছে যায়, আর ৫ দিনের বেশি পুরোনো clip-ও মুছে যায়।
+## 6. Access from anywhere
 
-> Free ১৫GB আপনার Gmail আর Photos-এর সাথে ভাগ হয়। Settings-এ দেখাবে কত জায়গা খালি আছে। দরকার হলে `/etc/cctv/cctv.conf`-এ `drive_max_gb` কমিয়ে দিন।
-
-## ৬. যেকোনো জায়গা থেকে দেখা (Real IP বা VPN লাগবে না)
-
-Tailscale Funnel board-কে একটা public https link দেয়। সেই link যেকোনো phone বা PC থেকে খোলা যায়, phone-এ Tailscale লাগে না।
 ```bash
-# Tailscale আগে থেকে না থাকলে:
-curl -fsSL https://tailscale.com/install.sh | sh && sudo tailscale up
-
-sudo cctv-funnel          # link দেখাবে: https://<board>.<tailnet>.ts.net:8443
-sudo cctv-funnel off      # বন্ধ করতে
+curl -fsSL https://tailscale.com/install.sh | sh && sudo tailscale up   # if not installed
+sudo cctv-funnel          # prints https://<board>.<tailnet>.ts.net:8443
 ```
-- Port **8443** ব্যবহার হয়, তাই একই board-এর অন্য app (যেমন 443-এ চলা কিছু) ঝামেলা পায় না।
-- Link-টা dashboard-এর **⚙️ Settings → System**-এও দেখায়। Android app-এ "বাইরের ঠিকানা" হিসেবে এটা বসান।
-- Dashboard internet-এ খোলা থাকছে, তাই **সব account-এ শক্ত password দিন** (১০ অক্ষর বা তার বেশি)। ৫ বার ভুল password দিলে ১০ মিনিট login আটকে থাকে।
-- বাসার Wi-Fi-তে থাকলে app নিজে থেকেই local ঠিকানা ব্যবহার করে, তাই video দ্রুত আসে।
+Use strong passwords (10+ characters). After 5 wrong attempts, login is blocked for 10 minutes for that address.
 
-## ৭. Android app
+## 7. Android app
 
-Repo-র **[Releases → Android app (latest)](../../releases/tag/app-latest)** থেকে `HomeCCTV.apk` download করে install করুন। প্রথমবার "Install unknown apps"-এর অনুমতি দিতে হবে।
+Download **[HomeCCTV.apk](https://github.com/shovon-mandal/home-cctv/releases/download/app-latest/HomeCCTV.apk)** and install it. Enter the home address (board IP) and the outside address (the `https://….ts.net:8443` link). The app picks whichever works and has an English/বাংলা switch. GitHub Actions builds a new APK on every change.
 
-App প্রথমবার খুললে দুটো ঠিকানা চাইবে:
-- 🏠 **বাসার ঠিকানা:** Tinker Board-এর IP (যেমন `192.168.0.10`)
-- 🌍 **বাইরের ঠিকানা:** `sudo cctv-funnel`-এর দেওয়া link (`https://….ts.net:8443`)
+## 8. Accounts
 
-বাসায় থাকলে app প্রথম ঠিকানা দিয়ে খোলে, বাইরে থাকলে নিজে থেকেই দ্বিতীয় ঠিকানায় চলে যায়। App-এর নতুন version GitHub Actions নিজে থেকেই build করে।
-
-App ছাড়াও চলে: Chrome-এ dashboard খুলে ⋮ → **Add to Home screen** দিলেই হবে।
-
-## ৮. Account (Admin / Viewer)
-
-| | Admin | Viewer |
-|---|---|---|
-| Live দেখা | সব camera | শুধু অনুমতি পাওয়া camera |
-| Recordings | দেখা, download, delete | অনুমতি থাকলে দেখা আর download |
-| Camera, user আর Drive setting | ✅ | ❌ |
-
-**⚙️ Settings → Users** থেকে user যোগ বা বাদ দিন। Terminal থেকেও করা যায়:
+**⚙️ Settings → Users**, or from the terminal:
 ```bash
 sudo cctv-user list
-sudo cctv-user add abba --viewer --cams cam1,cam2
+sudo cctv-user add abba --viewer --cams cam1,cam2 --ptz
 sudo cctv-user passwd admin
 ```
 
-## ৯. দরকারি command
+## 9. Useful commands
 
-| কাজ | Command |
+| Task | Command |
 |---|---|
-| সবকিছুর অবস্থা | `cctv-status` |
-| এখনই update | `sudo cctv-update` |
-| বাইরে থেকে খোলার link চালু বা বন্ধ | `sudo cctv-funnel` / `sudo cctv-funnel off` |
-| Recording log | `journalctl -u cctv-motion -f` |
-| Live stream log | `journalctl -u cctv-go2rtc -f` |
-| SSD নিরাপদে খোলা | `sudo cctv-ssd-eject` |
-| হাতে config বদলানোর পর | `sudo cctv-apply` |
-| Uninstall | `sudo /opt/cctv-src/uninstall.sh` |
+| Health check (services, recording, storage, Drive) | `cctv-status` |
+| Update now | `sudo cctv-update` |
+| Recorder log | `journalctl -u cctv-recorder -n 50` |
+| Motion log | `journalctl -u cctv-motion -n 50` |
+| Internet link on/off | `sudo cctv-funnel` / `sudo cctv-funnel off` |
+| After editing config by hand | `sudo cctv-apply` |
 
-## ১০. সমস্যা হলে
+## 10. Troubleshooting
 
-| সমস্যা | সমাধান |
+| Problem | Fix |
 |---|---|
-| Test-এ "username/password ভুল" | Imou হলে Safety Code দিন, Meari হলে ONVIF page-এর password দিন |
-| Test-এ "path ভুল" | ONVIF থেকে খুঁজুন চাপুন |
-| "camera পাওয়া যাচ্ছে না" | IP বদলে গেছে কিনা দেখুন, router-এ fixed IP দিন |
-| Phone-এ live কালো দেখাচ্ছে | Camera-য় H.264 দিন (H.265 অনেক phone-এ চলে না) |
-| CPU বেশি | Camera-র sensitivity মান বাড়ান, অথবা recording "Low (sub)" করুন |
-| Drive-এ লাল দেখাচ্ছে | Settings → Google Drive → Test চাপুন, দরকার হলে আবার connect করুন |
+| "Wrong username/password" | Imou: Safety Code. Meari: the ONVIF password. |
+| "Camera answers but the video can't be read" | Imou: turn off **Video Encryption** in the app. |
+| A camera shows "⚠ not recording" | `cctv-status` and `journalctl -u cctv-recorder -n 50` |
+| Live view black on a phone | Set the camera to H.264 (many phones can't decode H.265). |
+| High CPU | Raise the motion sensitivity value, or use "Low (sub)" recording. |
 
-## ১১. অন্য জায়গার camera (পরে যোগ করতে চাইলে)
+## Files
 
-অন্য বাড়ির camera আনতে হলে ওই বাড়ির Wi-Fi-তে সারাক্ষণ চালু থাকে এমন একটা Android phone লাগবে, তাতে **Tailscale** আর **Termux** (F-Droid থেকে) থাকতে হবে:
-```bash
-pkg install socat
-socat TCP-LISTEN:8554,fork,reuseaddr TCP:<camera-IP>:554 &
-```
-তারপর dashboard-এ নতুন camera যোগ করুন: IP = phone-এর Tailscale IP, port = `8554`, recording quality = **Low (sub)**।
+| Path | What |
+|---|---|
+| `/etc/cctv/cctv.conf` | general settings |
+| `/etc/cctv/cameras.conf` | cameras (managed by the dashboard) |
+| `/srv/cctv/rec` → SSD or SD buffer | `camN/YYYY-MM-DD/HH-MM-SS.mp4` + `.jpg`, `events.jsonl` |
 
----
-**Repo-তে কোনো ব্যক্তিগত তথ্য নেই।** Camera-র IP, password, user account, Drive login আর recording সব থাকে শুধু Tinker Board-এর `/etc/cctv` আর `/srv/cctv`-এ।
+No private data is in this repository. Camera IPs and passwords, accounts, the Drive login and recordings only live on the board.

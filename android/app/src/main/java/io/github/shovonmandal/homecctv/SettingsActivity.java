@@ -19,32 +19,66 @@ import android.widget.TextView;
 
 /** Two addresses: home Wi-Fi (fast) and Tailscale (from anywhere). */
 public class SettingsActivity extends Activity {
+    static final String KEY_LANG = "lang";
     private EditText home, remote;
     private TextView status;
+    private boolean bn;
+
+    /** English / Bangla text, picked by the language switch. */
+    private String tx(String en, String bnText) {
+        return bn ? bnText : en;
+    }
     private final Handler ui = new Handler(Looper.getMainLooper());
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         SharedPreferences p = getSharedPreferences(MainActivity.PREFS, MODE_PRIVATE);
+        bn = "bn".equals(p.getString(KEY_LANG, "en"));
+        build(p);
+    }
 
+    private void build(SharedPreferences p) {
+        String keepHome = home != null ? home.getText().toString() : null;
+        String keepRemote = remote != null ? remote.getText().toString() : null;
         LinearLayout col = new LinearLayout(this);
         col.setOrientation(LinearLayout.VERTICAL);
         int pad = dp(22);
         col.setPadding(pad, dp(36), pad, pad);
 
-        col.addView(text("📹 আমার CCTV", 24, "#e6edf3", true));
-        col.addView(text("Tinker Board-এর ঠিকানা দিন। শুধু IP দিলেই হবে (যেমন 192.168.0.10), port 8085 নিজে বসে যাবে।", 14, "#8b949e", false));
+        LinearLayout top = new LinearLayout(this);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        TextView title = text(tx("📹 Home CCTV", "📹 আমার CCTV"), 24, "#e6edf3", true);
+        top.addView(title, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        Button lang = new Button(this);
+        lang.setText(bn ? "EN" : "বাং");
+        lang.setAllCaps(false);
+        lang.setTextColor(Color.parseColor("#e6edf3"));
+        GradientDrawable lbg = new GradientDrawable();
+        lbg.setColor(Color.parseColor("#161b22"));
+        lbg.setStroke(dp(1), Color.parseColor("#2a313c"));
+        lbg.setCornerRadius(dp(10));
+        lang.setBackground(lbg);
+        lang.setOnClickListener(v -> {
+            bn = !bn;
+            p.edit().putString(KEY_LANG, bn ? "bn" : "en").apply();
+            build(p);
+        });
+        top.addView(lang, new LinearLayout.LayoutParams(dp(64), dp(42)));
+        col.addView(top);
+        col.addView(text(tx("Enter the Tinker Board address. Just the IP is enough (e.g. 192.168.0.10); port 8085 is added for you.",
+                "Tinker Board-এর ঠিকানা দিন। শুধু IP দিলেই হবে (যেমন 192.168.0.10), port 8085 নিজে বসে যাবে।"), 14, "#8b949e", false));
 
-        col.addView(label("🏠 বাসার Wi-Fi ঠিকানা"));
-        home = input("192.168.0.10", p.getString(MainActivity.KEY_HOME, ""));
+        col.addView(label(tx("🏠 Home Wi-Fi address", "🏠 বাসার Wi-Fi ঠিকানা")));
+        home = input("192.168.0.10", keepHome != null ? keepHome : p.getString(MainActivity.KEY_HOME, ""));
         col.addView(home);
 
-        col.addView(label("🌍 বাইরে থেকে (https://….ts.net:8443 link)"));
-        remote = input("https://tinkerboard.xxxx.ts.net:8443", p.getString(MainActivity.KEY_REMOTE, ""));
+        col.addView(label(tx("🌍 From anywhere (https://….ts.net:8443 link)", "🌍 বাইরে থেকে (https://….ts.net:8443 link)")));
+        remote = input("https://tinkerboard.xxxx.ts.net:8443", keepRemote != null ? keepRemote : p.getString(MainActivity.KEY_REMOTE, ""));
         col.addView(remote);
 
-        TextView hint = text("বাসায় থাকলে app প্রথম ঠিকানা দিয়ে খুলবে (দ্রুত), বাইরে থাকলে নিজে থেকে দ্বিতীয় ঠিকানায় যাবে। Link-টা dashboard-এর ⚙️ Settings → System-এ পাবেন। (Tailscale IP-ও দেওয়া যায়।)", 13, "#8b949e", false);
+        TextView hint = text(tx("At home the app uses the first address (faster); outside it switches to the second one by itself. The link is shown in the dashboard under ⚙️ Settings → System. (A Tailscale IP also works.)",
+                "বাসায় থাকলে app প্রথম ঠিকানা দিয়ে খুলবে (দ্রুত), বাইরে থাকলে নিজে থেকে দ্বিতীয় ঠিকানায় যাবে। Link-টা dashboard-এর ⚙️ Settings → System-এ পাবেন। (Tailscale IP-ও দেওয়া যায়।)"), 13, "#8b949e", false);
         hint.setPadding(0, dp(12), 0, 0);
         col.addView(hint);
 
@@ -77,7 +111,7 @@ public class SettingsActivity extends Activity {
         final String h = normalize(home.getText().toString());
         final String r = normalize(remote.getText().toString());
         if (h.isEmpty() && r.isEmpty()) {
-            status.setText("অন্তত একটা ঠিকানা দিন।");
+            status.setText(tx("Enter at least one address.", "অন্তত একটা ঠিকানা দিন।"));
             return;
         }
         getSharedPreferences(MainActivity.PREFS, MODE_PRIVATE).edit()
@@ -85,7 +119,7 @@ public class SettingsActivity extends Activity {
                 .putString(MainActivity.KEY_REMOTE, r)
                 .putBoolean(MainActivity.KEY_DIRTY, true)
                 .apply();
-        status.setText("পরীক্ষা করছি…");
+        status.setText(tx("Checking…", "পরীক্ষা করছি…"));
         new Thread(() -> {
             boolean hOk = !h.isEmpty() && MainActivity.reachable(h, 2000);
             boolean rOk = !r.isEmpty() && MainActivity.reachable(r, 4000);
@@ -93,7 +127,8 @@ public class SettingsActivity extends Activity {
                 if (hOk || rOk) {
                     finish();
                 } else {
-                    status.setText("Save হয়েছে, কিন্তু এখন কোনো ঠিকানাতেই Tinker Board সাড়া দিচ্ছে না। IP ঠিক আছে তো? তবুও খুলতে back চাপুন।");
+                    status.setText(tx("Saved, but the Tinker Board does not answer on either address right now. Is the IP right? Press back to open anyway.",
+                            "Save হয়েছে, কিন্তু এখন কোনো ঠিকানাতেই Tinker Board সাড়া দিচ্ছে না। IP ঠিক আছে তো? তবুও খুলতে back চাপুন।"));
                 }
             });
         }).start();

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="bn">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -8,11 +8,11 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
-<title>আমার CCTV</title>
+<title>Home CCTV</title>
 <style>
   :root {
     --bg: #0d1117; --panel: #161b22; --line: #2a313c; --text: #e6edf3; --muted: #8b949e;
-    --accent: #3fb950; --warn: #d29922; --bad: #f85149; --blue: #58a6ff;
+    --accent: #3fb950; --warn: #d29922; --bad: #f85149; --blue: #58a6ff; --motion: #ff7b72;
     --r: 12px;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -20,19 +20,26 @@
     font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans Bengali", sans-serif; }
   body { display: flex; flex-direction: column; padding-bottom: env(safe-area-inset-bottom); }
   button { font: inherit; color: inherit; cursor: pointer; }
+  code { background: var(--bg); padding: 1px 5px; border-radius: 5px; }
 
-  header { display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+  header { display: flex; align-items: center; gap: 8px; padding: 10px 12px; position: relative;
     padding-top: max(10px, env(safe-area-inset-top)); border-bottom: 1px solid var(--line); background: var(--panel); }
   header h1 { font-size: 17px; margin: 0; font-weight: 650; white-space: nowrap; }
   .tabs { display: flex; background: var(--bg); border-radius: 10px; padding: 3px; margin-left: auto; }
-  @media (max-width: 560px) {
-    header { gap: 6px; padding-left: 8px; padding-right: 8px; }
-    header h1 { font-size: 0; } header h1::first-letter { font-size: 20px; }
-    .tabs { margin-left: 0; } .tabs button { padding: 6px 9px; font-size: 14px; }
-    .me { margin-left: auto; padding: 6px 8px; } #meRole { display: none; }
-  }
-  .tabs button { border: 0; background: none; padding: 6px 12px; border-radius: 8px; color: var(--muted); }
+  .tabs button { border: 0; background: none; padding: 6px 12px; border-radius: 8px; color: var(--muted); white-space: nowrap; }
   .tabs button.on { background: var(--panel); color: var(--text); box-shadow: 0 0 0 1px var(--line); }
+  .me, .langbtn { border: 1px solid var(--line); background: var(--bg); border-radius: 10px; padding: 6px 10px; font-size: 13px;
+    display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+  .langbtn { font-weight: 600; min-width: 42px; justify-content: center; }
+  .role { font-size: 11px; padding: 1px 6px; border-radius: 6px; background: #1f6feb33; color: var(--blue); }
+  .role.admin { background: #3fb95033; color: var(--accent); }
+  @media (max-width: 600px) {
+    header { gap: 5px; padding-left: 8px; padding-right: 8px; }
+    header h1 { font-size: 0; } header h1::first-letter { font-size: 20px; }
+    .tabs { margin-left: 0; } .tabs button { padding: 6px 8px; font-size: 13.5px; }
+    .me { margin-left: auto; padding: 6px 8px; } #meRole { display: none; }
+    .langbtn { padding: 6px 7px; min-width: 0; }
+  }
 
   .statusbar { display: flex; gap: 8px; flex-wrap: wrap; padding: 8px 12px; font-size: 13px; color: var(--muted); }
   .pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 99px;
@@ -52,7 +59,6 @@
   main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   #live { flex: 1; min-height: 0; padding: 0 8px 8px; }
   .grid { height: 100%; display: grid; gap: 6px; grid-template-columns: 1fr; grid-auto-rows: 1fr; }
-  .grid.n2 { grid-template-columns: 1fr; }
   .grid.n3, .grid.n4 { grid-template-columns: 1fr 1fr; }
   @media (orientation: landscape) { .grid.n2 { grid-template-columns: 1fr 1fr; } }
   @media (orientation: portrait) and (max-width: 700px) {
@@ -63,48 +69,84 @@
   .grid.focus .tile:not(.big) { display: none; }
   .grid.focus .tile.big { aspect-ratio: auto; }
 
-  .tile { position: relative; background: #000; border-radius: var(--r); overflow: hidden; min-height: 0;
-    border: 1px solid var(--line); }
+  .tile { position: relative; background: #000; border-radius: var(--r); overflow: hidden; min-height: 0; border: 1px solid var(--line); }
+  .tile.moving { border-color: var(--motion); box-shadow: 0 0 0 1px var(--motion) inset; }
   .tile video { width: 100%; height: 100%; object-fit: contain; display: block; background: #000; }
-  .tile .label { position: absolute; left: 8px; top: 8px; display: flex; align-items: center; gap: 6px;
-    padding: 3px 8px; border-radius: 8px; background: rgba(0,0,0,.55); font-size: 13px; backdrop-filter: blur(4px);
-    max-width: calc(100% - 100px); }
+  .tile .label { position: absolute; left: 8px; top: 8px; display: flex; align-items: center; gap: 6px; max-width: calc(100% - 150px);
+    padding: 3px 8px; border-radius: 8px; background: rgba(0,0,0,.55); font-size: 13px; backdrop-filter: blur(4px); }
   .tile .label .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  @media (max-width: 500px) { .tile .label { font-size: 12px; padding: 2px 6px; left: 5px; top: 5px; }
-    .tile .tools { top: 4px; right: 4px; gap: 4px; } .tile .tools button { padding: 3px 6px; } }
-  .tile .tools { position: absolute; right: 6px; top: 6px; display: flex; gap: 6px; opacity: .9; }
-  .tile .tools button { border: 0; background: rgba(0,0,0,.55); border-radius: 8px; padding: 4px 8px; font-size: 12px;
-    backdrop-filter: blur(4px); }
-  .tile .tools button.hd { color: var(--blue); }
+  .tile .mbadge { position: absolute; left: 8px; bottom: 8px; display: none; padding: 2px 8px; border-radius: 8px;
+    background: var(--motion); color: #200; font-size: 12px; font-weight: 700; }
+  .tile.moving .mbadge { display: block; animation: blink 1.2s infinite; }
+  @keyframes blink { 50% { opacity: .55; } }
+  .tile .tools { position: absolute; right: 6px; top: 6px; display: flex; gap: 5px; }
+  .tile .tools button { border: 0; background: rgba(0,0,0,.55); border-radius: 8px; padding: 4px 8px; font-size: 12.5px;
+    backdrop-filter: blur(4px); min-width: 30px; }
+  .tile .tools button.on { color: var(--blue); }
   .tile .msg { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 14px;
     pointer-events: none; text-align: center; padding: 10px; }
+  .ptz { position: absolute; right: 10px; bottom: 10px; width: 132px; height: 132px; display: none;
+    grid-template: repeat(3, 1fr) / repeat(3, 1fr); gap: 3px; }
+  .tile.ptzon .ptz { display: grid; }
+  .ptz button { border: 0; border-radius: 10px; background: rgba(0,0,0,.6); color: #fff; font-size: 18px;
+    backdrop-filter: blur(4px); touch-action: none; user-select: none; -webkit-user-select: none; }
+  .ptz button:active, .ptz button.press { background: rgba(63,185,80,.75); }
+  .ptz .c { background: transparent; pointer-events: none; }
+  @media (max-width: 500px) {
+    .tile .label { font-size: 12px; padding: 2px 6px; left: 5px; top: 5px; max-width: calc(100% - 135px); }
+    .tile .tools { top: 4px; right: 4px; gap: 3px; } .tile .tools button { padding: 3px 6px; min-width: 26px; }
+    .ptz { width: 108px; height: 108px; }
+  }
   .empty { height: 100%; display: grid; place-items: center; color: var(--muted); text-align: center; padding: 30px; }
 
-  #recs { flex: 1; overflow: auto; padding: 0 12px 20px; display: none; }
-  .row { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 12px; }
-  select { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line);
-    border-radius: 10px; padding: 8px 10px; }
-  .clips { display: grid; gap: 6px; }
-  .clip { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 12px;
-    background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
-  .clip b { font-weight: 600; font-variant-numeric: tabular-nums; }
-  .clip span { color: var(--muted); font-size: 13px; }
+  /* ---- recordings / timeline ---- */
+  #recs { flex: 1; overflow: auto; padding: 0 12px 24px; display: none; }
+  .row { display: flex; gap: 6px; align-items: center; margin: 4px 0 10px; }
+  .row select { min-width: 0; flex: 1 1 auto; } .row #recCam { flex: 2 1 0; }
+  select { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+  .navbtn { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 8px 11px; }
+  .player { position: relative; background: #000; border-radius: var(--r); overflow: hidden; border: 1px solid var(--line); }
+  .player video { width: 100%; max-height: 62vh; display: block; background: #000; aspect-ratio: 16 / 9; }
+  .pbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; background: var(--panel); font-size: 13.5px; flex-wrap: wrap; }
+  .pbar b { font-variant-numeric: tabular-nums; font-size: 15px; }
+  .pbar a, .pbar button { color: var(--blue); background: none; border: 0; text-decoration: none; padding: 2px 4px; }
+  .day { position: relative; height: 46px; margin: 14px 0 4px; background: #0b0f14; border: 1px solid var(--line);
+    border-radius: 10px; overflow: hidden; cursor: pointer; touch-action: pan-y; }
+  .day .seg { position: absolute; top: 8px; bottom: 8px; background: #3b4552; }
+  .day .ev { position: absolute; top: 4px; bottom: 4px; background: var(--motion); border-radius: 2px; min-width: 2px; opacity: .95; }
+  .day .cur { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--blue); box-shadow: 0 0 6px var(--blue); }
+  .day .now { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--warn); opacity: .7; }
+  .day .hov { position: absolute; top: -1px; transform: translateX(-50%); font-size: 11px; background: var(--panel);
+    padding: 0 4px; border-radius: 4px; pointer-events: none; display: none; }
+  .hours { position: relative; height: 16px; font-size: 10.5px; color: var(--muted); }
+  .hours span { position: absolute; transform: translateX(-50%); }
+  .legend { display: flex; gap: 14px; font-size: 12.5px; color: var(--muted); margin: 4px 0 8px; }
+  .legend i { display: inline-block; width: 12px; height: 8px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
+  .strip { display: flex; gap: 6px; overflow-x: auto; padding: 4px 0 10px; scroll-behavior: smooth; }
+  .thumb { flex: none; width: 112px; border: 2px solid transparent; border-radius: 8px; overflow: hidden; background: var(--panel);
+    padding: 0; position: relative; }
+  .thumb img, .thumb .ph { width: 100%; aspect-ratio: 16 / 9; display: block; object-fit: cover; background: #222a33; }
+  .thumb span { display: block; font-size: 11.5px; padding: 2px 4px; color: var(--muted); text-align: left; font-variant-numeric: tabular-nums; }
+  .thumb.m { border-color: var(--motion); } .thumb.m span { color: var(--motion); }
+  .thumb.sel { box-shadow: 0 0 0 2px var(--blue); }
+  .hourpick { display: flex; gap: 4px; overflow-x: auto; padding: 2px 0 6px; }
+  .hourpick button { flex: none; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 4px 8px; font-size: 12.5px; color: var(--muted); }
+  .hourpick button.has { color: var(--text); } .hourpick button.mot { border-color: var(--motion); }
+  .hourpick button.on { background: var(--blue); color: #001; border-color: var(--blue); }
+  .evs { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+  .evc { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; overflow: hidden; padding: 0; text-align: left; }
+  .evc img, .evc .ph { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; display: block; background: #222a33; }
+  .evc div { padding: 6px 8px; font-size: 12.5px; } .evc b { color: var(--motion); font-variant-numeric: tabular-nums; }
+  .sect { font-size: 12.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); margin: 18px 2px 8px; }
   .muted { color: var(--muted); }
 
-  dialog { border: 0; padding: 0; background: #000; color: var(--text); width: min(100vw, 1100px); max-width: 100vw;
-    border-radius: var(--r); }
-  dialog::backdrop { background: rgba(0,0,0,.8); }
-  dialog video { width: 100%; max-height: 80vh; display: block; background: #000; }
-  dialog .bar { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: var(--panel); }
-  dialog a, dialog button { color: var(--blue); background: none; border: 0; text-decoration: none; }
-
-  /* ---- login / users ---- */
+  /* ---- forms / settings ---- */
   #login { position: fixed; inset: 0; z-index: 50; display: none; place-items: center; background: var(--bg); padding: 20px; }
-  .card { width: min(360px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 22px; }
+  .card { width: min(380px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 22px; }
   .card h2 { margin: 0 0 4px; font-size: 20px; }
   .card p { margin: 0 0 16px; color: var(--muted); font-size: 14px; }
   label.f { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
-  input[type=text], input[type=password] { width: 100%; font: inherit; color: var(--text); background: var(--bg);
+  input[type=text], input[type=password], input[type=number] { width: 100%; font: inherit; color: var(--text); background: var(--bg);
     border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
   input:focus, select:focus { outline: 2px solid var(--blue); outline-offset: -1px; }
   .btn { border: 0; border-radius: 10px; padding: 10px 14px; background: var(--accent); color: #04140a; font-weight: 600; }
@@ -112,193 +154,217 @@
   .btn.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); font-weight: 500; }
   .btn.danger { background: transparent; color: var(--bad); border: 1px solid #5c2a2a; font-weight: 500; }
   .err { color: var(--bad); font-size: 13px; min-height: 18px; margin-top: 8px; }
-  .me { border: 1px solid var(--line); background: var(--bg); border-radius: 10px; padding: 6px 10px; font-size: 13px;
-    display: flex; gap: 6px; align-items: center; white-space: nowrap; }
-  .role { font-size: 11px; padding: 1px 6px; border-radius: 6px; background: #1f6feb33; color: var(--blue); }
-  .role.admin { background: #3fb95033; color: var(--accent); }
-  #users { flex: 1; overflow: auto; padding: 0 12px 20px; display: none; }
-  .ulist { display: grid; gap: 8px; margin-bottom: 18px; }
+  #users { flex: 1; overflow: auto; padding: 0 12px 24px; display: none; }
+  .ulist { display: grid; gap: 8px; margin-bottom: 14px; }
   .urow { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 12px;
     background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
   .urow small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
   .checks { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 6px; }
   .checks label { display: inline-flex; gap: 6px; align-items: center; font-size: 14px; }
-  .seg { display: inline-flex; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 3px; }
-  .seg button { border: 0; background: none; padding: 6px 14px; border-radius: 8px; color: var(--muted); }
-  .seg button.on { background: var(--panel); color: var(--text); box-shadow: 0 0 0 1px var(--line); }
-  .menu { position: absolute; right: 12px; top: 54px; z-index: 40; background: var(--panel); border: 1px solid var(--line);
-    border-radius: 12px; padding: 6px; display: none; min-width: 180px; box-shadow: 0 8px 30px rgba(0,0,0,.5); }
-  .menu button { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 9px 10px; border-radius: 8px; }
-  .menu button:hover { background: var(--bg); }
-  .sect { font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); margin: 18px 2px 8px; }
-  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
-  .grid2 > div { min-width: 0; }
+  .seg2 { display: inline-flex; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 3px; }
+  .seg2 button { border: 0; background: none; padding: 6px 14px; border-radius: 8px; color: var(--muted); }
+  .seg2 button.on { background: var(--panel); color: var(--text); box-shadow: 0 0 0 1px var(--line); }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; } .grid2 > div { min-width: 0; }
   .card select { width: 100%; }
-  input[type=number] { width: 100%; font: inherit; color: var(--text); background: var(--bg);
-    border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
-  .hint { font-size: 12.5px; color: var(--warn); margin-top: 6px; min-height: 0; }
+  .hint { font-size: 12.5px; color: var(--warn); margin-top: 6px; }
   .btnrow { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
-  .btn.small { padding: 6px 10px; font-size: 13px; }
-  .linkbtn { border: 0; background: none; color: var(--blue); padding: 6px 0; font-size: 13.5px; }
+  .linkbtn { border: 0; background: none; color: var(--blue); padding: 8px 0 2px; font-size: 13.5px; }
   .tres { margin-top: 12px; font-size: 13.5px; display: grid; gap: 4px; }
   .tres .ok { color: var(--accent); } .tres .no { color: var(--bad); }
   .tag { font-size: 11px; padding: 1px 6px; border-radius: 6px; background: #30363d; color: var(--muted); margin-left: 4px; }
+  .tag.rec { background: #3fb95022; color: var(--accent); } .tag.bad { background: #f8514922; color: var(--bad); }
   .pick { display: grid; gap: 6px; margin-top: 8px; }
   .pick button { text-align: left; border: 1px solid var(--line); background: var(--bg); border-radius: 10px; padding: 8px 10px; font-size: 13px; }
   .banner { margin: 0 0 10px; padding: 10px 12px; border-radius: 10px; background: #1f6feb22; border: 1px solid #1f6feb55; font-size: 14px; display: none; }
+  .menu { position: absolute; right: 12px; top: 54px; z-index: 40; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; padding: 6px; display: none; min-width: 200px; box-shadow: 0 8px 30px rgba(0,0,0,.5); }
+  .menu button { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 9px 10px; border-radius: 8px; }
+  .menu button:hover { background: var(--bg); }
+  dialog { border: 0; padding: 0; background: transparent; color: var(--text); }
+  dialog::backdrop { background: rgba(0,0,0,.75); }
+  .loginlang { position: absolute; top: 16px; right: 16px; }
 </style>
 </head>
 <body>
 <header>
-  <h1>📹 আমার CCTV</h1>
+  <h1>📹 <span data-t="title"></span></h1>
   <div class="tabs">
-    <button id="tabLive" class="on">Live</button>
-    <button id="tabRecs">Recordings</button>
-    <button id="tabUsers" style="display:none">⚙️ Settings</button>
+    <button id="tabLive" class="on" data-t="live"></button>
+    <button id="tabRecs" data-t="recordings"></button>
+    <button id="tabUsers" style="display:none" data-t="settings"></button>
   </div>
   <button class="me" id="meBtn"><span id="meName"></span><span class="role" id="meRole"></span></button>
+  <button class="langbtn" id="langBtn"></button>
 </header>
 <div class="menu" id="menu">
-  <button id="mApp" style="display:none">📱 Server ঠিকানা (app)</button>
-  <button id="mPass">🔑 Password বদলান</button>
-  <button id="mLogout">↩ Logout</button>
+  <button id="mApp" style="display:none" data-t="appServer"></button>
+  <button id="mPass" data-t="changePass"></button>
+  <button id="mLogout" data-t="logout"></button>
 </div>
+
 <div id="login">
+  <button class="langbtn loginlang" id="langBtn2"></button>
   <form class="card" id="loginForm" autocomplete="on">
-    <h2>📹 আমার CCTV</h2>
-    <p id="loginHint">Login করুন</p>
-    <label class="f" for="lu">Username</label>
+    <h2>📹 <span data-t="title"></span></h2>
+    <p id="loginHint"></p>
+    <label class="f" for="lu" data-t="username"></label>
     <input type="text" id="lu" autocomplete="username" autocapitalize="none" required>
-    <label class="f" for="lp">Password</label>
+    <label class="f" for="lp" data-t="password"></label>
     <input type="password" id="lp" autocomplete="current-password" required>
-    <button class="btn full" type="submit">Login</button>
+    <button class="btn full" type="submit" data-t="login"></button>
     <div class="err" id="loginErr"></div>
   </form>
 </div>
+
 <div class="statusbar">
-  <span class="pill" id="stStorage"><span class="dot"></span><span>Storage…</span></span>
-  <span class="pill" id="stDrive"><span class="dot"></span><span>Drive…</span></span>
-  <span class="pill" id="stLoad"><span class="dot"></span><span>CPU…</span></span>
+  <span class="pill" id="stStorage"><span class="dot"></span><span>…</span></span>
+  <span class="pill" id="stDrive"><span class="dot"></span><span>…</span></span>
+  <span class="pill" id="stLoad"><span class="dot"></span><span>…</span></span>
 </div>
+
 <main>
   <section id="liveWrap" style="display:contents">
     <div class="chips" id="chips"></div>
     <div id="live"><div class="grid" id="grid"></div></div>
   </section>
+
   <section id="recs">
     <div class="row">
       <select id="recCam"></select>
+      <button class="navbtn" id="dPrev">◀</button>
       <select id="recDate"></select>
+      <button class="navbtn" id="dNext">▶</button>
     </div>
-    <div class="clips" id="clips"></div>
+    <div class="player">
+      <video id="pv" controls playsinline preload="metadata"></video>
+      <div class="pbar">
+        <span><b id="pvTime">--:--:--</b> <span class="muted" id="pvInfo"></span></span>
+        <span><button id="pvPrev">⏮ <span data-t="prevMin"></span></button><button id="pvNext"><span data-t="nextMin"></span> ⏭</button>
+          <a id="pvDl" download data-t="download"></a></span>
+      </div>
+    </div>
+    <div class="day" id="day"><div class="hov" id="hov"></div></div>
+    <div class="hours" id="hours"></div>
+    <div class="legend"><span><i style="background:#3b4552"></i><span data-t="lgRec"></span></span>
+      <span><i style="background:var(--motion)"></i><span data-t="lgMotion"></span></span>
+      <span><i style="background:var(--blue)"></i><span data-t="lgNow"></span></span></div>
+    <div class="hourpick" id="hourpick"></div>
+    <div class="strip" id="strip"></div>
+    <div class="sect"><span data-t="motionEvents"></span> <span id="evCount" class="muted"></span></div>
+    <div class="evs" id="evs"></div>
   </section>
+
   <section id="users">
     <div class="banner" id="applyBanner"></div>
-    <div class="sect">📷 Cameras</div>
+    <div class="sect">📷 <span data-t="cameras"></span></div>
     <div class="ulist" id="clist"></div>
-    <form class="card" id="cForm" style="width:100%;max-width:520px" autocomplete="off">
-      <h2 id="cFormTitle">নতুন camera</h2>
-      <p>IP বা password বদলাতে এখানে বদলে Save দিন।</p>
-      <label class="f">নাম</label>
-      <input type="text" id="cName" placeholder="যেমন: সামনের দরজা" required>
-      <label class="f">Camera brand</label>
+    <form class="card" id="cForm" style="width:100%;max-width:540px" autocomplete="off">
+      <h2 id="cFormTitle"></h2>
+      <p data-t="camFormSub"></p>
+      <label class="f" data-t="name"></label>
+      <input type="text" id="cName" required>
+      <label class="f" data-t="brand"></label>
       <select id="cType"></select>
       <div class="hint" id="cHint"></div>
       <div class="grid2">
-        <div><label class="f">IP address</label><input type="text" id="cHost" inputmode="decimal" placeholder="192.168.0.100" required></div>
-        <div><label class="f">RTSP port</label><input type="number" id="cPort" value="554"></div>
+        <div><label class="f" data-t="ip"></label><input type="text" id="cHost" inputmode="decimal" placeholder="192.168.0.100" required></div>
+        <div><label class="f" data-t="rtspPort"></label><input type="number" id="cPort" value="554"></div>
       </div>
       <div class="grid2">
-        <div><label class="f">Username</label><input type="text" id="cUser" autocapitalize="none"></div>
-        <div><label class="f">Password</label><input type="password" id="cPass" autocomplete="new-password"></div>
+        <div><label class="f" data-t="username"></label><input type="text" id="cUser" autocapitalize="none"></div>
+        <div><label class="f" data-t="password"></label><input type="password" id="cPass" autocomplete="new-password"></div>
       </div>
-      <button type="button" class="linkbtn" id="cOnvif">🔍 ONVIF থেকে stream path খুঁজুন</button>
+      <button type="button" class="linkbtn" id="cOnvif" data-t="findOnvif"></button>
       <div class="pick" id="cPick"></div>
-      <label class="f">Main stream path (full quality)</label>
+      <label class="f" data-t="mainPath"></label>
       <input type="text" id="cMain" placeholder="/...">
-      <label class="f">Sub stream path (low quality, ফাঁকা = main)</label>
+      <label class="f" data-t="subPath"></label>
       <input type="text" id="cSub" placeholder="/...">
       <div class="grid2">
-        <div><label class="f">Recording</label>
-          <select id="cMode"><option value="motion">Motion হলে</option><option value="continuous">সারাক্ষণ</option><option value="off">বন্ধ (শুধু live)</option></select></div>
-        <div><label class="f">Recording quality</label>
-          <select id="cRec"><option value="main">Full (main)</option><option value="sub">Low (sub, কম জায়গা)</option></select></div>
+        <div><label class="f" data-t="recording"></label>
+          <select id="cMode"><option value="continuous" data-t="mode247"></option><option value="motion" data-t="modeMotion"></option><option value="off" data-t="modeOff"></option></select></div>
+        <div><label class="f" data-t="recQuality"></label>
+          <select id="cRec"><option value="main" data-t="qMain"></option><option value="sub" data-t="qSub"></option></select></div>
       </div>
       <div class="grid2">
-        <div><label class="f">Sensitivity (কম = বেশি sensitive)</label><input type="number" id="cThr" value="1500" min="100" step="100"></div>
-        <div><label class="f">অবস্থা</label>
-          <div class="checks" style="margin-top:10px"><label><input type="checkbox" id="cEn" checked> চালু</label></div></div>
+        <div><label class="f" data-t="sensitivity"></label><input type="number" id="cThr" value="1500" min="100" step="100"></div>
+        <div><label class="f" data-t="options"></label>
+          <div class="checks" style="margin-top:4px">
+            <label><input type="checkbox" id="cEn" checked> <span data-t="enabled"></span></label>
+            <label><input type="checkbox" id="cAud" checked> <span data-t="sound"></span></label>
+            <label><input type="checkbox" id="cPtz"> <span data-t="ptzCap"></span></label>
+          </div></div>
       </div>
       <div class="btnrow">
-        <button class="btn ghost" type="button" id="cTest">▶ Test</button>
-        <button class="btn" type="submit">Save</button>
-        <button class="btn danger" type="button" id="cDel" style="display:none">Delete</button>
-        <button class="btn ghost" type="button" id="cNew">নতুন</button>
+        <button class="btn ghost" type="button" id="cTest">▶ <span data-t="test"></span></button>
+        <button class="btn" type="submit" data-t="save"></button>
+        <button class="btn danger" type="button" id="cDel" style="display:none" data-t="delete"></button>
+        <button class="btn ghost" type="button" id="cNew" data-t="new"></button>
       </div>
       <div class="tres" id="cRes"></div>
       <div class="err" id="cErr"></div>
     </form>
+
     <div class="sect">☁️ Google Drive</div>
-    <div class="card" style="width:100%;max-width:520px">
+    <div class="card" style="width:100%;max-width:540px">
       <div id="drvState" class="muted">…</div>
       <div id="drvSteps" style="display:none">
         <ol style="padding-left:18px;margin:10px 0;font-size:14px;line-height:1.6">
-          <li>নিচের button চাপুন → Google-এ login করে <b>Allow</b> দিন</li>
-          <li>এরপর একটা <b>"পাওয়া যাচ্ছে না / can't be reached"</b> page আসবে। ভয় নেই, এটাই স্বাভাবিক</li>
-          <li>ওই page-এর <b>address bar-এর পুরো link</b> copy করে নিচে paste করুন</li>
+          <li data-t="drv1"></li><li data-t="drv2"></li><li data-t="drv3"></li>
         </ol>
-        <a class="btn" id="drvGo" target="_blank" rel="noopener" style="display:inline-block;text-decoration:none">Google দিয়ে login</a>
-        <label class="f">Allow-এর পরের link (http://127.0.0.1:53682/?state=…&code=…)</label>
-        <input type="text" id="drvUrl" placeholder="এখানে paste করুন" autocapitalize="none">
-        <div class="btnrow"><button class="btn" type="button" id="drvFinish">Connect শেষ করুন</button></div>
+        <a class="btn" id="drvGo" target="_blank" rel="noopener" style="display:inline-block;text-decoration:none" data-t="drvLogin"></a>
+        <label class="f" data-t="drvPaste"></label>
+        <input type="text" id="drvUrl" placeholder="http://127.0.0.1:53682/?state=…&code=…" autocapitalize="none">
+        <div class="btnrow"><button class="btn" type="button" id="drvFinish" data-t="drvFinish"></button></div>
       </div>
-      <div class="btnrow" id="drvBtns">
-        <button class="btn" type="button" id="drvStart">Google দিয়ে connect</button>
-        <button class="btn ghost" type="button" id="drvCheck" style="display:none">Test</button>
-        <button class="btn danger" type="button" id="drvOff" style="display:none">Disconnect</button>
+      <div class="btnrow">
+        <button class="btn" type="button" id="drvStart"></button>
+        <button class="btn ghost" type="button" id="drvCheck" style="display:none" data-t="test"></button>
+        <button class="btn danger" type="button" id="drvOff" style="display:none" data-t="disconnect"></button>
       </div>
       <div class="err" id="drvErr"></div>
     </div>
-    <div class="sect">🔄 System</div>
-    <div class="urow" id="sysRow"><div><b>Version</b><small id="sysVer">…</small></div>
-      <button class="btn ghost" id="sysUpd">Update দেখুন</button></div>
+
+    <div class="sect">🔄 <span data-t="system"></span></div>
+    <div class="urow"><div><b data-t="version"></b><small id="sysVer">…</small></div>
+      <button class="btn ghost" id="sysUpd" data-t="checkUpdate"></button></div>
     <div class="urow" style="margin-top:8px"><small id="sysPub" style="font-size:13.5px;word-break:break-all">…</small></div>
-    <div class="sect">👤 Users</div>
+
+    <div class="sect">👤 <span data-t="users"></span></div>
     <div class="ulist" id="ulist"></div>
-    <form class="card" id="uForm" style="width:100%;max-width:480px">
-      <h2 id="uFormTitle">নতুন user</h2>
-      <p>Viewer শুধু বেছে দেওয়া camera দেখতে পারবে।</p>
-      <label class="f">Username</label>
+    <form class="card" id="uForm" style="width:100%;max-width:540px">
+      <h2 id="uFormTitle"></h2>
+      <p data-t="userFormSub"></p>
+      <label class="f" data-t="username"></label>
       <input type="text" id="uName" autocapitalize="none" required>
-      <label class="f" id="uPassLbl">Password</label>
+      <label class="f" id="uPassLbl"></label>
       <input type="password" id="uPass" autocomplete="new-password">
-      <label class="f">Role</label>
-      <div class="seg" id="uRole"><button type="button" data-r="viewer" class="on">Viewer</button><button type="button" data-r="admin">Admin</button></div>
+      <label class="f" data-t="role"></label>
+      <div class="seg2" id="uRole"><button type="button" data-r="viewer" class="on">Viewer</button><button type="button" data-r="admin">Admin</button></div>
       <div id="uViewerOpts">
-        <label class="f">কোন camera দেখতে পারবে</label>
+        <label class="f" data-t="whichCams"></label>
         <div class="checks" id="uCams"></div>
-        <div class="checks" style="margin-top:12px"><label><input type="checkbox" id="uRecs" checked> Recordings দেখতে পারবে</label></div>
+        <div class="checks" style="margin-top:12px">
+          <label><input type="checkbox" id="uRecs" checked> <span data-t="canRecs"></span></label>
+          <label><input type="checkbox" id="uPtz"> <span data-t="canPtz"></span></label>
+        </div>
       </div>
-      <div style="display:flex;gap:8px;margin-top:16px">
-        <button class="btn" type="submit">Save</button>
-        <button class="btn ghost" type="button" id="uCancel">নতুন</button>
+      <div class="btnrow">
+        <button class="btn" type="submit" data-t="save"></button>
+        <button class="btn ghost" type="button" id="uCancel" data-t="new"></button>
       </div>
       <div class="err" id="uErr"></div>
     </form>
   </section>
 </main>
-<dialog id="player">
-  <video id="pv" controls playsinline></video>
-  <div class="bar"><span id="pvTitle" class="muted"></span>
-    <span><a id="pvDl" download>Download</a> &nbsp; <button id="pvDel" style="color:var(--bad);display:none">Delete</button> &nbsp; <button id="pvClose">বন্ধ করুন</button></span></div>
-</dialog>
-<dialog id="pwDlg" style="background:transparent;width:auto">
+
+<dialog id="pwDlg">
   <form class="card" id="pwForm">
-    <h2>Password বদলান</h2>
-    <label class="f">পুরোনো password</label><input type="password" id="pwOld" autocomplete="current-password" required>
-    <label class="f">নতুন password (কমপক্ষে ৬ অক্ষর)</label><input type="password" id="pwNew" autocomplete="new-password" required>
-    <div style="display:flex;gap:8px;margin-top:16px"><button class="btn" type="submit">Save</button>
-    <button class="btn ghost" type="button" onclick="this.closest('dialog').close()">বাতিল</button></div>
+    <h2 data-t="changePass"></h2>
+    <label class="f" data-t="curPass"></label><input type="password" id="pwOld" autocomplete="current-password" required>
+    <label class="f" data-t="newPass"></label><input type="password" id="pwNew" autocomplete="new-password" required>
+    <div class="btnrow"><button class="btn" type="submit" data-t="save"></button>
+    <button class="btn ghost" type="button" onclick="this.closest('dialog').close()" data-t="cancel"></button></div>
     <div class="err" id="pwErr"></div>
   </form>
 </dialog>
@@ -310,46 +376,158 @@ const LS = {
   get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
 };
+const esc = t => String(t ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
-/* ------------------------------------------------------------------
- * Minimal MSE player for go2rtc's websocket API.
- * Protocol: send {"type":"mse","value":"<codecs>"} -> server answers
- * {"type":"mse","value":"video/mp4; codecs=..."} then binary fMP4.
- * ------------------------------------------------------------------ */
-const CODECS = ["avc1.640029", "avc1.64002A", "avc1.640033", "hvc1.1.6.L153.B0", "mp4a.40.2", "mp4a.40.5", "flac", "opus"];
+/* =============================== i18n =============================== */
+const I18N = {
+  title: ["Home CCTV", "আমার CCTV"], live: ["Live", "Live"], recordings: ["Recordings", "Recordings"],
+  settings: ["⚙️ Settings", "⚙️ Settings"], username: ["Username", "Username"], password: ["Password", "Password"],
+  login: ["Log in", "Login"], logout: ["↩ Log out", "↩ Logout"], changePass: ["🔑 Change password", "🔑 Password বদলান"],
+  appServer: ["📱 Server address (app)", "📱 Server ঠিকানা (app)"], loginHint: ["Please log in", "Login করুন"],
+  noAccount: ["No account yet.<br>On the Tinker Board run: <code>sudo cctv-user add admin --admin</code>",
+              "এখনো কোনো account নেই।<br>Tinker Board-এ চালান: <code>sudo cctv-user add admin --admin</code>"],
+  curPass: ["Current password", "পুরোনো password"], newPass: ["New password (at least 6 characters)", "নতুন password (কমপক্ষে ৬ অক্ষর)"],
+  save: ["Save", "Save"], cancel: ["Cancel", "বাতিল"], delete: ["Delete", "Delete"], new: ["New", "নতুন"], test: ["Test", "Test"],
+  passChanged: ["Password changed", "Password বদলানো হয়েছে"],
+  // live
+  connecting: ["Connecting…", "connect হচ্ছে…"], camLost: ["Camera not reachable", "Camera পাওয়া যাচ্ছে না"],
+  connLost: ["Connection lost", "connection কেটে গেছে"], streamStopped: ["Stream stopped", "stream থেমে গেছে"],
+  noMSE: ["Live view is not supported in this browser", "এই browser-এ live view চলে না"],
+  noCodec: ["Codec not supported (set H.264 on the camera)", "Codec support নেই (camera-য় H.264 দিন)"],
+  allOff: ["All cameras are hidden.<br>Turn one on above.", "সব camera বন্ধ করা আছে।<br>উপরের button থেকে চালু করুন।"],
+  noCams: ["No cameras yet.", "কোনো camera নেই।"], addCamsHint: ["Add them in ⚙️ Settings → Cameras.", "⚙️ Settings → Cameras থেকে যোগ করুন।"],
+  noCamPerm: ["You have not been given any camera.", "আপনাকে কোনো camera দেখার অনুমতি দেওয়া হয়নি।"],
+  motion: ["● Motion", "● Motion"], soundOn: ["Sound on", "শব্দ চালু"], ptzBtn: ["Pan / tilt", "Camera ঘোরান"],
+  // status
+  free: ["free", "খালি"], sdCard: ["SD card", "SD card"], noStorage: ["No storage status", "Storage status নেই"],
+  noServer: ["Can't reach the server", "Server-এর সাথে যোগাযোগ নেই"], minAgo: ["min ago", "মি. আগে"], waiting: ["waiting", "অপেক্ষা"],
+  // recordings
+  prevMin: ["1 min", "১ মিনিট"], nextMin: ["1 min", "১ মিনিট"], download: ["Download", "Download"],
+  lgRec: ["Recorded", "Recording আছে"], lgMotion: ["Motion", "Motion"], lgNow: ["Playing", "এখন চলছে"],
+  motionEvents: ["Motion events", "Motion event"], noRecs: ["No recordings for this day.", "এই দিনের কোনো recording নেই।"],
+  noEvents: ["No motion this day.", "এই দিনে কোনো motion নেই।"], gap: ["No recording at this time", "এই সময়ের recording নেই"],
+  ongoing: ["now", "চলছে"], secs: ["s", "সে."], mins: ["min", "মি."], live2: ["live", "live"],
+  noRecPerm: ["You are not allowed to open recordings.", "Recordings দেখার অনুমতি নেই।"],
+  // settings: cameras
+  cameras: ["Cameras", "Cameras"], newCam: ["New camera", "নতুন camera"], editCam: ["Edit: {0}", "Edit: {0}"],
+  camFormSub: ["To change the IP or password, edit it here and press Save.", "IP বা password বদলাতে এখানে বদলে Save দিন।"],
+  name: ["Name", "নাম"], brand: ["Camera brand", "Camera brand"], ip: ["IP address", "IP address"], rtspPort: ["RTSP port", "RTSP port"],
+  findOnvif: ["🔍 Find stream paths via ONVIF", "🔍 ONVIF থেকে stream path খুঁজুন"],
+  mainPath: ["Main stream path (full quality)", "Main stream path (full quality)"],
+  subPath: ["Sub stream path (low quality, empty = main)", "Sub stream path (low quality, ফাঁকা = main)"],
+  recording: ["Recording", "Recording"], mode247: ["24/7 (motion marked)", "২৪ ঘণ্টা (motion চিহ্নিত)"],
+  modeMotion: ["Only when motion", "শুধু motion হলে"], modeOff: ["Off (live only)", "বন্ধ (শুধু live)"],
+  recQuality: ["Recording quality", "Recording quality"], qMain: ["Full (main)", "Full (main)"], qSub: ["Low (sub, less space)", "Low (sub, কম জায়গা)"],
+  sensitivity: ["Motion sensitivity (lower = more sensitive)", "Motion sensitivity (কম = বেশি sensitive)"],
+  options: ["Options", "Options"], enabled: ["Enabled", "চালু"], sound: ["Sound", "শব্দ"], ptzCap: ["Pan/tilt (PTZ)", "ঘোরানো যায় (PTZ)"],
+  testing: ["Talking to the camera… (up to 15 s)", "Camera-র সাথে কথা বলছি… (১৫ সেকেন্ড পর্যন্ত)"],
+  hevcNote: [" (H.265: if live view stays black on a phone, set H.264 on the camera)", " (H.265: phone-এ live না চললে camera-য় H.264 দিন)"],
+  needIp: ["Enter the IP first", "আগে IP দিন"], onvifSearching: ["Searching ONVIF…", "ONVIF খুঁজছি…"],
+  onvifFound: ["Found {0} stream(s) on ONVIF port {1}. Largest = main, smallest = sub:", "ONVIF port {1}-এ {0}টা stream পাওয়া গেছে। বড়টা main, ছোটটা sub:"],
+  useAsSub: ["Tap to use as sub stream", "Sub stream বানাতে চাপুন"],
+  applying: ["⏳ Applying the new settings…", "⏳ নতুন setting চালু হচ্ছে…"], applied: ["✅ Done: ", "✅ হয়ে গেছে: "],
+  applySlow: ["⚠️ Not applied yet. On the Tinker Board run 'sudo cctv-apply'.", "⚠️ এখনো চালু হয়নি। Tinker Board-এ 'sudo cctv-apply' চালান।"],
+  delCamQ: ["Delete this camera? (its recordings stay)", "এই camera মুছে ফেলবেন? (পুরোনো recording থাকবে)"],
+  disabled: ["off", "বন্ধ"], recOk: ["● recording", "● recording"], recErr: ["⚠ not recording", "⚠ record হচ্ছে না"],
+  recStarting: ["◌ starting…", "◌ চালু হচ্ছে…"],
+  noCamsYet: ["No cameras yet. Add one with the form below.", "এখনো কোনো camera নেই। নিচের form দিয়ে যোগ করুন।"],
+  keepPass: ["leave empty to keep the old one", "আগেরটা রাখতে ফাঁকা রাখুন"],
+  modeShort: [{ continuous: "24/7", motion: "motion only", off: "live only" }, { continuous: "২৪ ঘণ্টা", motion: "শুধু motion", off: "শুধু live" }],
+  // drive
+  drv1: ["Press the button below → log in to Google and press <b>Allow</b>", "নিচের button চাপুন → Google-এ login করে <b>Allow</b> দিন"],
+  drv2: ["A <b>\"can't be reached\"</b> page opens next. That is expected", "এরপর একটা <b>\"পাওয়া যাচ্ছে না\"</b> page আসবে। এটাই স্বাভাবিক"],
+  drv3: ["Copy the <b>whole link from the address bar</b> and paste it below", "ওই page-এর <b>address bar-এর পুরো link</b> copy করে নিচে paste করুন"],
+  drvLogin: ["Log in with Google", "Google দিয়ে login"], drvPaste: ["Link after Allow", "Allow-এর পরের link"],
+  drvFinish: ["Finish connecting", "Connect শেষ করুন"], drvConnecting: ["Connecting…", "Connect হচ্ছে…"],
+  drvConnect: ["Connect with Google", "Google দিয়ে connect"], drvOther: ["Connect another account", "অন্য account দিয়ে connect"],
+  drvNot: ["Not connected yet.", "এখনো connect করা হয়নি।"], disconnect: ["Disconnect", "Disconnect"],
+  drvOk: ["✅ Connected · folder: <b>{0}</b> · up to {1} GB", "✅ Connect করা আছে · folder: <b>{0}</b> · সর্বোচ্চ {1} GB"],
+  drvSpace: ["Google account: {0} / {1} GB used, {2} GB free", "Google account: {0} / {1} GB ব্যবহার হয়েছে, {2} GB খালি"],
+  drvOffQ: ["Disconnect Google Drive? (clips already on Drive stay)", "Google Drive disconnect করবেন? (Drive-এর clip মুছবে না)"],
+  drvTesting: ["Testing…", "Test করছি…"],
+  // system
+  system: ["System", "System"], version: ["Version", "Version"], checkUpdate: ["Check for update", "Update দেখুন"],
+  checking: ["Checking…", "দেখছি…"], noAutoUpd: ["Auto-update is off (install from GitHub to turn it on)", "Auto-update চালু নেই (GitHub থেকে install করলে চালু হবে)"],
+  checked: ["checked", "চেক"], pubOn: ["🌍 From anywhere: ", "🌍 যেকোনো জায়গা থেকে: "],
+  pubOff: ["🌍 Internet link is off (on the Tinker Board: sudo cctv-funnel)", "🌍 বাইরে থেকে খোলার link চালু নেই (Tinker Board-এ: sudo cctv-funnel)"],
+  // users
+  users: ["Users", "Users"], newUser: ["New user", "নতুন user"], editUser: ["Edit: {0}", "Edit: {0}"],
+  userFormSub: ["Viewers only see the cameras you tick.", "Viewer শুধু টিক দেওয়া camera দেখতে পারবে।"],
+  newPassOpt: ["New password (leave empty to keep)", "নতুন password (বদলাতে না চাইলে ফাঁকা রাখুন)"],
+  role: ["Role", "Role"], whichCams: ["Cameras this user can see", "কোন camera দেখতে পারবে"],
+  canRecs: ["Can open recordings", "Recordings দেখতে পারবে"], canPtz: ["Can move cameras (PTZ)", "Camera ঘোরাতে পারবে"],
+  adminDesc: ["Can see and change everything", "সবকিছু দেখতে ও বদলাতে পারে"], allCams: ["all cameras", "সব camera"],
+  noneCams: ["no cameras", "কোনো camera নেই"], yes: ["yes", "হ্যাঁ"], no: ["no", "না"], delUserQ: ["Delete {0}?", "{0} মুছে ফেলবেন?"],
+  delClipQ: ["Delete this minute of recording?", "এই এক মিনিটের recording মুছে ফেলবেন?"],
+};
+let LANG = LS.get("cctv.lang", null) || (navigator.language || "").startsWith("bn") && "bn" || "en";
+function t(key, ...args) {
+  const v = I18N[key]; if (!v) return key;
+  let s = v[LANG === "bn" ? 1 : 0];
+  if (typeof s === "string") args.forEach((a, i) => { s = s.replaceAll(`{${i}}`, a); });
+  return s;
+}
+const tr = msg => { const p = String(msg ?? "").split(" || "); return p.length > 1 && LANG === "bn" ? p[1] : p[0]; };
+function applyLang() {
+  document.documentElement.lang = LANG;
+  document.querySelectorAll("[data-t]").forEach(el => { el.innerHTML = t(el.dataset.t); });
+  for (const b of [$("#langBtn"), $("#langBtn2")]) b.textContent = LANG === "bn" ? "EN" : "বাং";
+  document.title = t("title");
+}
+function setLang(l) {
+  LANG = l; LS.set("cctv.lang", l); applyLang();
+  if ($("#login").style.display === "grid") showLogin();
+  if (ME) { api("/api/prefs", { lang: l }).catch(() => {}); rerenderAll(); }
+}
+$("#langBtn").onclick = $("#langBtn2").onclick = () => setLang(LANG === "bn" ? "en" : "bn");
+
+/* =============================== api =============================== */
+async function api(path, body) {
+  const opts = { cache: "no-store", credentials: "same-origin", headers: { "X-Lang": LANG } };
+  if (body !== undefined) {
+    opts.method = "POST";
+    Object.assign(opts.headers, { "Content-Type": "application/json", "X-Requested-With": "cctv" });
+    opts.body = JSON.stringify(body);
+  }
+  const r = await fetch(path, opts);
+  let data = null; try { data = await r.json(); } catch {}
+  if (r.status === 401 && path !== "/api/login" && path !== "/api/me") { showLogin(); throw new Error("login"); }
+  if (!r.ok) throw new Error(tr((data && data.error) || "Error " + r.status));
+  return data;
+}
+
+/* ====================== live player (go2rtc MSE) ======================
+ * send {"type":"mse","value":"<codecs>"} -> {"type":"mse","value":"video/mp4; codecs=..."} -> binary fMP4 */
+const VCODECS = ["avc1.640029", "avc1.64002A", "avc1.640033", "hvc1.1.6.L153.B0"];
+const ACODECS = ["mp4a.40.2", "mp4a.40.5", "flac", "opus"];
 const MSClass = window.ManagedMediaSource || window.MediaSource;
 
 class LivePlayer {
-  constructor(video, onState) {
-    this.video = video; this.onState = onState; this.src = null;
-    this.stopped = true; this.retry = 0; this.timer = null;
-  }
-  play(src) { this.stop(); this.src = src; this.stopped = false; this.connect(); }
+  constructor(video, onState) { this.video = video; this.onState = onState; this.stopped = true; this.retry = 0; }
+  play(src, audio) { this.stop(); this.src = src; this.audio = !!audio; this.stopped = false; this.connect(); }
   stop() {
-    this.stopped = true;
-    clearTimeout(this.timer); clearInterval(this.watch);
+    this.stopped = true; clearTimeout(this.timer); clearInterval(this.watch);
     if (this.ws) { this.ws.onclose = null; try { this.ws.close(); } catch {} this.ws = null; }
     if (this.video.srcObject) this.video.srcObject = null;
     if (this.video.getAttribute("src")) { URL.revokeObjectURL(this.video.src); this.video.removeAttribute("src"); this.video.load(); }
     this.ms = this.sb = null; this.queue = [];
   }
-  reconnect(reason) {
+  reconnect(key) {
     if (this.stopped) return;
-    this.onState("wait", reason);
-    const src = this.src; this.stop(); this.src = src; this.stopped = false;
-    const delay = Math.min(15000, 1000 * 2 ** this.retry++);
-    this.timer = setTimeout(() => this.connect(), delay);
+    this.onState("wait", t(key));
+    const { src, audio } = this; this.stop(); Object.assign(this, { src, audio, stopped: false });
+    this.timer = setTimeout(() => this.connect(), Math.min(15000, 1000 * 2 ** this.retry++));
   }
   connect() {
-    if (!MSClass) { this.onState("bad", "এই browser-এ live view চলে না"); return; }
-    this.onState("wait", "connect হচ্ছে…");
+    if (!MSClass) { this.onState("bad", t("noMSE")); return; }
+    this.onState("wait", t("connecting"));
     this.queue = []; this.lastData = Date.now();
     const ms = this.ms = new MSClass();
     if (window.ManagedMediaSource) this.video.disableRemotePlayback = true;
     ms.addEventListener("sourceopen", () => this.openWs(ms), { once: true });
     if (window.ManagedMediaSource && MSClass === window.ManagedMediaSource) this.video.srcObject = ms;
     else this.video.src = URL.createObjectURL(ms);
-    this.video.muted = true; this.video.playsInline = true; this.video.autoplay = true;
+    this.video.muted = !this.audio; this.video.playsInline = true; this.video.autoplay = true;
   }
   openWs(ms) {
     if (this.stopped || ms !== this.ms) return;
@@ -357,36 +535,28 @@ class LivePlayer {
     url.protocol = location.protocol === "https:" ? "wss:" : "ws:";
     const ws = this.ws = new WebSocket(url); ws.binaryType = "arraybuffer";
     ws.onopen = () => {
-      const codecs = CODECS.filter(c => MSClass.isTypeSupported(`video/mp4; codecs="${c}"`)).join();
-      ws.send(JSON.stringify({ type: "mse", value: codecs }));
+      const list = this.audio ? [...VCODECS, ...ACODECS] : VCODECS;
+      ws.send(JSON.stringify({ type: "mse", value: list.filter(c => MSClass.isTypeSupported(`video/mp4; codecs="${c}"`)).join() }));
     };
     ws.onmessage = ev => {
       this.lastData = Date.now();
       if (typeof ev.data === "string") {
         let msg; try { msg = JSON.parse(ev.data); } catch { return; }
         if (msg.type === "mse") this.initSb(msg.value);
-        else if (msg.type === "error") this.reconnect("Camera পাওয়া যাচ্ছে না");
+        else if (msg.type === "error") this.reconnect("camLost");
         return;
       }
       this.append(ev.data);
     };
-    ws.onclose = () => this.reconnect("connection কেটে গেছে");
+    ws.onclose = () => this.reconnect("connLost");
     clearInterval(this.watch);
-    this.watch = setInterval(() => { if (Date.now() - this.lastData > 12000) this.reconnect("stream থেমে গেছে"); }, 4000);
+    this.watch = setInterval(() => { if (Date.now() - this.lastData > 12000) this.reconnect("streamStopped"); }, 4000);
   }
   initSb(type) {
-    try {
-      const sb = this.sb = this.ms.addSourceBuffer(type);
-      sb.mode = "segments";
-      sb.addEventListener("updateend", () => this.pump());
-    } catch (e) { this.onState("bad", "Codec support নেই (camera-য় H.264 দিন)"); this.stopped = true; }
+    try { const sb = this.sb = this.ms.addSourceBuffer(type); sb.mode = "segments"; sb.addEventListener("updateend", () => this.pump()); }
+    catch { this.onState("bad", t("noCodec")); this.stopped = true; }
   }
-  append(buf) {
-    if (!this.sb) return;
-    this.queue.push(buf);
-    if (this.queue.length > 50) this.queue.splice(0, this.queue.length - 50);
-    this.pump();
-  }
+  append(buf) { if (!this.sb) return; this.queue.push(buf); if (this.queue.length > 50) this.queue.splice(0, this.queue.length - 50); this.pump(); }
   pump() {
     const sb = this.sb, v = this.video;
     if (!sb || sb.updating) return;
@@ -398,219 +568,305 @@ class LivePlayer {
         if (v.currentTime - start > 30) { sb.remove(start, v.currentTime - 10); return; }
       }
       if (this.queue.length) {
-        const parts = this.queue.splice(0);
-        const size = parts.reduce((n, p) => n + p.byteLength, 0);
+        const parts = this.queue.splice(0), size = parts.reduce((n, p) => n + p.byteLength, 0);
         const data = new Uint8Array(size); let off = 0;
         for (const p of parts) { data.set(new Uint8Array(p), off); off += p.byteLength; }
         sb.appendBuffer(data);
       }
-      if (v.paused && b.length) v.play().catch(() => {});
-      if (b.length && this.retry) this.retry = 0;
-      if (b.length) this.onState("ok", "");
-    } catch (e) {
-      if (e.name === "QuotaExceededError") { this.queue = []; }
-      else this.reconnect("player error");
-    }
+      if (v.paused && b.length) v.play().catch(() => { if (!v.muted) { v.muted = true; v.play().catch(() => {}); } });
+      if (b.length) { this.retry = 0; this.onState("ok", ""); }
+    } catch (e) { if (e.name === "QuotaExceededError") this.queue = []; else this.reconnect("connLost"); }
   }
 }
 
-/* ------------------------------ app ------------------------------ */
-let CAMS = [];
-const tiles = new Map();          // id -> {el, player, hd}
-let enabled = LS.get("cctv.enabled", null);   // {camId: true/false}
-let focused = null;
-
-function saveEnabled() { LS.set("cctv.enabled", enabled); }
+/* =============================== live =============================== */
+let ME = null, CAMS = [], focused = null, liveTab = true, curTab = "live";
+const tiles = new Map();
+let enabled = LS.get("cctv.enabled", null);
+const saveEnabled = () => LS.set("cctv.enabled", enabled);
 
 function renderChips() {
   const box = $("#chips"); box.innerHTML = "";
   for (const c of CAMS) {
     const b = document.createElement("button");
     b.className = "chip" + (enabled[c.id] ? " on" : "");
-    b.innerHTML = `<span class="sw"></span><span></span>`;
-    b.lastChild.textContent = c.name;
+    b.innerHTML = `<span class="sw"></span><span></span>`; b.lastChild.textContent = c.name;
     b.onclick = () => { enabled[c.id] = !enabled[c.id]; saveEnabled(); renderChips(); renderGrid(); };
     box.appendChild(b);
   }
 }
+
+function ptzSend(cam, body) { return api("/api/ptz", Object.assign({ cam }, body)).catch(e => { if (e.message !== "login") alert(e.message); throw e; }); }
 
 function makeTile(c) {
   const el = document.createElement("div");
   el.className = "tile";
   el.innerHTML = `<video muted playsinline autoplay></video>
     <div class="label"><span class="dot"></span><span class="nm"></span></div>
-    <div class="tools"><button class="q">SD</button><button class="fs">⛶</button></div>
-    <div class="msg"></div>`;
+    <div class="mbadge"></div>
+    <div class="tools"><button class="snd" title="">🔇</button><button class="pz" style="display:none">🎮</button>
+      <button class="q">SD</button><button class="fs">⛶</button></div>
+    <div class="msg"></div>
+    <div class="ptz">
+      <span class="c"></span><button data-x="0" data-y="1">▲</button><span class="c"></span>
+      <button data-x="-1" data-y="0">◀</button><span class="c"></span><button data-x="1" data-y="0">▶</button>
+      <span class="c"></span><button data-x="0" data-y="-1">▼</button><span class="c"></span>
+    </div>`;
   el.querySelector(".nm").textContent = c.name;
   const video = el.querySelector("video"), dot = el.querySelector(".label .dot"), msg = el.querySelector(".msg");
-  const t = { el, hd: LS.get("cctv.hd." + c.id, false) };
-  t.player = new LivePlayer(video, (state, text) => {
-    dot.className = "dot " + (state === "ok" ? "ok" : state === "bad" ? "bad" : "warn");
-    msg.textContent = text || "";
-  });
-  const qBtn = el.querySelector(".q");
-  const setQ = () => { qBtn.textContent = t.hd ? "HD" : "SD"; qBtn.classList.toggle("hd", t.hd); };
-  setQ();
-  t.start = () => t.player.play(t.hd ? c.id : c.id + "_sub");
-  qBtn.onclick = e => { e.stopPropagation(); t.hd = !t.hd; LS.set("cctv.hd." + c.id, t.hd); setQ(); t.start(); };
+  const T = { el, cam: c, hd: LS.get("cctv.hd." + c.id, false), audio: false };
+  T.player = new LivePlayer(video, (state, text) => { dot.className = "dot " + (state === "ok" ? "ok" : state === "bad" ? "bad" : "warn"); msg.textContent = text || ""; });
+  const qBtn = el.querySelector(".q"), sBtn = el.querySelector(".snd"), pBtn = el.querySelector(".pz");
+  const sync = () => {
+    qBtn.textContent = T.hd ? "HD" : "SD"; qBtn.classList.toggle("on", T.hd);
+    sBtn.textContent = T.audio ? "🔊" : "🔇"; sBtn.classList.toggle("on", T.audio); sBtn.title = t("soundOn");
+    pBtn.title = t("ptzBtn"); el.querySelector(".mbadge").textContent = t("motion");
+  };
+  T.sync = sync; sync();
+  T.start = () => T.player.play(T.hd ? c.id : c.id + "_sub", T.audio);
+  qBtn.onclick = e => { e.stopPropagation(); T.hd = !T.hd; LS.set("cctv.hd." + c.id, T.hd); sync(); T.start(); };
+  sBtn.onclick = e => { e.stopPropagation(); T.audio = !T.audio; sync(); T.start(); };
   el.querySelector(".fs").onclick = e => {
     e.stopPropagation();
-    const fs = document.fullscreenElement;
-    if (fs) document.exitFullscreen(); else (el.requestFullscreen || el.webkitRequestFullscreen)?.call(el);
+    if (document.fullscreenElement) document.exitFullscreen(); else (el.requestFullscreen || el.webkitRequestFullscreen)?.call(el);
   };
-  el.onclick = () => {             // tap: single camera big / back to grid
-    focused = focused === c.id ? null : c.id; layout();
-  };
-  return t;
+  // PTZ: hold an arrow to move, release to stop
+  if (c.ptz && ME && ME.ptz) {
+    pBtn.style.display = "";
+    pBtn.onclick = e => { e.stopPropagation(); el.classList.toggle("ptzon"); };
+    el.querySelectorAll(".ptz button").forEach(b => {
+      let timer = null, active = false;
+      const go = e => {
+        e.preventDefault(); e.stopPropagation(); if (active) return; active = true; b.classList.add("press");
+        const send = () => ptzSend(c.id, { x: +b.dataset.x * 0.6, y: +b.dataset.y * 0.6 }).catch(stop);
+        send(); timer = setInterval(send, 1500);
+      };
+      const stop = e => {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
+        if (!active) return; active = false; b.classList.remove("press"); clearInterval(timer);
+        ptzSend(c.id, { stop: true }).catch(() => {});
+      };
+      b.addEventListener("pointerdown", go); b.addEventListener("pointerup", stop);
+      b.addEventListener("pointerleave", stop); b.addEventListener("pointercancel", stop);
+      b.addEventListener("click", e => e.stopPropagation());
+    });
+  }
+  el.onclick = () => { focused = focused === c.id ? null : c.id; layout(); };
+  return T;
 }
 
 function renderGrid() {
-  const grid = $("#grid");
-  const visible = CAMS.filter(c => enabled[c.id]);
-  for (const [id, t] of tiles) {                    // stop cameras that were switched off
-    if (!enabled[id]) { t.player.stop(); t.el.remove(); tiles.delete(id); }
-  }
+  const grid = $("#grid"), visible = CAMS.filter(c => enabled[c.id]);
+  for (const [id, T] of tiles) if (!enabled[id] || !CAMS.find(c => c.id === id)) { T.player.stop(); T.el.remove(); tiles.delete(id); }
   if (focused && !enabled[focused]) focused = null;
   grid.querySelectorAll(".empty").forEach(e => e.remove());
   if (!visible.length) {
-    grid.innerHTML = CAMS.length ? `<div class="empty">সব camera বন্ধ করা আছে।<br>উপরের button থেকে চালু করুন।</div>`
-      : `<div class="empty">কোনো camera নেই।<br>${ME && ME.role === "admin" ? "⚙️ Settings → Cameras থেকে যোগ করুন।" : ""}</div>`;
+    grid.innerHTML = CAMS.length ? `<div class="empty">${t("allOff")}</div>`
+      : `<div class="empty">${ME && ME.role === "admin" ? t("noCams") + "<br>" + t("addCamsHint") : t("noCamPerm")}</div>`;
     grid.className = "grid"; return;
   }
   for (const c of visible) {
-    let t = tiles.get(c.id);
-    if (!t) { t = makeTile(c); tiles.set(c.id, t); if (!document.hidden && liveTab) t.start(); }
-    grid.appendChild(t.el);                         // keeps camera order
+    let T = tiles.get(c.id);
+    if (!T) { T = makeTile(c); tiles.set(c.id, T); if (!document.hidden && liveTab) T.start(); }
+    grid.appendChild(T.el);
   }
   layout();
 }
-
 function layout() {
   const grid = $("#grid"), n = CAMS.filter(c => enabled[c.id]).length;
   grid.className = "grid n" + Math.min(n, 4) + (focused ? " focus" : "");
-  for (const [id, t] of tiles) t.el.classList.toggle("big", id === focused);
+  for (const [id, T] of tiles) T.el.classList.toggle("big", id === focused);
 }
-
-let liveTab = true;
-document.addEventListener("visibilitychange", () => {   // save data when the app is in the background
-  for (const t of tiles.values()) (document.hidden || !liveTab) ? t.player.stop() : t.start();
+document.addEventListener("visibilitychange", () => {
+  for (const T of tiles.values()) (document.hidden || !liveTab) ? T.player.stop() : T.start();
 });
 
-/* ---------------------------- status ----------------------------- */
+async function pollMotion() {
+  if (!ME || document.hidden || !liveTab) return;
+  try {
+    const m = await api("/api/motion"), on = new Set(m.live);
+    for (const [id, T] of tiles) T.el.classList.toggle("moving", on.has(id));
+  } catch {}
+}
+
+/* ============================== status ============================== */
 const gb = b => (b / 1024 ** 3).toFixed(b > 100 * 1024 ** 3 ? 0 : 1) + " GB";
 function setPill(id, cls, text) { const p = $(id); p.firstChild.className = "dot " + cls; p.lastChild.textContent = text; }
 async function refreshStatus() {
   try {
-    const s = await api("/api/status");
-    const st = s.storage || {};
-    if (st.mode) {
-      const where = st.mode === "ssd" ? "SSD" : "SD card";
-      const freePct = st.total ? st.avail / st.total : 1;
-      setPill("#stStorage", st.mode === "ssd" ? (freePct > .1 ? "ok" : "warn") : "warn",
-        `${where} · ${gb(st.avail)} খালি`);
-    } else setPill("#stStorage", "bad", "Storage status নেই");
-    const up = s.upload || {};
-    const ago = up.time ? Math.round((s.time - up.time) / 60) : null;
-    const dcls = { ok: "ok", idle: "ok", off: "", error: "bad" }[up.state] ?? "";
-    setPill("#stDrive", dcls, up.message ? `Drive · ${up.message}${ago !== null && ago > 0 ? ` · ${ago} মি. আগে` : ""}` : "Drive · অপেক্ষা");
-    if (s.load !== null && s.cpus) {
-      const pct = Math.round(100 * s.load / s.cpus);
-      setPill("#stLoad", pct < 70 ? "ok" : pct < 95 ? "warn" : "bad", `CPU ${pct}%`);
-    }
-  } catch { setPill("#stStorage", "bad", "Server-এর সাথে যোগাযোগ নেই"); }
+    const s = await api("/api/status"), st = s.storage || {};
+    if (st.mode) setPill("#stStorage", st.mode === "ssd" ? (st.total && st.avail / st.total > .1 ? "ok" : "warn") : "warn",
+      `${st.mode === "ssd" ? "SSD" : t("sdCard")} · ${gb(st.avail)} ${t("free")}`);
+    else setPill("#stStorage", "bad", t("noStorage"));
+    const up = s.upload || {}, ago = up.time ? Math.round((s.time - up.time) / 60) : null;
+    setPill("#stDrive", { ok: "ok", idle: "ok", off: "", error: "bad" }[up.state] ?? "",
+      up.message ? `Drive · ${tr(up.message)}${ago > 0 ? ` · ${ago} ${t("minAgo")}` : ""}` : `Drive · ${t("waiting")}`);
+    if (s.load !== null && s.cpus) { const pct = Math.round(100 * s.load / s.cpus); setPill("#stLoad", pct < 70 ? "ok" : pct < 95 ? "warn" : "bad", `CPU ${pct}%`); }
+  } catch (e) { if (e.message !== "login") setPill("#stStorage", "bad", t("noServer")); }
 }
 
-/* -------------------------- recordings --------------------------- */
-let recIndex = {};
-async function loadRecs() {
-  recIndex = await api("/api/recordings");
-  const camSel = $("#recCam"), prev = camSel.value;
-  camSel.innerHTML = "";
-  for (const c of CAMS) camSel.add(new Option(c.name, c.id));
-  if (prev) camSel.value = prev;
-  fillDates();
+/* ============================ recordings ============================ */
+const pad = n => String(n).padStart(2, "0");
+const hms = (sec, s = true) => { sec = Math.max(0, Math.floor(sec)); return `${pad(Math.floor(sec / 3600))}:${pad(Math.floor(sec / 60) % 60)}${s ? ":" + pad(sec % 60) : ""}`; };
+let TL = null, cur = null, selHour = null;          // timeline data, playing segment, selected hour
+const pv = $("#pv");
+
+async function loadTimeline(date, keepPos) {
+  const cam = $("#recCam").value; if (!cam) return;
+  let data;
+  try { data = await api(`/api/timeline?cam=${encodeURIComponent(cam)}&date=${encodeURIComponent(date || "")}`); }
+  catch (e) { $("#evs").innerHTML = `<p class="muted">${esc(e.message)}</p>`; return; }
+  TL = data;
+  const ds = $("#recDate"); ds.innerHTML = "";
+  for (const d of data.dates.length ? data.dates : [data.date]) ds.add(new Option(d, d));
+  ds.value = data.date;
+  drawDay(); drawHours(); drawEvents();
+  if (!keepPos) {
+    const lastMotion = data.events.length ? data.events[data.events.length - 1] : null;
+    const segs = data.segments;
+    if (!segs.length) { selHour = null; drawStrip(); pv.removeAttribute("src"); pv.load(); $("#pvTime").textContent = "--:--:--"; $("#pvInfo").textContent = t("noRecs"); return; }
+    const target = lastMotion ? lastMotion.start - 3 : segs[segs.length - 1].start;
+    playAt(target, false);
+  } else { drawStrip(); drawCursor(); }
 }
-function fillDates() {
-  const dates = recIndex[$("#recCam").value] || [];
-  const ds = $("#recDate"), prev = ds.value; ds.innerHTML = "";
-  for (const d of dates) ds.add(new Option(d, d));
-  if (dates.includes(prev)) ds.value = prev;
-  loadClips();
+const relSec = ts => ts - TL.day_start;
+function drawDay() {
+  const day = $("#day"); day.querySelectorAll(".seg,.ev,.cur,.now").forEach(e => e.remove());
+  const pct = s => (100 * relSec(s) / 86400).toFixed(3) + "%";
+  // merge contiguous segments into blocks (fewer DOM nodes)
+  let blk = null; const blocks = [];
+  for (const s of TL.segments) { if (blk && s.start - blk[1] < 15) blk[1] = s.end; else { blk = [s.start, s.end]; blocks.push(blk); } }
+  for (const [a, b] of blocks) { const d = document.createElement("div"); d.className = "seg"; d.style.left = pct(a); d.style.width = `calc(${pct(b)} - ${pct(a)})`; day.appendChild(d); }
+  for (const e of TL.events) {
+    const d = document.createElement("div"); d.className = "ev"; const end = e.end ?? TL.now;
+    d.style.left = pct(e.start); d.style.width = `max(2px, calc(${pct(end)} - ${pct(e.start)}))`; day.appendChild(d);
+  }
+  if (TL.now - TL.day_start < 86400) { const n = document.createElement("div"); n.className = "now"; n.style.left = pct(TL.now); day.appendChild(n); }
+  const c = document.createElement("div"); c.className = "cur"; c.id = "cur"; c.style.display = "none"; day.appendChild(c);
 }
-async function loadClips() {
-  const cam = $("#recCam").value, date = $("#recDate").value, box = $("#clips");
-  if (!cam || !date) { box.innerHTML = `<p class="muted">এই camera-র কোনো recording এখনো নেই।</p>`; return; }
-  const files = await api(`/api/recordings?cam=${cam}&date=${date}`);
-  box.innerHTML = "";
-  if (!files.length) { box.innerHTML = `<p class="muted">কোনো clip নেই।</p>`; return; }
-  for (const f of files) {
-    const time = f.name.slice(0, 8).replace(/-/g, ":");
+function drawHours() { $("#hours").innerHTML = [0, 3, 6, 9, 12, 15, 18, 21, 24].map(h => `<span style="left:${100 * h / 24}%">${h === 24 ? "" : pad(h)}</span>`).join(""); }
+function drawCursor() {
+  const c = $("#cur"); if (!c || !cur) return;
+  const ts = cur.start + (pv.currentTime || 0);
+  c.style.display = ""; c.style.left = (100 * relSec(ts) / 86400) + "%";
+  $("#pvTime").textContent = hms(relSec(ts));
+}
+function hourSegs(h) { return TL.segments.filter(s => Math.floor(relSec(s.start) / 3600) === h); }
+function segHasMotion(s) { return TL.events.some(e => s.start < (e.end ?? TL.now) + 5 && s.end > e.start - 5); }
+function drawStrip() {
+  const hp = $("#hourpick"); hp.innerHTML = "";
+  if (!TL.segments.length) { $("#strip").innerHTML = `<p class="muted">${t("noRecs")}</p>`; return; }
+  for (let h = 0; h < 24; h++) {
+    const segs = hourSegs(h); if (!segs.length) continue;
+    const b = document.createElement("button"); b.textContent = pad(h) + ":00";
+    b.className = "has" + (segs.some(segHasMotion) ? " mot" : "") + (h === selHour ? " on" : "");
+    b.onclick = () => { selHour = h; drawStrip(); playSeg(segs[0], 0); };
+    hp.appendChild(b);
+  }
+  const strip = $("#strip"); strip.innerHTML = "";
+  if (selHour === null) return;
+  for (const s of hourSegs(selHour)) {
     const b = document.createElement("button");
-    b.className = "clip";
-    b.innerHTML = `<b></b><span></span>`;
-    b.firstChild.textContent = "▶ " + time;
-    b.lastChild.textContent = (f.size / 1024 ** 2).toFixed(1) + " MB";
-    b.onclick = () => openClip(f, cam, time, date);
+    b.className = "thumb" + (segHasMotion(s) ? " m" : "") + (cur && cur.url === s.url ? " sel" : "");
+    b.innerHTML = (s.thumb ? `<img loading="lazy" src="${s.thumb}" alt="">` : `<div class="ph"></div>`) + `<span>${hms(relSec(s.start), false)}${s.done ? "" : " · " + t("live2")}</span>`;
+    b.onclick = () => playSeg(s, 0);
+    strip.appendChild(b);
+  }
+  const sel = strip.querySelector(".sel"); if (sel) sel.scrollIntoView({ block: "nearest", inline: "center" });
+}
+function drawEvents() {
+  const box = $("#evs"); box.innerHTML = "";
+  $("#evCount").textContent = TL.events.length ? `(${TL.events.length})` : "";
+  if (!TL.events.length) { box.innerHTML = `<p class="muted">${t("noEvents")}</p>`; return; }
+  for (const e of [...TL.events].reverse()) {
+    const dur = Math.round((e.end ?? TL.now) - e.start);
+    const b = document.createElement("button"); b.className = "evc";
+    b.innerHTML = (e.pic ? `<img loading="lazy" src="${e.pic}" alt="">` : `<div class="ph"></div>`) +
+      `<div><b>${hms(relSec(e.start))}</b> · ${e.live ? t("ongoing") : dur < 90 ? dur + " " + t("secs") : Math.round(dur / 60) + " " + t("mins")}</div>`;
+    b.onclick = () => { playAt(e.start - 3, true); $("#recs").scrollTo({ top: 0, behavior: "smooth" }); };
     box.appendChild(b);
   }
 }
-let openClip = function (f, cam, time, date) {
-  const name = (CAMS.find(c => c.id === cam) || {}).name || cam;
-  $("#pv").src = f.url; $("#pvDl").href = f.url;
-  $("#pvTitle").textContent = `${name} · ${date} ${time}`;
-  $("#player").showModal(); $("#pv").play().catch(() => {});
+function playAt(ts, autoplay) {
+  const segs = TL.segments; if (!segs.length) return;
+  let s = segs.find(x => ts >= x.start && ts < x.end);
+  if (!s) { s = segs.find(x => x.start > ts) || segs[segs.length - 1]; ts = s.start; }
+  playSeg(s, ts - s.start, autoplay);
 }
-$("#pvClose").onclick = () => $("#player").close();
-$("#player").addEventListener("close", () => { $("#pv").pause(); $("#pv").removeAttribute("src"); $("#pv").load(); });
-$("#recCam").onchange = fillDates;
-$("#recDate").onchange = loadClips;
-
-/* ------------------------------ api ------------------------------ */
-async function api(path, body) {
-  const opts = { cache: "no-store", credentials: "same-origin" };
-  if (body !== undefined) {
-    opts.method = "POST";
-    opts.headers = { "Content-Type": "application/json", "X-Requested-With": "cctv" };
-    opts.body = JSON.stringify(body);
-  }
-  const r = await fetch(path, opts);
-  let data = null; try { data = await r.json(); } catch {}
-  if (r.status === 401 && path !== "/api/login" && path !== "/api/me") { showLogin(); throw new Error("login"); }
-  if (!r.ok) throw new Error((data && data.error) || "Error " + r.status);
-  return data;
+function playSeg(s, offset, autoplay = true) {
+  cur = s; selHour = Math.floor(relSec(s.start) / 3600);
+  pv.src = s.url; $("#pvDl").href = s.url;
+  pv.onloadedmetadata = () => { if (offset > 0.5) pv.currentTime = Math.min(offset, (pv.duration || 60) - 0.5); if (autoplay) pv.play().catch(() => {}); };
+  $("#pvInfo").textContent = `${CAMS.find(c => c.id === TL.cam)?.name || ""} · ${TL.date}${segHasMotion(s) ? " · ⚠ motion" : ""}`;
+  drawStrip(); drawCursor();
 }
+function nextSeg(dir) {
+  if (!cur) return; const i = TL.segments.findIndex(x => x.url === cur.url), n = TL.segments[i + dir];
+  if (n) playSeg(n, 0);
+}
+pv.addEventListener("timeupdate", drawCursor);
+pv.addEventListener("ended", () => {                 // continue with the next minute
+  const i = TL.segments.findIndex(x => x.url === cur.url), n = TL.segments[i + 1];
+  if (n && n.start - cur.end < 15) playSeg(n, 0);
+  else if (!cur.done) loadTimeline(TL.date, true).then(() => { const m = TL.segments.find(x => x.start > cur.start); if (m) playSeg(m, 0); });
+});
+$("#pvPrev").onclick = () => nextSeg(-1);
+$("#pvNext").onclick = () => nextSeg(1);
+(() => {
+  const day = $("#day"), hov = $("#hov");
+  const tsAt = e => { const r = day.getBoundingClientRect(); return TL.day_start + Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * 86400; };
+  day.addEventListener("pointermove", e => {
+    if (!TL) return; const ts = tsAt(e); hov.style.display = "block";
+    hov.style.left = (100 * relSec(ts) / 86400) + "%"; hov.textContent = hms(relSec(ts), false);
+  });
+  day.addEventListener("pointerleave", () => hov.style.display = "none");
+  day.addEventListener("click", e => {
+    if (!TL || !TL.segments.length) return;
+    const ts = tsAt(e), s = TL.segments.find(x => ts >= x.start - 30 && ts < x.end + 30);
+    if (!s) { hov.style.display = "block"; hov.textContent = t("gap"); return; }
+    playAt(ts, true);
+  });
+})();
+function camSelect() {
+  const sel = $("#recCam"), prev = sel.value || LS.get("cctv.recCam", ""); sel.innerHTML = "";
+  for (const c of CAMS) sel.add(new Option(c.name, c.id));
+  if (CAMS.find(c => c.id === prev)) sel.value = prev;
+}
+$("#recCam").onchange = () => { LS.set("cctv.recCam", $("#recCam").value); loadTimeline(""); };
+$("#recDate").onchange = () => loadTimeline($("#recDate").value);
+$("#dPrev").onclick = () => { const o = $("#recDate"); if (o.selectedIndex < o.options.length - 1) { o.selectedIndex++; loadTimeline(o.value); } };
+$("#dNext").onclick = () => { const o = $("#recDate"); if (o.selectedIndex > 0) { o.selectedIndex--; loadTimeline(o.value); } };
+setInterval(() => { if (curTab === "recs" && TL && TL.now - TL.day_start < 86400 && !document.hidden) loadTimeline(TL.date, true); }, 30000);
 
-/* ----------------------------- tabs ------------------------------ */
-let ME = null;
+/* =============================== tabs =============================== */
 function showTab(name) {
-  liveTab = name === "live";
+  curTab = name; liveTab = name === "live";
   for (const [id, n] of [["#tabLive", "live"], ["#tabRecs", "recs"], ["#tabUsers", "users"]]) $(id).classList.toggle("on", n === name);
   $("#liveWrap").style.display = liveTab ? "contents" : "none";
   $("#recs").style.display = name === "recs" ? "block" : "none";
   $("#users").style.display = name === "users" ? "block" : "none";
-  for (const t of tiles.values()) liveTab && !document.hidden ? t.start() : t.player.stop();
-  if (name === "recs") loadRecs().catch(() => { $("#clips").innerHTML = `<p class="muted">Recordings লোড হয়নি।</p>`; });
+  for (const T of tiles.values()) liveTab && !document.hidden ? T.start() : T.player.stop();
+  if (name !== "recs") pv.pause();
+  if (name === "recs") { camSelect(); loadTimeline(TL && TL.cam === $("#recCam").value ? TL.date : ""); }
   if (name === "users") { loadUsers(); loadSys(); loadDrive(false); loadCamCfg().then(() => { if (!camEditing && !$("#cName").value) editCam(null); }); }
 }
 $("#tabLive").onclick = () => showTab("live");
 $("#tabRecs").onclick = () => showTab("recs");
 $("#tabUsers").onclick = () => showTab("users");
 
-/* ------------------------- login / account ----------------------- */
-function showLogin(needsSetup) {
-  for (const t of tiles.values()) t.player.stop();
+/* ========================= login / account ========================= */
+let needsSetup = false;
+function showLogin(setup) {
+  if (setup !== undefined) needsSetup = setup;
+  for (const T of tiles.values()) T.player.stop();
   $("#login").style.display = "grid";
-  $("#loginHint").innerHTML = needsSetup
-    ? "এখনো কোনো account নেই।<br>Tinker Board-এ চালান: <code>sudo cctv-user add admin --admin</code>"
-    : "Login করুন";
+  $("#loginHint").innerHTML = needsSetup ? t("noAccount") : t("loginHint");
   setTimeout(() => $("#lu").focus(), 50);
 }
 $("#loginForm").onsubmit = async e => {
   e.preventDefault(); $("#loginErr").textContent = "";
-  try {
-    await api("/api/login", { user: $("#lu").value.trim(), pass: $("#lp").value });
-    location.reload();
-  } catch (err) { $("#loginErr").textContent = err.message; }
+  try { await api("/api/login", { user: $("#lu").value.trim(), pass: $("#lp").value }); location.reload(); }
+  catch (err) { $("#loginErr").textContent = err.message; }
 };
 $("#meBtn").onclick = e => { e.stopPropagation(); const m = $("#menu"); m.style.display = m.style.display === "block" ? "none" : "block"; };
 document.addEventListener("click", () => $("#menu").style.display = "none");
@@ -619,21 +875,174 @@ $("#mLogout").onclick = async () => { try { await api("/api/logout", {}); } catc
 $("#mPass").onclick = () => { $("#pwErr").textContent = ""; $("#pwForm").reset(); $("#pwDlg").showModal(); };
 $("#pwForm").onsubmit = async e => {
   e.preventDefault();
-  try { await api("/api/password", { old: $("#pwOld").value, new: $("#pwNew").value }); $("#pwDlg").close(); alert("Password বদলানো হয়েছে"); }
+  try { await api("/api/password", { old: $("#pwOld").value, new: $("#pwNew").value }); $("#pwDlg").close(); alert(t("passChanged")); }
   catch (err) { $("#pwErr").textContent = err.message; }
 };
 
-/* --------------------- clip delete (admin) ----------------------- */
-let openClipInfo = null;
-const _openClip = openClip;
-openClip = (f, cam, time, date) => { openClipInfo = { cam, date, name: f.name }; _openClip(f, cam, time, date); };
-$("#pvDel").onclick = async () => {
-  if (!openClipInfo || !confirm("এই clip মুছে ফেলবেন?")) return;
-  try { await api("/api/recordings/delete", openClipInfo); $("#player").close(); loadRecs(); }
-  catch (err) { alert(err.message); }
+/* ========================= cameras (admin) ========================= */
+let CAMCFG = { cameras: [], presets: {} }, camEditing = null;
+async function loadCamCfg() {
+  CAMCFG = await api("/api/admin/cameras");
+  const sel = $("#cType"), prev = sel.value; sel.innerHTML = "";
+  for (const [k, v] of Object.entries(CAMCFG.presets)) sel.add(new Option(v.label, k));
+  if (prev) sel.value = prev;
+  const box = $("#clist"); box.innerHTML = "";
+  if (!CAMCFG.cameras.length) box.innerHTML = `<p class="muted">${t("noCamsYet")}</p>`;
+  for (const c of CAMCFG.cameras) {
+    const row = document.createElement("div"); row.className = "urow";
+    const rs = c.recording || {};
+    const tag = !c.enabled ? `<span class="tag">${t("disabled")}</span>`
+      : rs.state === "ok" ? `<span class="tag rec">${t("recOk")}</span>`
+      : rs.state === "off" ? "" : rs.state === "starting" ? `<span class="tag">${t("recStarting")}</span>`
+      : `<span class="tag bad" title="${esc(rs.error || "")}">${t("recErr")}</span>`;
+    row.innerHTML = `<div><b>${esc(c.name)}</b>${tag}
+      <small>${esc(c.host || "custom URL")} · ${esc((CAMCFG.presets[c.type] || {}).label || c.type)} · ${t("modeShort")[c.mode] || c.mode}${rs.error && c.enabled ? " · " + esc(rs.error) : ""}</small></div>
+      <button class="btn ghost">Edit</button>`;
+    row.querySelector("button").onclick = () => { editCam(c); $("#cForm").scrollIntoView({ behavior: "smooth" }); };
+    box.appendChild(row);
+  }
+}
+function applyPreset(type, keepPaths) {
+  const p = CAMCFG.presets[type] || {};
+  $("#cHint").textContent = tr(p.hint || "");
+  if (keepPaths) return;
+  $("#cPort").value = p.port || "554"; $("#cUser").value = p.user ?? "admin";
+  $("#cMain").value = p.main_path || ""; $("#cSub").value = p.sub_path || "";
+  $("#cPtz").checked = p.ptz === "yes";
+}
+$("#cType").onchange = () => applyPreset($("#cType").value, false);
+function editCam(c) {
+  camEditing = c ? c.id : null;
+  $("#cFormTitle").textContent = c ? t("editCam", c.name) : t("newCam");
+  $("#cRes").innerHTML = ""; $("#cErr").textContent = ""; $("#cPick").innerHTML = "";
+  $("#cDel").style.display = c ? "" : "none";
+  $("#cType").value = c ? c.type : "imou";
+  applyPreset($("#cType").value, !!c);
+  if (c) {
+    $("#cName").value = c.name; $("#cHost").value = c.host; $("#cPort").value = c.port; $("#cUser").value = c.user;
+    $("#cMain").value = c.main_path; $("#cSub").value = c.sub_path; $("#cMode").value = c.mode;
+    $("#cRec").value = c.record_stream; $("#cThr").value = c.threshold; $("#cEn").checked = c.enabled;
+    $("#cAud").checked = c.audio !== false && c.audio !== "no"; $("#cPtz").checked = !!c.ptz && c.ptz !== "no";
+  } else {
+    $("#cName").value = ""; $("#cHost").value = ""; $("#cMode").value = "continuous"; $("#cRec").value = "main";
+    $("#cThr").value = 1500; $("#cEn").checked = true; $("#cAud").checked = true;
+  }
+  $("#cPass").value = ""; $("#cPass").placeholder = c && c.has_password ? t("keepPass") : "";
+}
+const camForm = () => ({ id: camEditing, name: $("#cName").value.trim(), type: $("#cType").value, host: $("#cHost").value.trim(),
+  port: $("#cPort").value.trim(), user: $("#cUser").value.trim(), password: $("#cPass").value,
+  main_path: $("#cMain").value.trim(), sub_path: $("#cSub").value.trim(), mode: $("#cMode").value,
+  record_stream: $("#cRec").value, threshold: $("#cThr").value, enabled: $("#cEn").checked,
+  audio: $("#cAud").checked, ptz: $("#cPtz").checked });
+$("#cNew").onclick = () => editCam(null);
+$("#cTest").onclick = async () => {
+  const b = $("#cTest"); b.disabled = true; $("#cErr").textContent = "";
+  $("#cRes").innerHTML = `<span class="muted">${t("testing")}</span>`;
+  try {
+    const r = await api("/api/admin/cameras/test", camForm());
+    const line = (label, x) => x.ok ? `<span class="ok">✅ ${label}: ${esc(x.codec)} ${x.width}×${x.height}${x.codec === "hevc" ? t("hevcNote") : ""}</span>`
+      : `<span class="no">❌ ${label}: ${esc(x.error)}</span>`;
+    $("#cRes").innerHTML = line("Main", r.main) + (r.sub.same ? "" : line("Sub", r.sub));
+  } catch (err) { $("#cRes").innerHTML = ""; $("#cErr").textContent = err.message; }
+  b.disabled = false;
+};
+$("#cOnvif").onclick = async () => {
+  const f = camForm(), box = $("#cPick"); $("#cErr").textContent = "";
+  if (!f.host) { $("#cErr").textContent = t("needIp"); return; }
+  box.innerHTML = `<span class="muted">${t("onvifSearching")}</span>`;
+  try {
+    const r = await api("/api/admin/cameras/onvif", { id: camEditing, host: f.host, user: f.user, password: f.password });
+    const st = r.streams;
+    box.innerHTML = `<span class="muted">${t("onvifFound", st.length, r.onvif_port)}</span>`;
+    $("#cMain").value = st[0].path; $("#cPort").value = st[0].port; $("#cSub").value = st.length > 1 ? st[st.length - 1].path : "";
+    for (const x of st) {
+      const b = document.createElement("button"); b.type = "button"; b.title = t("useAsSub");
+      b.textContent = `${x.name || "stream"} · ${x.width}×${x.height} ${x.encoding || ""} → ${x.path}`;
+      b.onclick = () => { $("#cSub").value = x.path; }; box.appendChild(b);
+    }
+  } catch (err) { box.innerHTML = ""; $("#cErr").textContent = err.message; }
+};
+async function waitApply(since) {
+  const ban = $("#applyBanner"); ban.style.display = "block"; ban.textContent = t("applying");
+  for (let i = 0; i < 30; i++) {
+    await new Promise(r => setTimeout(r, 1000));
+    let a = {}; try { a = await api("/api/admin/apply"); } catch {}
+    if (a.time && a.time >= Math.floor(since)) {
+      ban.textContent = a.ok ? t("applied") + tr(a.message) : "❌ " + tr(a.message);
+      setTimeout(() => ban.style.display = "none", 6000); await refreshCams(); return;
+    }
+  }
+  ban.textContent = t("applySlow");
+}
+async function refreshCams() {
+  try { CAMS = await api("/api/cameras"); } catch { return; }
+  for (const c of CAMS) if (!(c.id in enabled)) enabled[c.id] = true;
+  for (const [id, T] of tiles) { T.player.stop(); T.el.remove(); tiles.delete(id); }
+  $("#grid").innerHTML = ""; saveEnabled(); renderChips(); renderGrid();
+  if (!liveTab) for (const T of tiles.values()) T.player.stop();
+  loadCamCfg(); resetUserForm(null);
+}
+$("#cForm").onsubmit = async e => {
+  e.preventDefault(); $("#cErr").textContent = "";
+  try { const r = await api("/api/admin/cameras/save", camForm()); editCam(null); await loadCamCfg(); waitApply(r.requested); }
+  catch (err) { $("#cErr").textContent = err.message; }
+};
+$("#cDel").onclick = async () => {
+  if (!camEditing || !confirm(t("delCamQ"))) return;
+  try { const r = await api("/api/admin/cameras/delete", { id: camEditing }); editCam(null); await loadCamCfg(); waitApply(r.requested); }
+  catch (err) { $("#cErr").textContent = err.message; }
 };
 
-/* ------------------------- users (admin) ------------------------- */
+/* =========================== google drive =========================== */
+let DRV = null;
+function showDrive(d) {
+  DRV = d; const st = $("#drvState");
+  if (d.configured) {
+    let txt = t("drvOk", esc((d.remote || "").split(":")[1] || "CCTV"), esc(d.max_gb));
+    if (d.about && d.about.total) { const g = b => (b / 1024 ** 3).toFixed(1); txt += "<br>" + t("drvSpace", g(d.about.used), g(d.about.total), g(d.about.free ?? (d.about.total - d.about.used))); }
+    if (d.ok === false) txt += `<br><span style="color:var(--bad)">❌ ${esc(d.error)}</span>`;
+    st.innerHTML = txt;
+  } else st.textContent = t("drvNot");
+  $("#drvStart").textContent = d.configured ? t("drvOther") : t("drvConnect");
+  $("#drvCheck").style.display = $("#drvOff").style.display = d.configured ? "" : "none";
+}
+async function loadDrive(check) { try { showDrive(await api("/api/admin/drive" + (check ? "?check=1" : ""))); } catch (e) { $("#drvErr").textContent = e.message; } }
+$("#drvStart").onclick = async () => {
+  $("#drvErr").textContent = ""; $("#drvStart").disabled = true;
+  try { const r = await api("/api/admin/drive/start", {}); $("#drvGo").href = r.url; $("#drvSteps").style.display = "block"; $("#drvUrl").value = ""; }
+  catch (e) { $("#drvErr").textContent = e.message; }
+  $("#drvStart").disabled = false;
+};
+$("#drvFinish").onclick = async () => {
+  $("#drvErr").textContent = ""; const b = $("#drvFinish"); b.disabled = true; b.textContent = t("drvConnecting");
+  try { showDrive(await api("/api/admin/drive/finish", { url: $("#drvUrl").value })); $("#drvSteps").style.display = "none"; }
+  catch (e) { $("#drvErr").textContent = e.message; }
+  b.disabled = false; b.textContent = t("drvFinish");
+};
+$("#drvCheck").onclick = async () => { $("#drvState").textContent = t("drvTesting"); await loadDrive(true); };
+$("#drvOff").onclick = async () => { if (!confirm(t("drvOffQ"))) return; showDrive(await api("/api/admin/drive/disconnect", {})); };
+
+/* ============================== system ============================== */
+async function loadSys() {
+  let u = {}; try { u = await api("/api/admin/update"); } catch {}
+  $("#sysPub").innerHTML = u.public_url ? `${t("pubOn")}<a href="${esc(u.public_url)}" style="color:var(--blue)">${esc(u.public_url)}</a>` : t("pubOff");
+  const when = u.time ? new Date(u.time * 1000).toLocaleString() : "";
+  $("#sysVer").textContent = u.version ? `${u.version} · ${tr(u.message || "")}${when ? ` · ${t("checked")}: ${when}` : ""}` : t("noAutoUpd");
+  return u;
+}
+$("#sysUpd").onclick = async () => {
+  const b = $("#sysUpd"); b.disabled = true; b.textContent = t("checking");
+  const before = (await loadSys()).time || 0;
+  try { await api("/api/admin/update", {}); } catch (err) { alert(err.message); }
+  for (let i = 0; i < 90; i++) {
+    await new Promise(r => setTimeout(r, 2000));
+    let u; try { u = await api("/api/admin/update"); } catch { continue; }
+    if (u.time > before && u.state !== "updating") { if (u.state === "ok" && /Updated|Update হয়েছে/.test(u.message || "")) { location.reload(); return; } break; }
+  }
+  await loadSys(); b.disabled = false; b.textContent = t("checkUpdate");
+};
+
+/* =========================== users (admin) =========================== */
 let editing = null, formRole = "viewer";
 function setRole(r) {
   formRole = r;
@@ -642,17 +1051,16 @@ function setRole(r) {
 }
 $("#uRole").querySelectorAll("button").forEach(b => b.onclick = () => setRole(b.dataset.r));
 function resetUserForm(u) {
+  if (!ME || ME.role !== "admin") return;
   editing = u ? u.name : null;
-  $("#uFormTitle").textContent = u ? `Edit: ${u.name}` : "নতুন user";
+  $("#uFormTitle").textContent = u ? t("editUser", u.name) : t("newUser");
   $("#uName").value = u ? u.name : ""; $("#uName").disabled = !!u;
-  $("#uPass").value = ""; $("#uPassLbl").textContent = u ? "নতুন password (বদলাতে না চাইলে ফাঁকা রাখুন)" : "Password";
-  $("#uRecs").checked = u ? u.recordings : true;
+  $("#uPass").value = ""; $("#uPassLbl").textContent = u ? t("newPassOpt") : t("password");
+  $("#uRecs").checked = u ? u.recordings : true; $("#uPtz").checked = u ? !!u.ptz : false;
   const box = $("#uCams"); box.innerHTML = "";
   for (const c of CAMS) {
-    const l = document.createElement("label");
-    const allowed = !u || u.cameras === "*" || u.cameras.includes(c.id);
-    l.innerHTML = `<input type="checkbox" value="${c.id}" ${allowed ? "checked" : ""}> <span></span>`;
-    l.lastChild.textContent = c.name; box.appendChild(l);
+    const l = document.createElement("label"), ok = !u || u.cameras === "*" || u.cameras.includes(c.id);
+    l.innerHTML = `<input type="checkbox" value="${esc(c.id)}" ${ok ? "checked" : ""}> <span></span>`; l.lastChild.textContent = c.name; box.appendChild(l);
   }
   setRole(u ? u.role : "viewer"); $("#uErr").textContent = "";
 }
@@ -660,17 +1068,15 @@ async function loadUsers() {
   const list = await api("/api/users"), box = $("#ulist"); box.innerHTML = "";
   for (const u of list) {
     const row = document.createElement("div"); row.className = "urow";
-    const camsTxt = u.cameras === "*" ? "সব camera" : (u.cameras.map(id => (CAMS.find(c => c.id === id) || {}).name || id).join(", ") || "কোনো camera নেই");
+    const camsTxt = u.cameras === "*" ? t("allCams") : (u.cameras.map(id => (CAMS.find(c => c.id === id) || {}).name || id).join(", ") || t("noneCams"));
     row.innerHTML = `<div><b></b> <span class="role ${u.role}">${u.role}</span><small></small></div>
-      <div style="display:flex;gap:6px"><button class="btn ghost">Edit</button><button class="btn danger">Delete</button></div>`;
+      <div style="display:flex;gap:6px"><button class="btn ghost">Edit</button><button class="btn danger">${t("delete")}</button></div>`;
     row.querySelector("b").textContent = u.name;
-    row.querySelector("small").textContent = u.role === "admin" ? "সবকিছু দেখতে ও বদলাতে পারে" : `${camsTxt} · recordings: ${u.recordings ? "হ্যাঁ" : "না"}`;
+    row.querySelector("small").textContent = u.role === "admin" ? t("adminDesc")
+      : `${camsTxt} · recordings: ${u.recordings ? t("yes") : t("no")} · PTZ: ${u.ptz ? t("yes") : t("no")}`;
     const [eb, db] = row.querySelectorAll("button");
     eb.onclick = () => { resetUserForm(u); $("#uForm").scrollIntoView({ behavior: "smooth" }); };
-    db.onclick = async () => {
-      if (!confirm(`${u.name} মুছে ফেলবেন?`)) return;
-      try { await api("/api/users/delete", { name: u.name }); loadUsers(); } catch (err) { alert(err.message); }
-    };
+    db.onclick = async () => { if (!confirm(t("delUserQ", u.name))) return; try { await api("/api/users/delete", { name: u.name }); loadUsers(); } catch (err) { alert(err.message); } };
     box.appendChild(row);
   }
 }
@@ -678,215 +1084,40 @@ $("#uCancel").onclick = () => resetUserForm(null);
 $("#uForm").onsubmit = async e => {
   e.preventDefault(); $("#uErr").textContent = "";
   const cams = [...$("#uCams").querySelectorAll("input:checked")].map(i => i.value);
-  const body = { name: editing || $("#uName").value.trim(), role: formRole, recordings: $("#uRecs").checked,
+  const body = { name: editing || $("#uName").value.trim(), role: formRole, recordings: $("#uRecs").checked, ptz: $("#uPtz").checked,
     cameras: formRole === "admin" || cams.length === CAMS.length ? "*" : cams };
   if ($("#uPass").value) body.password = $("#uPass").value;
-  try {
-    await api("/api/users/save", body);
-    if (editing === ME.name) { location.reload(); return; }
-    resetUserForm(null); loadUsers();
-  } catch (err) { $("#uErr").textContent = err.message; }
+  try { await api("/api/users/save", body); if (editing === ME.name) { location.reload(); return; } resetUserForm(null); loadUsers(); }
+  catch (err) { $("#uErr").textContent = err.message; }
 };
 
-/* ------------------------ cameras (admin) ------------------------ */
-let CAMCFG = { cameras: [], presets: {} }, camEditing = null;
-const esc = t => String(t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-async function loadCamCfg() {
-  CAMCFG = await api("/api/admin/cameras");
-  const sel = $("#cType");
-  if (!sel.options.length) for (const [k, v] of Object.entries(CAMCFG.presets)) sel.add(new Option(v.label, k));
-  const box = $("#clist"); box.innerHTML = "";
-  if (!CAMCFG.cameras.length) box.innerHTML = `<p class="muted">এখনো কোনো camera নেই। নিচের form দিয়ে যোগ করুন।</p>`;
-  for (const c of CAMCFG.cameras) {
-    const row = document.createElement("div"); row.className = "urow";
-    const mode = { motion: "motion হলে record", continuous: "সারাক্ষণ record", off: "শুধু live" }[c.mode];
-    row.innerHTML = `<div><b>${esc(c.name)}</b>${c.enabled ? "" : '<span class="tag">বন্ধ</span>'}
-      <small>${esc(c.host || "custom URL")} · ${esc((CAMCFG.presets[c.type] || {}).label || c.type)} · ${mode}</small></div>
-      <button class="btn ghost">Edit</button>`;
-    row.querySelector("button").onclick = () => { editCam(c); $("#cForm").scrollIntoView({ behavior: "smooth" }); };
-    box.appendChild(row);
-  }
+/* ======================== re-render on language ======================== */
+function rerenderAll() {
+  for (const T of tiles.values()) T.sync();
+  if (!CAMS.length || !CAMS.some(c => enabled[c.id])) renderGrid();
+  refreshStatus();
+  if (curTab === "recs" && TL) { drawStrip(); drawEvents(); }
+  if (curTab === "users") { loadUsers(); loadSys(); if (DRV) showDrive(DRV); loadCamCfg(); $("#cFormTitle").textContent = camEditing ? t("editCam", $("#cName").value) : t("newCam"); resetUserForm(null); }
 }
-function applyPreset(type, keepPaths) {
-  const p = CAMCFG.presets[type] || {};
-  $("#cHint").textContent = p.hint || "";
-  if (keepPaths) return;
-  $("#cPort").value = p.port || "554"; $("#cUser").value = p.user ?? "admin";
-  $("#cMain").value = p.main_path || ""; $("#cSub").value = p.sub_path || "";
-}
-$("#cType").onchange = () => applyPreset($("#cType").value, false);
-function editCam(c) {
-  camEditing = c ? c.id : null;
-  $("#cFormTitle").textContent = c ? `Edit: ${c.name}` : "নতুন camera";
-  $("#cRes").innerHTML = ""; $("#cErr").textContent = ""; $("#cPick").innerHTML = "";
-  $("#cDel").style.display = c ? "" : "none";
-  $("#cType").value = c ? c.type : "imou";
-  applyPreset($("#cType").value, !!c);
-  if (c) {
-    $("#cName").value = c.name; $("#cHost").value = c.host; $("#cPort").value = c.port; $("#cUser").value = c.user;
-    $("#cMain").value = c.main_path; $("#cSub").value = c.sub_path;
-    $("#cMode").value = c.mode; $("#cRec").value = c.record_stream; $("#cThr").value = c.threshold; $("#cEn").checked = c.enabled;
-  } else {
-    $("#cName").value = ""; $("#cHost").value = ""; $("#cMode").value = "motion"; $("#cRec").value = "main";
-    $("#cThr").value = 1500; $("#cEn").checked = true;
-  }
-  $("#cPass").value = "";
-  $("#cPass").placeholder = c && c.has_password ? "আগেরটা রাখতে ফাঁকা রাখুন" : "";
-}
-function camForm() {
-  return { id: camEditing, name: $("#cName").value.trim(), type: $("#cType").value, host: $("#cHost").value.trim(),
-    port: $("#cPort").value.trim(), user: $("#cUser").value.trim(), password: $("#cPass").value,
-    main_path: $("#cMain").value.trim(), sub_path: $("#cSub").value.trim(), mode: $("#cMode").value,
-    record_stream: $("#cRec").value, threshold: $("#cThr").value, enabled: $("#cEn").checked };
-}
-$("#cNew").onclick = () => editCam(null);
-$("#cTest").onclick = async () => {
-  const b = $("#cTest"); b.disabled = true; $("#cErr").textContent = "";
-  $("#cRes").innerHTML = `<span class="muted">Camera-র সাথে কথা বলছি… (১৫ সেকেন্ড পর্যন্ত লাগতে পারে)</span>`;
-  try {
-    const r = await api("/api/admin/cameras/test", camForm());
-    const line = (label, x) => x.ok
-      ? `<span class="ok">✅ ${label}: ${esc(x.codec)} ${x.width}×${x.height}${x.codec === "hevc" ? " (H.265: phone-এ live না চললে camera-য় H.264 দিন)" : ""}</span>`
-      : `<span class="no">❌ ${label}: ${esc(x.error)}</span>`;
-    $("#cRes").innerHTML = line("Main", r.main) + (r.sub.same ? "" : line("Sub", r.sub));
-  } catch (err) { $("#cRes").innerHTML = ""; $("#cErr").textContent = err.message; }
-  b.disabled = false;
-};
-$("#cOnvif").onclick = async () => {
-  const f = camForm(), box = $("#cPick"); $("#cErr").textContent = "";
-  if (!f.host) { $("#cErr").textContent = "আগে IP দিন"; return; }
-  box.innerHTML = `<span class="muted">ONVIF খুঁজছি…</span>`;
-  try {
-    const r = await api("/api/admin/cameras/onvif", { id: camEditing, host: f.host, user: f.user, password: f.password });
-    const st = r.streams;
-    box.innerHTML = `<span class="muted">ONVIF port ${r.onvif_port}-এ ${st.length}টা stream পাওয়া গেছে। সবচেয়ে বড়টা main, ছোটটা sub হিসেবে বসানো হলো:</span>`;
-    $("#cMain").value = st[0].path; $("#cPort").value = st[0].port;
-    $("#cSub").value = st.length > 1 ? st[st.length - 1].path : "";
-    for (const x of st) {
-      const b = document.createElement("button"); b.type = "button";
-      b.textContent = `${x.name || "stream"} · ${x.width}×${x.height} ${x.encoding || ""} → ${x.path}`;
-      b.onclick = () => { $("#cSub").value = x.path; };
-      b.title = "এটাকে sub stream বানাতে চাপুন";
-      box.appendChild(b);
-    }
-  } catch (err) { box.innerHTML = ""; $("#cErr").textContent = err.message; }
-};
-async function waitApply(since) {
-  const ban = $("#applyBanner"); ban.style.display = "block"; ban.textContent = "⏳ নতুন setting চালু হচ্ছে…";
-  for (let i = 0; i < 30; i++) {
-    await new Promise(r => setTimeout(r, 1000));
-    let a = {}; try { a = await api("/api/admin/apply"); } catch {}
-    if (a.time && a.time >= Math.floor(since)) {
-      ban.textContent = a.ok ? "✅ হয়ে গেছে: " + a.message : "❌ " + a.message;
-      setTimeout(() => ban.style.display = "none", 6000);
-      await refreshCams(); return;
-    }
-  }
-  ban.textContent = "⚠️ এখনো চালু হয়নি। Tinker Board-এ 'sudo cctv-apply' চালিয়ে দেখুন।";
-}
-async function refreshCams() {
-  try { CAMS = await api("/api/cameras"); } catch { return; }
-  for (const c of CAMS) if (!(c.id in enabled)) enabled[c.id] = true;
-  for (const [id, t] of tiles) { t.player.stop(); t.el.remove(); tiles.delete(id); }   // rebuild with new names/streams
-  $("#grid").innerHTML = "";
-  saveEnabled(); renderChips(); renderGrid();
-  if (!liveTab) for (const t of tiles.values()) t.player.stop();
-  loadCamCfg(); if (ME.role === "admin") resetUserForm(null);
-}
-$("#cForm").onsubmit = async e => {
-  e.preventDefault(); $("#cErr").textContent = "";
-  try { const r = await api("/api/admin/cameras/save", camForm()); editCam(null); await loadCamCfg(); waitApply(r.requested); }
-  catch (err) { $("#cErr").textContent = err.message; }
-};
-$("#cDel").onclick = async () => {
-  if (!camEditing || !confirm("এই camera মুছে ফেলবেন? (পুরোনো recording থেকে যাবে)")) return;
-  try { const r = await api("/api/admin/cameras/delete", { id: camEditing }); editCam(null); await loadCamCfg(); waitApply(r.requested); }
-  catch (err) { $("#cErr").textContent = err.message; }
-};
 
-/* -------------------------- google drive -------------------------- */
-function showDrive(d) {
-  const st = $("#drvState");
-  if (d.configured) {
-    let txt = `✅ Connect করা আছে · folder: <b>${esc((d.remote || "").split(":")[1] || "CCTV")}</b> · সর্বোচ্চ ${esc(d.max_gb)} GB`;
-    if (d.about && d.about.total) {
-      const g = b => (b / 1024 ** 3).toFixed(1);
-      txt += `<br>Google account: ${g(d.about.used)} / ${g(d.about.total)} GB ব্যবহার হয়েছে, ${g(d.about.free ?? (d.about.total - d.about.used))} GB খালি`;
-    }
-    if (d.ok === false) txt += `<br><span style="color:var(--bad)">❌ ${esc(d.error)}</span>`;
-    st.innerHTML = txt;
-  } else st.textContent = "এখনো connect করা হয়নি।";
-  $("#drvStart").textContent = d.configured ? "অন্য account দিয়ে connect" : "Google দিয়ে connect";
-  $("#drvCheck").style.display = $("#drvOff").style.display = d.configured ? "" : "none";
-}
-async function loadDrive(check) {
-  try { showDrive(await api("/api/admin/drive" + (check ? "?check=1" : ""))); } catch (e) { $("#drvErr").textContent = e.message; }
-}
-$("#drvStart").onclick = async () => {
-  $("#drvErr").textContent = ""; $("#drvStart").disabled = true;
-  try {
-    const r = await api("/api/admin/drive/start", {});
-    $("#drvGo").href = r.url; $("#drvSteps").style.display = "block"; $("#drvUrl").value = "";
-  } catch (e) { $("#drvErr").textContent = e.message; }
-  $("#drvStart").disabled = false;
-};
-$("#drvFinish").onclick = async () => {
-  $("#drvErr").textContent = ""; const b = $("#drvFinish"); b.disabled = true; b.textContent = "Connect হচ্ছে…";
-  try { showDrive(await api("/api/admin/drive/finish", { url: $("#drvUrl").value })); $("#drvSteps").style.display = "none"; }
-  catch (e) { $("#drvErr").textContent = e.message; }
-  b.disabled = false; b.textContent = "Connect শেষ করুন";
-};
-$("#drvCheck").onclick = async () => { $("#drvState").textContent = "Test করছি…"; await loadDrive(true); };
-$("#drvOff").onclick = async () => {
-  if (!confirm("Google Drive disconnect করবেন? (Drive-এ থাকা clip মুছবে না)")) return;
-  showDrive(await api("/api/admin/drive/disconnect", {}));
-};
-
-/* ----------------------------- system ---------------------------- */
-async function loadSys() {
-  let u = {}; try { u = await api("/api/admin/update"); } catch {}
-  const when = u.time ? new Date(u.time * 1000).toLocaleString() : "";
-  $("#sysPub").innerHTML = u.public_url
-    ? `🌍 যেকোনো জায়গা থেকে: <a href="${esc(u.public_url)}" style="color:var(--blue)">${esc(u.public_url)}</a>`
-    : "🌍 বাইরে থেকে খোলার link চালু নেই (Tinker Board-এ: sudo cctv-funnel)";
-  $("#sysVer").textContent = u.version ? `${u.version} · ${u.message || ""}${when ? " · চেক: " + when : ""}`
-    : "Auto-update চালু নেই (GitHub থেকে install করলে চালু হবে)";
-  return u;
-}
-$("#sysUpd").onclick = async () => {
-  const b = $("#sysUpd"); b.disabled = true; b.textContent = "দেখছি…";
-  const before = (await loadSys()).time || 0;
-  try { await api("/api/admin/update", {}); } catch (err) { alert(err.message); }
-  for (let i = 0; i < 90; i++) {                 // the server restarts if there was an update
-    await new Promise(r => setTimeout(r, 2000));
-    let u; try { u = await api("/api/admin/update"); } catch { continue; }
-    if (u.time > before && u.state !== "updating") {
-      if (u.message === "Update হয়েছে") { location.reload(); return; }
-      break;
-    }
-  }
-  await loadSys(); b.disabled = false; b.textContent = "Update দেখুন";
-};
-
-/* ----------------------------- boot ------------------------------ */
+/* ================================ boot ================================ */
+applyLang();
 (async () => {
-  const r = await fetch("/api/me", { cache: "no-store" });
+  const r = await fetch("/api/me", { cache: "no-store", headers: { "X-Lang": LANG } });
   const me = await r.json().catch(() => ({}));
-  if (r.status === 401) { showLogin(me.needs_setup); return; }
+  if (r.status === 401) { showLogin(!!me.needs_setup); return; }
   ME = me;
+  if (!LS.get("cctv.lang", null) && me.lang && me.lang !== LANG) { LANG = me.lang; applyLang(); }
   $("#meName").textContent = me.name; $("#meRole").textContent = me.role; $("#meRole").className = "role " + me.role;
   if (!me.recordings) $("#tabRecs").style.display = "none";
-  if (me.role === "admin") { $("#tabUsers").style.display = ""; $("#pvDel").style.display = ""; }
+  if (me.role === "admin") $("#tabUsers").style.display = "";
   try { CAMS = await api("/api/cameras"); } catch { CAMS = []; }
-  if (!enabled) { enabled = {}; }
+  if (!enabled) enabled = {};
   for (const c of CAMS) if (!(c.id in enabled)) enabled[c.id] = true;
-  saveEnabled();
-  if (!CAMS.length) $("#grid").innerHTML = me.role === "admin"
-    ? `<div class="empty">কোনো camera নেই।<br>⚙️ Settings → Cameras থেকে যোগ করুন।</div>`
-    : `<div class="empty">আপনাকে কোনো camera দেখার অনুমতি দেওয়া হয়নি।</div>`;
-  else { renderChips(); renderGrid(); }
+  saveEnabled(); renderChips(); renderGrid();
   if (me.role === "admin") resetUserForm(null);
   refreshStatus(); setInterval(refreshStatus, 15000);
+  pollMotion(); setInterval(pollMotion, 3000);
 })();
 </script>
 </body>

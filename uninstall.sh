@@ -1,10 +1,11 @@
 #!/bin/bash
 # Remove the CCTV system. Recordings and /etc/cctv are kept unless --purge.
 set -u
-[ "$(id -u)" -eq 0 ] || { echo "sudo দিয়ে চালান"; exit 1; }
+[ "$(id -u)" -eq 0 ] || { echo "Run with sudo"; exit 1; }
 for u in cctv-go2rtc cctv-motion cctv-web cctv-storage.timer cctv-upload.timer cctv-drive-clean.timer cctv-apply.path cctv-update.timer cctv-update.path; do
   systemctl disable --now "$u" 2>/dev/null
 done
+systemctl disable --now cctv-recorder 2>/dev/null
 rm -f /etc/systemd/system/cctv-*.service /etc/systemd/system/cctv-*.timer /etc/systemd/system/cctv-*.path /etc/tmpfiles.d/cctv.conf
 systemctl daemon-reload
 for f in /opt/cctv/bin/cctv-*; do rm -f "/usr/local/bin/$(basename "$f")"; done
