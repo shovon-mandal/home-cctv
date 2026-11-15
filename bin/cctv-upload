@@ -84,8 +84,6 @@ def main():
         with open(STATE) as f:
             done = {ln.strip() for ln in f if ln.strip()}
     todo = [p for p in to_upload if p not in done]
-    if not todo:
-        return status("ok", "Drive has every motion clip", "Drive-এ সব motion clip আছে")
 
     keep_days = set(days)
     try:
@@ -96,59 +94,116 @@ def main():
                 on_board=len([p for p in to_upload if p.endswith(".mp4")]), recent=recent[:8])
     names = cctvrec.folder_names()                  # same folder names as on the SSD
     folder_of = lambda cam: names.get(cam, cam)
-    # one time: clips already on Drive under cam1/cam2 move to the camera-name folders (server-side, fast)
-    flag = os.path.join(os.path.dirname(STATE), ".drive-names-v1")
-    if not os.path.exists(flag):
-        for cid, n in names.items():
-            src = g["drive_remote"].rstrip("/") + "/" + cid
-            subprocess.run(["rclone", "move", src, g["drive_remote"].rstrip("/") + "/" + n, "--config", RCLONE_CONF,
-                            "--delete-empty-src-dirs", "--drive-server-side-across-configs"],
-                           capture_output=True, text=True, timeout=900)
-            subprocess.run(["rclone", "rmdir", src, "--config", RCLONE_CONF], capture_output=True, timeout=120)
+    remote = g["drive_remote"].rstrip("/")
+    rc = lambda *a, t=300: subprocess.run(["rclone", "--config", RCLONE_CONF, *a], capture_output=True, text=True, timeout=t)
+
+    # 1. clips still on Drive under old cam1/cam2 folders move to the camera-name folders (server-side, fast)
+    try:
+        top = {ln.strip().rstrip("/") for ln in rc("lsf", "--dirs-only", remote + "/", t=120).stdout.splitlines()}
+    except subprocess.TimeoutExpired:
+        top = set()
+    for cid, n in names.items():
+        if cid in top and n != cid:
+            status("busy", "Moving old Drive folders to camera names…", "Drive-এর পুরনো folder camera-র নামে সরানো হচ্ছে…")
+            try:
+                rc("move", f"{remote}/{cid}", f"{remote}/{n}", "--delete-empty-src-dirs", t=1800)
+                rc("rmdir", f"{remote}/{cid}", t=120)
+            except subprocess.TimeoutExpired:
+                pass
+            top.add(n)
+
+    # 2. anything already on Drive (same size) counts as uploaded: nothing is sent twice
+    local_size = {}
+    for p in todo:
         try:
-            open(flag, "w").close()
+            local_size[p] = os.path.getsize(os.path.join(root, p))
         except OSError:
-            pass
+            local_size[p] = -1
+    for folder in {p.split("/")[0] for p in todo}:
+        df = folder_of(folder)
+        if df not in top:
+            continue
+        try:
+            out = rc("lsf", "-R", "--files-only", "--format", "ps", "--separator", "|", f"{remote}/{df}", t=300).stdout
+        except subprocess.TimeoutExpired:
+            continue
+        have = {}
+        for ln in out.splitlines():
+            if "|" in ln:
+                rel, size = ln.rsplit("|", 1)
+                have[rel] = int(size) if size.isdigit() else -2
+        for p in todo:
+            if p.split("/")[0] == folder and have.get(p.split("/", 1)[1]) == local_size.get(p):
+                done.add(p)
+    todo = [p for p in todo if p not in done]
 
     def save_state():
-        keep = {p for p in done if len(p.split("/")) > 1 and p.split("/")[1] in keep_days}
+        try:                                    # merge: never drop what another run/rename recorded
+            with open(STATE) as f:
+                disk = {ln.strip() for ln in f if ln.strip()}
+        except OSError:
+            disk = set()
+        keep = {p for p in done | disk if len(p.split("/")) > 1 and p.split("/")[1] in keep_days}
         with open(STATE + ".tmp", "w") as f:
             f.write("\n".join(sorted(keep)) + "\n")
         os.replace(STATE + ".tmp", STATE)
 
-    # batches of a few clips (+ their snapshots): progress is saved after each batch, so a slow
-    # or broken connection never has to start the whole backlog again
+    save_state()
+    if not todo:
+        INFO.update(pending=0)
+        return status("ok", "Drive has every motion clip", "Drive-এ সব motion clip আছে")
+
+    # 3. upload in batches of a few clips (+ snapshots); progress saved after each batch, and live
+    #    speed/percent from rclone every few seconds, so the dashboard shows it is really moving
     clips = sorted(p for p in todo if p.endswith(".mp4"))
     extras = [p for p in todo if not p.endswith(".mp4")]
     total, sent, BATCH = len(clips), 0, 5
     batches = [clips[i:i + BATCH] for i in range(0, total, BATCH)] or [[]]
     batches[0] = batches[0] + extras
+    STAT_RE = re.compile(r"([\d.]+ ?\w*B) / ([\d.]+ ?\w*B), (\d+)%, ([\d.]+ ?\w*B/s)(?:, ETA (\S+))?")
+
+    def live(extra_en="", extra_bn=""):
+        INFO.update(sent=sent, total=total, pending=total - sent)
+        status("busy", f"Uploading motion clips: {sent}/{total} done{extra_en}…",
+               f"Motion clip upload হচ্ছে: {total}টার মধ্যে {sent}টা হয়েছে{extra_bn}…")
+
     for batch in batches:
-        INFO.update(sent=sent, total=total)
-        status("busy", f"Uploading motion clips: {sent}/{total} done…", f"Motion clip upload হচ্ছে: {total}টার মধ্যে {sent}টা হয়েছে…")
-        r = None
+        live()
+        ok = True
         by_cam = {}
         for p in batch:
             cam, _, rest = p.partition("/")
             by_cam.setdefault(cam, []).append(rest)
-        for cam, files in by_cam.items():               # Drive folder = camera name, not cam1/cam2
+        for cam, files in by_cam.items():               # Drive folder = camera name
             with tempfile.NamedTemporaryFile("w", delete=False, suffix=".txt") as lst:
                 lst.write("\n".join(files) + "\n")
+            err_tail = []
             try:
-                r = subprocess.run(["nice", "-n", "15", "rclone", "copy", os.path.join(root, cam) + "/",
-                                    g["drive_remote"].rstrip("/") + "/" + folder_of(cam),
-                                    "--config", RCLONE_CONF, "--files-from", lst.name, "--no-traverse",
-                                    "--transfers", "2", "--bwlimit", g["drive_bwlimit"], "--retries", "2"],
-                                   capture_output=True, text=True, timeout=1800)
-            except subprocess.TimeoutExpired:
-                r = None
+                proc = subprocess.Popen(["nice", "-n", "15", "rclone", "copy", os.path.join(root, cam) + "/",
+                                         f"{remote}/{folder_of(cam)}", "--config", RCLONE_CONF,
+                                         "--files-from", lst.name, "--no-traverse", "--transfers", "2",
+                                         "--bwlimit", g["drive_bwlimit"], "--retries", "2",
+                                         "--stats", "5s", "--stats-one-line", "--stats-log-level", "NOTICE"],
+                                        stderr=subprocess.PIPE, stdout=subprocess.DEVNULL, text=True)
+                start = time.time()
+                for line in proc.stderr:
+                    m = STAT_RE.search(line)
+                    if m:
+                        INFO.update(batch_pct=int(m.group(3)), speed=m.group(4), eta=m.group(5))
+                        live(f" · {m.group(4)}", f" · {m.group(4)}")
+                    elif line.strip():
+                        err_tail = (err_tail + [line.strip()])[-3:]
+                    if time.time() - start > 1800:
+                        proc.kill()
+                rc_code = proc.wait()
             finally:
                 os.unlink(lst.name)
-            if r is None or r.returncode != 0:
+            if rc_code != 0:
+                print("\n".join(err_tail))
+                ok = False
                 break
-        if r is None or r.returncode != 0:
-            if r is not None:
-                print(r.stderr[-800:])
+        INFO.pop("batch_pct", None)
+        if not ok:
             save_state()
             return status("error", f"Upload stopped at {sent}/{total}: check internet / Drive (retries every minute)",
                           f"{total}টার মধ্যে {sent}টা upload হয়ে থেমেছে: internet বা Drive দেখুন (প্রতি মিনিটে আবার চেষ্টা করবে)")
@@ -158,11 +213,8 @@ def main():
         for p in batch:
             if p.endswith(".mp4"):
                 cam, day, f = (p.split("/") + ["", ""])[:3]
-                try:
-                    size = os.path.getsize(os.path.join(root, p))
-                except OSError:
-                    size = 0
-                recent.insert(0, {"cam": folder_of(cam), "day": day, "file": f, "size": size, "t": int(time.time())})
+                recent.insert(0, {"cam": folder_of(cam), "day": day, "file": f, "size": max(0, local_size.get(p, 0)),
+                                  "t": int(time.time())})
         recent = recent[:20]
         try:
             with open(LOG + ".tmp", "w") as f:

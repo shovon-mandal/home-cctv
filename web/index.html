@@ -582,6 +582,7 @@ const I18N = {
   drvOpen: ["Open Google Drive", "Google Drive খুলুন"], drvProg: ["{0} of {1} clips uploaded", "{1}টার মধ্যে {0}টা upload হয়েছে"],
   drvUsage: ["{0} clips · {1} of {2} used · kept {3} days", "{0}টা clip · {2}-এর মধ্যে {1} ব্যবহার · {3} দিন রাখা হয়"],
   drvUsageNone: ["Counting what is on Drive… (within 15 min)", "Drive-এ কী আছে গোনা হচ্ছে… (১৫ মিনিটের মধ্যে)"],
+  drvNow5: ["current batch {0}%", "এখনকার ভাগ {0}%"],
   drvPending: ["Waiting to upload: {0} clips", "Upload বাকি: {0}টা clip"], drvNoRecent: ["Nothing uploaded yet.", "এখনো কিছু upload হয়নি।"],
   // picture
   picture: ["Picture quality", "ছবির quality"], picLoading: ["Asking the camera…", "Camera-র কাছ থেকে আনা হচ্ছে…"],
@@ -862,7 +863,7 @@ async function refreshStatus() {
     else setPill("#stStorage", "bad", t("noStorage"));
     const up = s.upload || {}, ago = up.time ? Math.round((s.time - up.time) / 60) : null;
     LAST_UP = { up, now: s.time };
-    const short = up.state === "busy" && up.total ? `⬆ ${up.sent || 0}/${up.total} ${t("clips")}` : up.message ? tr(up.message) : t("waiting");
+    const short = up.state === "busy" && up.total ? `⬆ ${up.sent || 0}/${up.total} ${t("clips")}${up.speed ? " · " + up.speed : ""}` : up.message ? tr(up.message) : t("waiting");
     setPill("#stDrive", { ok: "ok", idle: "ok", busy: "warn", off: "", error: "bad" }[up.state] ?? "",
       `☁️ Drive · ${short}${ago > 0 ? ` · ${ago} ${t("minAgo")}` : ""}`);
     if ($("#drvDlg").open) showDriveDlg();
@@ -1315,8 +1316,10 @@ function showDriveDlg() {
   const busy = up.state === "busy" && up.total;
   $("#drvProg").style.display = busy ? "" : "none";
   if (busy) {
-    $("#drvBar").style.width = Math.round(100 * (up.sent || 0) / up.total) + "%";
-    $("#drvProgTxt").textContent = t("drvProg", up.sent || 0, up.total);
+    const part = up.batch_pct != null ? Math.min(5, up.total - (up.sent || 0)) * up.batch_pct / 100 : 0;
+    $("#drvBar").style.width = Math.min(100, 100 * ((up.sent || 0) + part) / up.total).toFixed(1) + "%";
+    $("#drvProgTxt").textContent = t("drvProg", up.sent || 0, up.total) +
+      (up.speed ? ` · ⚡ ${up.speed}` : "") + (up.batch_pct != null ? ` · ${t("drvNow5", up.batch_pct)}` : "");
   }
   const u = up.usage;
   let txt = u ? t("drvUsage", u.clips, gb(u.bytes), gb(u.cap), u.keep_days) +
