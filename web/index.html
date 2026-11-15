@@ -422,8 +422,6 @@
     <h2>🎛️ <span data-t="picture"></span>: <span id="picCam"></span></h2>
     <div id="picLoad" class="muted" style="margin:8px 0"></div>
     <div id="picBody" style="display:none">
-      <div id="picIrRow"><label class="f" data-t="nightMode"></label>
-        <select id="picIr"><option value="AUTO" data-t="irAuto"></option><option value="OFF" data-t="irOff"></option><option value="ON" data-t="irOn"></option></select></div>
       <div id="picWdrRow"><label class="f" data-t="hdr"></label>
         <select id="picWdr"><option value="ON" data-t="on"></option><option value="OFF" data-t="off"></option></select></div>
       <div id="picBrRow"><label class="f"><span data-t="brightness"></span>: <b id="picBrV"></b></label><input type="range" id="picBr" style="width:100%"></div>
@@ -435,7 +433,6 @@
         <div><input type="number" id="picBit" min="256" step="256" placeholder="kbps"></div>
       </div>
       <div class="hint" id="picEncHint" style="color:var(--muted)"></div>
-      <div class="hint" style="color:var(--muted);margin-top:8px" data-t="colorNightHint"></div>
     </div>
     <div class="btnrow">
       <button class="btn" type="submit" id="picSave" data-t="save"></button>
@@ -562,16 +559,12 @@ const I18N = {
   drvOffQ: ["Disconnect Google Drive? (clips already on Drive stay)", "Google Drive disconnect করবেন? (Drive-এর clip মুছবে না)"],
   drvTesting: ["Testing…", "Test করছি…"],
   // picture
-  picture: ["Picture settings", "ছবির setting"], picLoading: ["Asking the camera…", "Camera-র কাছ থেকে আনা হচ্ছে…"],
-  nightMode: ["Night mode", "Night mode"], irAuto: ["Auto (color by day, black & white IR at night)", "Auto (দিনে রঙিন, রাতে সাদা-কালো IR)"],
-  irOff: ["Night vision always (black & white, IR on)", "সবসময় night vision (সাদা-কালো, IR চালু)"],
-  irOn: ["Color always (IR off; at night needs light)", "সবসময় রঙিন (IR বন্ধ; রাতে আলো লাগবে)"],
+  picture: ["Picture quality", "ছবির quality"], picLoading: ["Asking the camera…", "Camera-র কাছ থেকে আনা হচ্ছে…"],
   hdr: ["HDR / WDR (bright sky + dark areas)", "HDR / WDR (উজ্জ্বল আকাশ + অন্ধকার জায়গা)"], on: ["On", "চালু"], off: ["Off", "বন্ধ"],
   brightness: ["Brightness", "উজ্জ্বলতা"], colorSat: ["Color", "রঙ"], mainStream: ["Main stream (MAX quality)", "Main stream (MAX quality)"], now: ["Now", "এখন"],
   encHint: ["Highest this camera offers: {0}, up to {1} kbps. Higher bitrate = sharper picture, more SSD space.", "এই camera সর্বোচ্চ দিতে পারে: {0}, {1} kbps পর্যন্ত। Bitrate বেশি = ছবি বেশি পরিষ্কার, SSD-তে জায়গা বেশি লাগে।"],
   encApp: ["This camera sends H.265: resolution/bitrate can only be changed in its own app (it is usually already at max).", "এই camera H.265 পাঠায়: resolution/bitrate শুধু তার নিজের app-এ বদলানো যায় (সাধারণত আগে থেকেই max-এ থাকে)।"],
-  colorNightHint: ["Color night vision with the camera's own spotlight (Imou \"Full color\" / Meari \"Color night\") can only be switched in the camera's app: ONVIF has no control for the spotlight.", "Camera-র নিজের light জ্বালিয়ে রঙিন night vision (Imou-তে \"Full color\", Meari-তে \"Color night\") শুধু camera-র app থেকে চালু করা যায়। ONVIF দিয়ে light চালু করা যায় না।"],
-  noImaging: ["This camera does not offer night mode / HDR over ONVIF: use its own app for those.", "এই camera ONVIF দিয়ে night mode / HDR বদলাতে দেয় না: এগুলো camera-র app থেকে করুন।"],
+  noImaging: ["This camera does not offer HDR / brightness over ONVIF.", "এই camera ONVIF দিয়ে HDR / উজ্জ্বলতা বদলাতে দেয় না।"],
   picSaved: ["✅ Saved on the camera.", "✅ Camera-য় save হয়েছে।"], saving: ["Saving…", "Save হচ্ছে…"],
   qualityTip: ["SD = light, MAX = the camera's full resolution", "SD = হালকা, MAX = camera-র পুরো resolution"],
   // storage limits
@@ -1303,9 +1296,6 @@ async function openPicture(c) {
 function showPicture(d) {
   PIC.d = d; $("#picLoad").textContent = ""; $("#picBody").style.display = ""; $("#picSave").disabled = false;
   const show = (id, ok) => { $(id).style.display = ok ? "" : "none"; };
-  show("#picIrRow", d.imaging && d.ir_modes && d.ir_modes.length);
-  if (d.ir_modes) for (const o of $("#picIr").options) o.hidden = !d.ir_modes.includes(o.value);
-  if (d.ir) $("#picIr").value = d.ir;
   show("#picWdrRow", d.imaging && d.wdr_modes && d.wdr_modes.length); if (d.wdr) $("#picWdr").value = d.wdr;
   const slider = (row, inp, val, v, rng) => {
     const ok = d.imaging && v !== null && v !== undefined && rng && rng[0] !== null && rng[1] !== null; show(row, ok);
@@ -1331,7 +1321,6 @@ $("#picForm").onsubmit = async ev => {
   ev.preventDefault(); const d = PIC.d, m = $("#picMsg"); m.style.color = "var(--bad)"; m.textContent = t("saving");
   const body = { cam: PIC.cam.id };
   if (d.imaging) {
-    if ($("#picIrRow").style.display !== "none" && $("#picIr").value !== d.ir) body.ir = $("#picIr").value;
     if ($("#picWdrRow").style.display !== "none" && $("#picWdr").value !== d.wdr) body.wdr = $("#picWdr").value;
     if ($("#picBrRow").style.display !== "none" && +$("#picBr").value !== d.brightness) body.brightness = $("#picBr").value;
     if ($("#picSatRow").style.display !== "none" && +$("#picSat").value !== d.saturation) body.saturation = $("#picSat").value;

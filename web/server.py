@@ -736,13 +736,12 @@ class Handler(BaseHTTPRequestHandler):
             if body is None:
                 return self.send_json(onvif.get_picture(c["host"], c["user"], c["password"], port))
             num = lambda k: float(body[k]) if body.get(k) not in (None, "") else None
-            ir = body.get("ir") if body.get("ir") in ("AUTO", "ON", "OFF") else None
             wdr = body.get("wdr") if body.get("wdr") in ("ON", "OFF") else None
             w = h = None
             if body.get("resolution"):
                 w, h = (int(v) for v in str(body["resolution"]).lower().split("x"))
             br = int(body["bitrate"]) if str(body.get("bitrate", "")).isdigit() else None
-            onvif.set_picture(c["host"], c["user"], c["password"], port, ir=ir, wdr=wdr,
+            onvif.set_picture(c["host"], c["user"], c["password"], port, wdr=wdr,
                               brightness=num("brightness"), saturation=num("saturation"), width=w, height=h, bitrate=br)
             return self.send_json(onvif.get_picture(c["host"], c["user"], c["password"], port))
         except onvif.OnvifError as e:
