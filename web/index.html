@@ -304,10 +304,9 @@
           <select id="cRec"><option value="main" data-t="qMain"></option><option value="sub" data-t="qSub"></option></select></div>
       </div>
       <div class="grid2">
-        <div><label class="f" data-t="sensitivity"></label><select id="cThr">
-          <option value="120" data-t="sensMax"></option><option value="250" data-t="sensHigh"></option>
-          <option value="400" data-t="sensVHigh"></option><option value="1000" data-t="sensMed"></option>
-          <option value="2500" data-t="sensLow"></option></select></div>
+        <div><label class="f"><span data-t="sensitivity"></span>: <b id="cThrTxt"></b></label>
+          <input type="range" id="cThrLvl" min="1" max="10" step="1" style="width:100%">
+          <input type="hidden" id="cThr"></div>
         <div><label class="f" data-t="options"></label>
           <div class="checks" style="margin-top:4px">
             <label><input type="checkbox" id="cEn" checked> <span data-t="enabled"></span></label>
@@ -435,6 +434,20 @@
     </div>
   </div>
 </dialog>
+<dialog id="sensDlg">
+  <form class="card" id="sensForm" style="width:min(420px,92vw)">
+    <h2>🎯 <span data-t="sensitivity"></span>: <span id="sensCam"></span></h2>
+    <p style="margin:10px 0 4px"><b id="sensTxt"></b></p>
+    <input type="range" id="sensLvl" min="1" max="10" step="1" style="width:100%">
+    <div style="display:flex;justify-content:space-between" class="muted"><span data-t="sensLess"></span><span data-t="sensMore"></span></div>
+    <p class="hint" style="color:var(--muted);margin-top:8px" data-t="sensHint"></p>
+    <div class="btnrow">
+      <button class="btn" type="submit" data-t="save"></button>
+      <button class="btn ghost" type="button" onclick="this.closest('dialog').close()" data-t="close"></button>
+    </div>
+    <div class="err" id="sensMsg"></div>
+  </form>
+</dialog>
 <dialog id="picDlg">
   <form class="card" id="picForm" style="width:min(440px,92vw)">
     <h2>🎛️ <span data-t="picture"></span>: <span id="picCam"></span></h2>
@@ -549,7 +562,10 @@ const I18N = {
   sensitivity: ["Motion sensitivity", "Motion sensitivity"],
   sensMax: ["Maximum (every tiny movement; more false alarms)", "সর্বোচ্চ (একদম সামান্য নড়াচড়াও; ভুল alarm বেশি)"],
   sensHigh: ["Very high: people far away (recommended)", "খুব বেশি: দূরের মানুষও (recommended)"],
-  sensVHigh: ["High", "বেশি"],
+  sensVHigh: ["High", "বেশি"], sensVVHigh: ["Very high (small movement too)", "অনেক বেশি (ছোট নড়াচড়াও)"],
+  sensLess: ["Less (only big movement)", "কম (শুধু বড় নড়াচড়া)"], sensMore: ["More (tiny movement)", "বেশি (সামান্য নড়াচড়াও)"],
+  sensHint: ["Too many false clips (leaves, insects, shadows)? Move left. Missing people or lights? Move right. Applies within a few seconds.", "পাতা, পোকা, ছায়ার জন্য বেশি ভুল clip হলে বামে সরান। মানুষ বা light জ্বলা ধরা না পড়লে ডানে সরান। কয়েক সেকেন্ডে চালু হবে।"],
+  sensSaved: ["✅ Saved", "✅ Save হয়েছে"],
   sensMed: ["Medium", "মাঝারি"], sensLow: ["Low (only big movement)", "কম (শুধু বড় নড়াচড়া)"],
   options: ["Options", "Options"], enabled: ["Enabled", "চালু"], sound: ["Sound", "শব্দ"], ptzCap: ["Pan/tilt (PTZ)", "ঘোরানো যায় (PTZ)"],
   testing: ["Talking to the camera… (up to 15 s)", "Camera-র সাথে কথা বলছি… (১৫ সেকেন্ড পর্যন্ত)"],
@@ -776,7 +792,7 @@ function makeTile(c) {
     <div class="label"><span class="dot"></span><span class="nm"></span></div>
     <div class="mbadge"></div>
     <div class="tools"><button class="snd" title="">🔇</button><button class="pz" style="display:none">🎮</button>
-      <button class="pic" style="display:none">🎛️</button><button class="q">SD</button><button class="fs">⛶</button></div>
+      <button class="sens" style="display:none">🎯</button><button class="pic" style="display:none">🎛️</button><button class="q">SD</button><button class="fs">⛶</button></div>
     <div class="msg"></div>
     <div class="ptz">
       <span class="c"></span><button data-x="0" data-y="1">▲</button><span class="c"></span>
@@ -799,6 +815,8 @@ function makeTile(c) {
   if (ME && ME.role === "admin") {
     const pc = el.querySelector(".pic"); pc.style.display = ""; pc.title = t("picture");
     pc.onclick = e => { e.stopPropagation(); openPicture(c); };
+    const sb = el.querySelector(".sens"); sb.style.display = ""; sb.title = t("sensitivity");
+    sb.onclick = e => { e.stopPropagation(); openSens(c); };
   }
   T.start = () => T.player.play(T.hd ? c.id : c.id + "_sub", T.audio);
   // MAX is H.265 on some cameras (Imou): browsers without H.265 support get SD instead of an error
@@ -1198,11 +1216,18 @@ function editCam(c) {
   }
   $("#cPass").value = ""; $("#cPass").placeholder = c && c.has_password ? t("keepPass") : "";
 }
-function setThr(v) {                                   // keep a custom value from cameras.conf selectable
-  const sel = $("#cThr"); sel.querySelectorAll("option.cust").forEach(o => o.remove());
-  if (![...sel.options].some(o => o.value === String(v))) { const o = new Option(`Custom (${v})`, String(v)); o.className = "cust"; sel.add(o); }
-  sel.value = String(v);
+/* motion sensitivity: level 1 (only big movement) .. 10 (tiny movement), log scale over the
+ * number of changed pixels on the sub stream: 1 -> 5000 px, 10 -> 100 px */
+const lvlToThr = l => Math.round(5000 * Math.pow(100 / 5000, (l - 1) / 9));
+const thrToLvl = v => Math.min(10, Math.max(1, Math.round(1 + 9 * Math.log(Math.max(20, +v || 250) / 5000) / Math.log(100 / 5000))));
+function sensText(l) {
+  const k = l >= 10 ? "sensMax" : l >= 9 ? "sensVVHigh" : l >= 8 ? "sensHigh" : l >= 6 ? "sensVHigh" : l >= 4 ? "sensMed" : "sensLow";
+  return `${l}/10 · ${t(k)}`;
 }
+function setThr(v) {
+  const l = thrToLvl(v); $("#cThrLvl").value = l; $("#cThr").value = String(v); $("#cThrTxt").textContent = sensText(l);
+}
+$("#cThrLvl").oninput = () => { const l = +$("#cThrLvl").value; $("#cThr").value = String(lvlToThr(l)); $("#cThrTxt").textContent = sensText(l); };
 const camForm = () => ({ id: camEditing, name: $("#cName").value.trim(), type: $("#cType").value, host: $("#cHost").value.trim(),
   port: $("#cPort").value.trim(), user: $("#cUser").value.trim(), password: $("#cPass").value,
   main_path: $("#cMain").value.trim(), sub_path: $("#cSub").value.trim(), mode: $("#cMode").value,
@@ -1356,6 +1381,28 @@ function showDriveDlg() {
 $("#stDrive").onclick = () => { showDriveDlg(); $("#drvDlg").showModal(); };
 $("#ejBtn").onclick = () => { if (confirm(t("ejectQ"))) ssdAction("eject"); };
 $("#atBtn").onclick = () => ssdAction("attach");
+
+/* ========================= motion sensitivity ========================= */
+let SENS = null;
+async function openSens(c) {
+  $("#sensMsg").textContent = ""; $("#sensCam").textContent = c.name;
+  try { if (!CAMCFG.cameras.length) await loadCamCfg(); } catch {}
+  const cfg = CAMCFG.cameras.find(x => x.id === c.id);
+  SENS = { id: c.id, thr: cfg ? cfg.threshold : 250 };
+  $("#sensLvl").value = thrToLvl(SENS.thr); $("#sensTxt").textContent = sensText(+$("#sensLvl").value);
+  $("#sensDlg").showModal();
+}
+$("#sensLvl").oninput = () => { $("#sensTxt").textContent = sensText(+$("#sensLvl").value); };
+$("#sensForm").onsubmit = async e => {
+  e.preventDefault(); const m = $("#sensMsg"); m.style.color = "var(--bad)"; m.textContent = "";
+  try {
+    const thr = lvlToThr(+$("#sensLvl").value);
+    const r = await api("/api/admin/cameras/motion", { id: SENS.id, threshold: thr });
+    m.style.color = "var(--accent)"; m.textContent = t("sensSaved");
+    const cfg = CAMCFG.cameras.find(x => x.id === SENS.id); if (cfg) cfg.threshold = String(thr);
+    waitApply(r.requested); setTimeout(() => $("#sensDlg").close(), 1200);
+  } catch (err) { m.textContent = err.message; }
+};
 
 /* ======================= picture (night / HDR) ======================= */
 function resLabel(w, h) {

@@ -544,6 +544,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.picture(None, body)
             if p == "/api/admin/cameras/save":
                 return self.cam_save(body)
+            if p == "/api/admin/cameras/motion":
+                return self.cam_motion(body)
             if p == "/api/admin/cameras/delete":
                 return self.cam_delete(body)
             if p == "/api/admin/cameras/test":
@@ -682,6 +684,22 @@ class Handler(BaseHTTPRequestHandler):
         cctvconf.save_cameras(new)
         self._request_apply()
         self.send_json({"ok": True, "id": cid, "name": c["name"], "requested": time.time()})
+
+    def cam_motion(self, body):
+        """Change only the motion threshold of one camera."""
+        cams, by_id = self._cams_by_id()
+        cid = str(body.get("id") or "")
+        if cid not in by_id:
+            return self.send_error_json(404, "No such camera || camera নেই")
+        try:
+            thr = int(body.get("threshold"))
+        except (TypeError, ValueError):
+            thr = 0
+        if not 20 <= thr <= 50000:
+            raise ValueError("Sensitivity out of range || sensitivity ঠিক নেই")
+        cctvconf.save_cameras([dict(x, threshold=str(thr)) if x["id"] == cid else x for x in cams])
+        self._request_apply()
+        self.send_json({"ok": True, "requested": time.time()})
 
     def cam_delete(self, body):
         cams, by_id = self._cams_by_id()
