@@ -189,7 +189,7 @@ def drive_status(check=False):
     res = {"configured": configured, "remote": g.get("drive_remote"), "max_gb": g.get("drive_max_gb")}
     if configured and check:
         base = ["rclone", "--config", RCLONE_CONF]
-        r = subprocess.run(base + ["mkdir", general.get("drive_remote", "gdrive:CCTV")], capture_output=True, text=True, timeout=60)
+        r = subprocess.run(base + ["mkdir", g.get("drive_remote", "gdrive:CCTV")], capture_output=True, text=True, timeout=60)
         res["ok"] = r.returncode == 0
         if r.returncode != 0:
             res["error"] = (r.stderr or "").strip().splitlines()[-1:] or ["unknown"]

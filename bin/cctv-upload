@@ -82,6 +82,8 @@ def main():
     if not todo:
         return status("ok", "Drive has every motion clip", "Drive-এ সব motion clip আছে")
 
+    nclips = sum(1 for p in todo if p.endswith(".mp4"))
+    status("busy", f"Uploading {nclips} motion clip(s)…", f"{nclips}টা motion clip upload হচ্ছে…")
     with tempfile.NamedTemporaryFile("w", delete=False, suffix=".txt") as lst:
         lst.write("\n".join(todo) + "\n")
     try:

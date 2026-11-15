@@ -480,7 +480,7 @@ const I18N = {
   ejecting: ["Ejecting… (a few seconds)", "Eject হচ্ছে… (কয়েক সেকেন্ড)"], ssdEjectedPill: ["⏏ SSD ejected · SD card", "⏏ SSD eject করা · SD card"],
   updateNow: ["🔄 Update", "🔄 Update"], upToDate: ["Already the latest version.", "সর্বশেষ version চলছে।"],
   updFailed: ["Update failed: ", "Update হয়নি: "], noStorage: ["No storage status", "Storage status নেই"],
-  noServer: ["Can't reach the server", "Server-এর সাথে যোগাযোগ নেই"], minAgo: ["min ago", "মি. আগে"], waiting: ["waiting", "অপেক্ষা"],
+  noServer: ["Can't reach the server", "Server-এর সাথে যোগাযোগ নেই"], minAgo: ["min ago", "মি. আগে"], waiting: ["starting… (first check within 2 min)", "চালু হচ্ছে… (২ মিনিটের মধ্যে প্রথম check)"],
   // recordings
   speed: ["Speed", "Speed"], prevMotion: ["⏮ Motion", "⏮ Motion"], nextMotion: ["Motion ⏭", "Motion ⏭"],
   noMoreMotion: ["No more motion that way", "ওদিকে আর কোনো motion নেই"],
@@ -794,7 +794,7 @@ async function refreshStatus() {
       : `💳 ${t("sdCard")} · ${gb(Math.max(0, st.sd_buffer_cap - st.sd_buffer_bytes))} ${t("free")}`);
     else setPill("#stStorage", "bad", t("noStorage"));
     const up = s.upload || {}, ago = up.time ? Math.round((s.time - up.time) / 60) : null;
-    setPill("#stDrive", { ok: "ok", idle: "ok", off: "", error: "bad" }[up.state] ?? "",
+    setPill("#stDrive", { ok: "ok", idle: "ok", busy: "warn", off: "", error: "bad" }[up.state] ?? "",
       up.message ? `Drive · ${tr(up.message)}${ago > 0 ? ` · ${ago} ${t("minAgo")}` : ""}` : `Drive · ${t("waiting")}`);
     if (s.load !== null && s.cpus) { const pct = Math.round(100 * s.load / s.cpus); setPill("#stLoad", pct < 70 ? "ok" : pct < 95 ? "warn" : "bad", `CPU ${pct}%`); }
   } catch (e) { if (e.message !== "login") setPill("#stStorage", "bad", t("noServer")); }
