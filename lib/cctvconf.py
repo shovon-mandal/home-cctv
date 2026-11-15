@@ -67,7 +67,7 @@ CAM_DEFAULTS = {
     "mode": "continuous",         # continuous (24/7) | motion (keep only motion parts) | off
     "ptz": "no",                  # camera can pan/tilt (ONVIF)
     "audio": "yes",               # sound in live view and recordings
-    "threshold": "400",
+    "threshold": "250",
     "record_stream": "main",      # main = full quality; sub = low quality (remote cams)
 }
 
@@ -199,6 +199,43 @@ def fix_owner(path):
         os.chown(path, pwd.getpwnam("cctv").pw_uid, grp.getgrnam("cctv").gr_gid)
     except (KeyError, OSError):
         pass
+
+
+def set_general(updates, path=None):
+    """Change `key = value` lines in [general], keeping comments and order; adds missing keys."""
+    path = path or CONF_PATH
+    with open(path, encoding="utf-8") as f:
+        lines = f.read().split("\n")
+    out, section, done = [], None, set()
+    gen_end = None
+    for ln in lines:
+        s = ln.strip()
+        if s.startswith("[") and s.endswith("]"):
+            if section == "general":
+                gen_end = len(out)
+            section = s[1:-1].strip().lower()
+        elif section == "general" and "=" in s and not s.startswith(("#", ";")):
+            k = s.split("=", 1)[0].strip().lower()
+            if k in updates:
+                ln = f"{k} = {updates[k]}"
+                done.add(k)
+        out.append(ln)
+    if section == "general" and gen_end is None:
+        gen_end = len(out)
+    missing = [f"{k} = {v}" for k, v in updates.items() if k not in done]
+    if missing:
+        if gen_end is None:
+            out = ["[general]"] + missing + [""] + out
+        else:
+            while gen_end > 0 and out[gen_end - 1].strip() == "":
+                gen_end -= 1
+            out[gen_end:gen_end] = missing
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write("\n".join(out))
+    os.chmod(tmp, 0o640)
+    fix_owner(tmp)
+    os.replace(tmp, path)
 
 
 def load(path=None):

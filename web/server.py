@@ -185,7 +185,8 @@ def drive_finish(pasted):
 
 def drive_status(check=False):
     configured = os.path.exists(RCLONE_CONF) and "token" in open(RCLONE_CONF).read()
-    res = {"configured": configured, "remote": general.get("drive_remote"), "max_gb": general.get("drive_max_gb")}
+    g, _ = cctvconf.load()
+    res = {"configured": configured, "remote": g.get("drive_remote"), "max_gb": g.get("drive_max_gb")}
     if configured and check:
         base = ["rclone", "--config", RCLONE_CONF]
         r = subprocess.run(base + ["mkdir", general.get("drive_remote", "gdrive:CCTV")], capture_output=True, text=True, timeout=60)
@@ -198,6 +199,59 @@ def drive_status(check=False):
         except ValueError:
             pass
     return res
+
+
+SD_BUF = os.environ.get("CCTV_SD_BUF", "/srv/cctv/sd-buffer")
+GB = 1024 ** 3
+
+
+def _dir_size(path):
+    total = 0
+    for root, _, files in os.walk(path):
+        for f in files:
+            try:
+                total += os.path.getsize(os.path.join(root, f))
+            except OSError:
+                pass
+    return total
+
+
+def limits_info():
+    g, _ = cctvconf.load()
+    st = os.statvfs(SD_BUF if os.path.isdir(SD_BUF) else "/")
+    total, avail = st.f_blocks * st.f_frsize, st.f_bavail * st.f_frsize
+    used_by_buf = _dir_size(SD_BUF) if os.path.isdir(SD_BUF) else 0
+    keep_free = float(g["sd_min_free_gb"])
+    max_buf = max(1.0, (avail + used_by_buf) / GB - keep_free)       # what the buffer could grow to
+    return {"sd_buffer_gb": float(g["sd_buffer_gb"]), "ssd_max_gb": float(g["ssd_max_gb"]),
+            "drive_max_gb": float(g["drive_max_gb"]), "drive_keep_days": float(g["drive_keep_days"]),
+            "sd_total_gb": round(total / GB, 1), "sd_free_gb": round(avail / GB, 1),
+            "sd_buffer_used_gb": round(used_by_buf / GB, 2), "sd_buffer_max_gb": round(max_buf, 1),
+            "sd_keep_free_gb": keep_free}
+
+
+def limits_save(body):
+    info = limits_info()
+    rules = {  # key: (min, max)
+        "sd_buffer_gb": (1, info["sd_buffer_max_gb"]),
+        "ssd_max_gb": (1, 100000),
+        "drive_max_gb": (0.5, 100000),
+        "drive_keep_days": (1, 365),
+    }
+    upd = {}
+    for k, (lo, hi) in rules.items():
+        if k not in body or body[k] in ("", None):
+            continue
+        try:
+            v = float(body[k])
+        except (TypeError, ValueError):
+            raise ValueError(f"{k}: not a number || {k}: সংখ্যা দিন") from None
+        if not lo <= v <= hi:
+            raise ValueError(f"{k} must be between {lo:g} and {hi:g} || {k} {lo:g} থেকে {hi:g}-এর মধ্যে দিন")
+        upd[k] = f"{v:g}"
+    if upd:
+        cctvconf.set_general(upd)
+    return limits_info()
 
 
 def share_info():
@@ -372,6 +426,10 @@ class Handler(BaseHTTPRequestHandler):
                 if user["role"] != "admin":
                     return self.send_error_json(403, "Admins only || শুধু admin পারবে")
                 return self.send_json(share_info())
+            if p == "/api/admin/limits":
+                if user["role"] != "admin":
+                    return self.send_error_json(403, "Admins only || শুধু admin পারবে")
+                return self.send_json(limits_info())
             if p == "/api/admin/apply":
                 return self.send_json(read_json(os.path.join(RUN, "apply.json"), {}))
             if p == "/api/users":
@@ -462,6 +520,8 @@ class Handler(BaseHTTPRequestHandler):
                 if os.path.exists(RCLONE_CONF):
                     open(RCLONE_CONF, "w").close()
                 return self.send_json(drive_status())
+            if p == "/api/admin/limits":
+                return self.send_json(limits_save(body))
             if p == "/api/admin/cameras/save":
                 return self.cam_save(body)
             if p == "/api/admin/cameras/delete":

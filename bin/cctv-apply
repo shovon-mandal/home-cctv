@@ -163,10 +163,34 @@ def migrate():
         print(f"migration skipped: {e}")
 
 
+def migrate_v4():
+    """v4: more sensitive default (400 -> 250) for cameras still on the old default."""
+    flag = os.path.join(os.path.dirname(cctvconf.CAMS_PATH), ".v4-migrated")
+    if os.path.exists(flag) or not os.path.exists(cctvconf.CAMS_PATH):
+        return
+    try:
+        import configparser
+        cp = configparser.ConfigParser(interpolation=None)
+        cp.optionxform = str.lower
+        cp.read(cctvconf.CAMS_PATH, encoding="utf-8")
+        cams = []
+        for sec in cp.sections():
+            d = dict(cp.items(sec))
+            d["id"] = sec
+            if d.get("threshold") in ("400", "1500"):
+                d["threshold"] = "250"
+            cams.append(d)
+        cctvconf.save_cameras(cams)
+        open(flag, "w").close()
+    except Exception as e:  # noqa: BLE001
+        print(f"migration v4 skipped: {e}")
+
+
 def main():
     restart = "--no-restart" not in sys.argv
     auto = "--auto" in sys.argv
     migrate()
+    migrate_v4()
     for f in (cctvconf.CAMS_PATH, cctvconf.CONF_PATH):
         if os.path.exists(f):
             cctvconf.fix_owner(f)
