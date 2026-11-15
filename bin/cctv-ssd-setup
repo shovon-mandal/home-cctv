@@ -2,14 +2,15 @@
 # Choose the portable SSD for recordings.
 #
 #   sudo cctv-ssd-setup                  -> list USB disks/partitions
-#   sudo cctv-ssd-setup /dev/sda1        -> use it AS IS: your files stay, recordings go
-#                                           into a "CCTV-Recordings" folder   (recommended)
+#   (Normally not needed: any USB SSD is used automatically when plugged in.)
+#   sudo cctv-ssd-setup /dev/sda1        -> pin this disk if several USB disks are plugged in;
+#                                           your files stay, recordings go into a "CCTV" folder
 #   sudo cctv-ssd-setup --format /dev/sda -> ERASE the whole disk and make it ext4
 set -eu
 eval "$(/opt/cctv/bin/cctv-config)"
 SSD_ENV=/etc/cctv/ssd.env
 MNT=/mnt/cctv-ssd
-FOLDER=CCTV-Recordings
+FOLDER=CCTV
 mkdir -p /run/cctv "$MNT"
 
 list() {

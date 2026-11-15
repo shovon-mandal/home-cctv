@@ -1,12 +1,14 @@
 #!/bin/bash
 # Storage switcher + cleanup. Runs as root every minute (cctv-storage.timer).
 #
-#  SSD (chosen with cctv-ssd-setup) plugged in -> recordings go to <SSD>/CCTV-Recordings
-#  SSD missing                                  -> recordings go to a capped buffer on the SD card
+#  USB SSD / disk plugged in -> it is mounted automatically and recordings go to <SSD>/CCTV
+#  nothing plugged in         -> recordings go to a capped buffer on the SD card
 #
-# The SSD is NOT formatted: your own files on it are left alone. Only clips
-# inside CCTV-Recordings are ever deleted (when that folder hits ssd_max_gb or
-# the disk gets nearly full).
+# Nothing to set up: plug the SSD in and within a minute a "CCTV" folder appears on it.
+# The SSD is NOT formatted: your own files on it are left alone. Only clips inside
+# the CCTV folder are ever deleted (when that folder hits ssd_max_gb or the disk gets
+# nearly full). Unplug only after: sudo cctv-ssd-eject
+# (cctv-ssd-setup can pin one particular disk if several USB disks are plugged in.)
 #
 # Motion writes into /srv/cctv/rec, which is a symlink we flip between the two.
 set -u
@@ -16,7 +18,8 @@ RUN=${CCTV_RUN:-/run/cctv}
 SSD_ENV=${CCTV_SSD_ENV:-/etc/cctv/ssd.env}
 LINK="$CCTV_ROOT/rec"
 BUF="$CCTV_ROOT/sd-buffer"
-FOLDER="CCTV-Recordings"
+FOLDER="CCTV"
+OLD_FOLDER="CCTV-Recordings"          # name used by older versions
 CONFIG_CMD=${CCTV_CONFIG_CMD:-/opt/cctv/bin/cctv-config}
 
 eval "$($CONFIG_CMD)" || { echo "config error"; exit 1; }
@@ -28,10 +31,45 @@ exec 9>"$RUN/storage.lock"
 flock -n 9 || exit 0
 
 log() { echo "cctv-storage: $*"; }
+yes_cfg() { case "${1,,}" in yes|on|true|1) return 0;; esac; return 1; }
+
+# Largest USB partition with a filesystem we can write (never the system disk).
+detect_usb() {
+  lsblk -J -b -o PATH,TRAN,TYPE,FSTYPE,SIZE,UUID,MOUNTPOINT 2>/dev/null | python3 -c '
+import json, sys, subprocess
+mnt = sys.argv[1]
+root = subprocess.run(["findmnt", "-no", "SOURCE", "/"], capture_output=True, text=True).stdout.strip()
+ok = {"ext4", "ext3", "ext2", "exfat", "ntfs", "vfat", "xfs", "btrfs"}
+best = None
+for disk in json.load(sys.stdin).get("blockdevices", []):
+    if disk.get("tran") != "usb":
+        continue
+    parts = disk.get("children") or [disk]
+    if any(p.get("path") == root for p in parts) or disk.get("path") == root:
+        continue
+    for p in parts:
+        if p.get("fstype") in ok and p.get("uuid") and p.get("mountpoint") in (None, "", mnt):
+            if best is None or int(p.get("size") or 0) > int(best.get("size") or 0):
+                best = p
+if best:
+    print(best["uuid"], best["fstype"])
+' "$SSD_MNT"
+}
 
 DEV=""
-[ -n "$SSD_UUID" ] && DEV="/dev/disk/by-uuid/$SSD_UUID"
-[ -n "${CCTV_TEST_DEV:-}" ] && DEV="$CCTV_TEST_DEV"
+if [ -n "${CCTV_TEST_DEV:-}" ]; then
+  DEV="$CCTV_TEST_DEV"
+elif mountpoint -q "$SSD_MNT"; then
+  DEV=$(findmnt -no SOURCE "$SSD_MNT")             # keep using what is mounted (unplug check below)
+elif [ -n "$SSD_UUID" ] && [ -e "/dev/disk/by-uuid/$SSD_UUID" ]; then
+  DEV="/dev/disk/by-uuid/$SSD_UUID"                 # disk pinned with cctv-ssd-setup
+elif yes_cfg "$CFG_SSD_AUTO"; then
+  read -r AUTO_UUID AUTO_FS < <(detect_usb) || true
+  if [ -n "${AUTO_UUID:-}" ]; then
+    DEV="/dev/disk/by-uuid/$AUTO_UUID"; SSD_FSTYPE="$AUTO_FS"
+  fi
+fi
+[ -z "$DEV" ] && rm -f "$RUN/ejected"               # nothing plugged in -> next SSD is used again
 
 mount_ssd() {  # mount $DEV with options that suit its filesystem
   local u g; u=$(id -u cctv 2>/dev/null || echo 0); g=$(id -g cctv 2>/dev/null || echo 0)
@@ -58,8 +96,14 @@ if [ -z "${CCTV_TEST_SSD_DIR:-}" ] && [ -n "$DEV" ]; then
     if ! mountpoint -q "$SSD_MNT"; then
       if mount_ssd 2>/dev/null; then
         log "SSD mounted at $SSD_MNT ($SSD_FSTYPE)"
+        # first time on this disk: make the CCTV folder (older versions used CCTV-Recordings)
+        if [ ! -d "$SSD_MNT/$FOLDER" ] && [ -d "$SSD_MNT/$OLD_FOLDER" ]; then
+          mv "$SSD_MNT/$OLD_FOLDER" "$SSD_MNT/$FOLDER" && log "renamed $OLD_FOLDER -> $FOLDER"
+        fi
+        mkdir -p "$SSD_MNT/$FOLDER" && touch "$SSD_MNT/$FOLDER/.cctv-ssd"
+        chown cctv:cctv "$SSD_MNT/$FOLDER" "$SSD_MNT/$FOLDER/.cctv-ssd" 2>/dev/null
       else
-        log "SSD found but mount failed (run: sudo cctv-ssd-setup)"
+        log "SSD found but mount failed (filesystem $SSD_FSTYPE; see: sudo cctv-ssd-setup)"
       fi
     fi
   else

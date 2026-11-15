@@ -10,7 +10,7 @@
 - **Motion:** live-এ লাল "Motion" badge দেখায়। Motion event-গুলো snapshot-সহ list-এ থাকে। চাইলে "শুধু motion হলে" mode-ও বাছতে পারেন।
 - **Timeline:** ২৪ ঘণ্টার একটা bar থাকে। ধূসর অংশ মানে recording আছে, লাল অংশ মানে motion। প্রতি মিনিটের thumbnail থাকে, যেকোনো জায়গায় tap করলে সেখান থেকে চলে, আর পরের মিনিট নিজে থেকে চলতে থাকে।
 - **Storage:**
-  - SSD লাগানো থাকলে recording SSD-তে যায়। SSD format হয় না, recording যায় `CCTV-Recordings` folder-এ।
+  - USB-তে SSD লাগালে নিজে থেকেই সেটা ব্যবহার শুরু হয়: SSD-তে `CCTV` folder তৈরি হয় আর recording সেখানে যায়। কোনো command লাগে না, format হয় না, আগের file থাকে।
   - SSD না থাকলে recording যায় SD card-এ, সর্বোচ্চ ৭GB।
   - জায়গা কমে গেলে আগে motion ছাড়া অংশ মোছে।
 - **Google Drive:** সামান্য motion হলেও সেই মিনিটের পুরো recording আর তার snapshot Drive-এর একটা folder-এ যায় (সর্বোচ্চ ১২GB)। বাকি recording শুধু local-এ থাকে।
@@ -38,12 +38,10 @@ Admin দিয়ে login করে **⚙️ Settings → Cameras**-এ যা
 - Recording mode: **২৪ ঘণ্টা**, **শুধু motion হলে**, অথবা **বন্ধ**।
 - Camera-য় শব্দ থাকলে **Sound**-এ টিক দিন। ঘোরানো যায় এমন camera হলে (Ranger 2) **PTZ**-এ টিক দিন।
 
-## ৪. SSD (আগের file মুছবে না)
-```bash
-sudo cctv-ssd-setup
-sudo cctv-ssd-setup /dev/sda1
-sudo cctv-ssd-eject      # SSD খোলার আগে অবশ্যই
-```
+## ৪. SSD (নিজে থেকেই, আগের file মুছবে না)
+SSD-টা শুধু USB-তে লাগিয়ে দিন। ১ মিনিটের মধ্যে SSD-তে **`CCTV`** folder তৈরি হবে আর recording সেখানে চলে যাবে। SD card-এ আগে জমা clip-গুলোও SSD-তে সরে যাবে। SSD খুলে নিলে recording আবার SD card-এ হবে।
+- SSD খোলার আগে **অবশ্যই** এটা চালান: `sudo cctv-ssd-eject`
+- exFAT, NTFS, ext4 সব চলে। Format হয় না।
 
 ## ৫. Google Drive
 **⚙️ Settings → Google Drive → Google দিয়ে connect** চাপুন। Login করে **Allow** দিন। এরপর "পাওয়া যাচ্ছে না" page আসবে, এটাই স্বাভাবিক। ওই page-এর address bar-এর পুরো link copy করে paste করুন, তারপর **Connect শেষ করুন** চাপুন।

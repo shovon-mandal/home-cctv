@@ -19,6 +19,7 @@ DEFAULTS = {
     "sd_min_free_gb": "2",
     "ssd_min_free_percent": "5",
     "ssd_max_gb": "200",
+    "ssd_auto": "yes",
     "drive_enabled": "yes",
     "drive_remote": "gdrive:CCTV",
     "drive_backup_when_ssd": "yes",

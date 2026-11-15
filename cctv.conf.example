@@ -13,7 +13,9 @@ sd_buffer_gb = 7
 # SD card-এ সবসময় অন্তত এতটুকু খালি থাকবে (Discord bot ইত্যাদির জন্য)
 sd_min_free_gb = 2
 
-# SSD: recording যায় SSD-র "CCTV-Recordings" folder-এ। আপনার অন্য file কখনো মোছা হয় না।
+# SSD: USB-তে লাগালেই নিজে থেকে mount হয়, recording যায় SSD-র "CCTV" folder-এ।
+# আপনার অন্য file কখনো মোছা হয় না। খোলার আগে: sudo cctv-ssd-eject
+ssd_auto = yes
 # এই folder সর্বোচ্চ কত GB নেবে (ভরে গেলে সবচেয়ে পুরোনো clip মুছবে)
 ssd_max_gb = 200
 # SSD-তে সবসময় অন্তত এত % খালি রাখবে (শুধু CCTV clip মুছে)

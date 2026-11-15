@@ -13,7 +13,7 @@ English by default, with a one-tap **বাংলা** switch everywhere (dashbo
 - **Motion detection** with a red "Motion" badge in live view, motion events with snapshots, and an "only when motion" recording mode.
 - **Timeline**: a 24-hour bar per day where recorded time is grey and motion is red. You get thumbnails for every minute and per-hour navigation; tap anywhere to play, and playback continues across minutes.
 - **Storage**:
-  - SSD plugged in → recordings go to the SSD. It is **not formatted**; they go into a `CCTV-Recordings` folder.
+  - SSD plugged into USB → it is used **automatically**: a `CCTV` folder is created on it and recordings go there. Nothing is formatted, and your files stay.
   - No SSD → recordings go to a capped buffer on the SD card (7 GB).
   - When space runs low, minutes **without** motion are deleted first.
 - **Google Drive**: every minute that contains motion (even a tiny one) is uploaded, together with its snapshot, into one folder (12 GB cap). Everything else stays local. You connect with your Google login; no API keys.
@@ -59,14 +59,13 @@ Log in as admin → **⚙️ Settings → Cameras**:
 3. Choose the recording mode: **24/7**, **only when motion**, or **off**. Then tick **Sound** and **Pan/tilt (PTZ)** if the camera has them.
 4. Press **▶ Test**. When it shows ✅, tick **Enabled** and press **Save**. The change applies within seconds.
 
-## 4. SSD (keeps your files)
+## 4. SSD (automatic, keeps your files)
 
-```bash
-sudo cctv-ssd-setup              # lists USB disks
-sudo cctv-ssd-setup /dev/sda1    # use that partition (exFAT / NTFS / ext4)
-sudo cctv-ssd-eject              # ALWAYS run before unplugging
-```
-`ssd_max_gb` in `/etc/cctv/cctv.conf` limits the recordings folder (default 200 GB).
+Just plug the SSD into a USB port. Within a minute it is mounted, a **`CCTV`** folder is created on it and recording moves there. Clips already on the SD card are moved over too. Without the SSD, recording continues on the SD card.
+- Works with exFAT, NTFS and ext4. Nothing is formatted and your other files are never touched.
+- **Before unplugging, run** `sudo cctv-ssd-eject`.
+- `ssd_max_gb` in `/etc/cctv/cctv.conf` limits the CCTV folder (default 200 GB).
+- With several USB disks plugged in, the largest is used; pin a specific one with `sudo cctv-ssd-setup /dev/sdXN`.
 
 ## 5. Google Drive
 
