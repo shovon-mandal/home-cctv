@@ -32,6 +32,10 @@ flock -n 9 || exit 0
 
 log() { echo "cctv-storage: $*"; }
 yes_cfg() { case "${1,,}" in yes|on|true|1) return 0;; esac; return 1; }
+once() {  # log a message only when it changes (the script runs every minute)
+  local f="$RUN/msg-$1"; [ "$(cat "$f" 2>/dev/null)" = "$2" ] && return 0
+  echo "$2" > "$f"; log "$2"
+}
 
 # Largest USB partition with a filesystem we can write (never the system disk).
 detect_usb() {
@@ -48,11 +52,11 @@ for disk in json.load(sys.stdin).get("blockdevices", []):
     if any(p.get("path") == root for p in parts) or disk.get("path") == root:
         continue
     for p in parts:
-        if p.get("fstype") in ok and p.get("uuid") and p.get("mountpoint") in (None, "", mnt):
+        if p.get("fstype") in ok and p.get("mountpoint") in (None, "", mnt):
             if best is None or int(p.get("size") or 0) > int(best.get("size") or 0):
                 best = p
 if best:
-    print(best["uuid"], best["fstype"])
+    print(best["path"], best["uuid"], best["fstype"])
 ' "$SSD_MNT"
 }
 
@@ -64,9 +68,11 @@ elif mountpoint -q "$SSD_MNT"; then
 elif [ -n "$SSD_UUID" ] && [ -e "/dev/disk/by-uuid/$SSD_UUID" ]; then
   DEV="/dev/disk/by-uuid/$SSD_UUID"                 # disk pinned with cctv-ssd-setup
 elif yes_cfg "$CFG_SSD_AUTO"; then
-  read -r AUTO_UUID AUTO_FS < <(detect_usb) || true
-  if [ -n "${AUTO_UUID:-}" ]; then
-    DEV="/dev/disk/by-uuid/$AUTO_UUID"; SSD_FSTYPE="$AUTO_FS"
+  read -r AUTO_PATH AUTO_UUID AUTO_FS < <(detect_usb) || true
+  if [ -n "${AUTO_PATH:-}" ]; then
+    DEV="$AUTO_PATH"; SSD_FSTYPE="$AUTO_FS"
+  elif lsblk -dno TRAN 2>/dev/null | grep -q usb; then
+    once "nousable" "USB disk found but no partition with exFAT/NTFS/ext4/FAT (or it is mounted somewhere else): $(lsblk -rno PATH,FSTYPE,MOUNTPOINT | grep -E '^/dev/sd' | tr '\n' ';')"
   fi
 fi
 [ -z "$DEV" ] && rm -f "$RUN/ejected"               # nothing plugged in -> next SSD is used again
@@ -78,6 +84,7 @@ mount_ssd() {  # mount $DEV with options that suit its filesystem
     exfat)      mount -t exfat -o "$own" "$DEV" "$SSD_MNT" ;;
     vfat)       mount -t vfat  -o "$own" "$DEV" "$SSD_MNT" ;;
     ntfs|ntfs3) mount -t ntfs3 -o "$own" "$DEV" "$SSD_MNT" 2>/dev/null \
+                  || mount -t ntfs3 -o "$own,force" "$DEV" "$SSD_MNT" 2>/dev/null \
                   || mount -t ntfs-3g -o "$own,big_writes" "$DEV" "$SSD_MNT" ;;
     *)          mount -o noatime "$DEV" "$SSD_MNT" ;;
   esac
@@ -94,7 +101,8 @@ ssd_healthy() {
 if [ -z "${CCTV_TEST_SSD_DIR:-}" ] && [ -n "$DEV" ]; then
   if [ -e "$DEV" ] && [ ! -f "$RUN/ejected" ]; then
     if ! mountpoint -q "$SSD_MNT"; then
-      if mount_ssd 2>/dev/null; then
+      if MOUNT_ERR=$(mount_ssd 2>&1); then
+        rm -f "$RUN/msg-mountfail"
         log "SSD mounted at $SSD_MNT ($SSD_FSTYPE)"
         # first time on this disk: make the CCTV folder (older versions used CCTV-Recordings)
         if [ ! -d "$SSD_MNT/$FOLDER" ] && [ -d "$SSD_MNT/$OLD_FOLDER" ]; then
@@ -103,7 +111,7 @@ if [ -z "${CCTV_TEST_SSD_DIR:-}" ] && [ -n "$DEV" ]; then
         mkdir -p "$SSD_MNT/$FOLDER" && touch "$SSD_MNT/$FOLDER/.cctv-ssd"
         chown cctv:cctv "$SSD_MNT/$FOLDER" "$SSD_MNT/$FOLDER/.cctv-ssd" 2>/dev/null
       else
-        log "SSD found but mount failed (filesystem $SSD_FSTYPE; see: sudo cctv-ssd-setup)"
+        once "mountfail" "SSD $DEV ($SSD_FSTYPE) found but mount failed: ${MOUNT_ERR:-unknown error}"
       fi
     fi
   else

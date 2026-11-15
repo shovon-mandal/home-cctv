@@ -185,7 +185,20 @@ def save_cameras(cams, path=None):
     with open(tmp, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
     os.chmod(tmp, 0o640)
+    fix_owner(tmp)
     os.replace(tmp, path)
+
+
+def fix_owner(path):
+    """Files written by root (cctv-apply, updates) must stay readable by the cctv services."""
+    if os.geteuid() != 0:
+        return
+    try:
+        import grp
+        import pwd
+        os.chown(path, pwd.getpwnam("cctv").pw_uid, grp.getgrnam("cctv").gr_gid)
+    except (KeyError, OSError):
+        pass
 
 
 def load(path=None):

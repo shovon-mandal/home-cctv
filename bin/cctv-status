@@ -9,9 +9,11 @@ echo "== Recording =="
 python3 -c '
 import json
 d = json.load(open("/run/cctv/recorder.json"))
-for k, v in d.items():
+for k, v in sorted(d.items()):
     if k.startswith("cam"):
-        print(f"  {k}: {\"recording\" if v[\"recording\"] else \"NOT recording\"}  {v.get(\"codec\") or \"\"}  {\"+audio\" if v.get(\"audio\") else \"\"}  {v.get(\"error\") or \"\"}")
+        state = "recording" if v.get("recording") else "NOT recording"
+        extra = " ".join(x for x in (v.get("codec") or "", "+audio" if v.get("audio") else "", v.get("error") or "") if x)
+        print("  " + k + ": " + state + "  " + extra)
 ' 2>/dev/null || echo "  (no recorder status yet)"
 echo "== Storage =="
 cat /run/cctv/storage.json 2>/dev/null | python3 -c '

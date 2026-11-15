@@ -108,6 +108,7 @@ if [ "$UPDATE" = 0 ] && ! has_admin; then
   /opt/cctv/bin/cctv-user add "${ADMIN_NAME:-admin}" --admin || echo "Create it later with: sudo cctv-user add admin --admin"
 fi
 chown -R cctv:cctv /etc/cctv/auth
+chown cctv:cctv /etc/cctv/cameras.conf 2>/dev/null || true
 
 IP=$(hostname -I | awk '{print $1}')
 TS=$(command -v tailscale >/dev/null && tailscale ip -4 2>/dev/null | head -1 || true)

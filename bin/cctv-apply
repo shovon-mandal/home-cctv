@@ -167,6 +167,9 @@ def main():
     restart = "--no-restart" not in sys.argv
     auto = "--auto" in sys.argv
     migrate()
+    for f in (cctvconf.CAMS_PATH, cctvconf.CONF_PATH):
+        if os.path.exists(f):
+            cctvconf.fix_owner(f)
     try:
         g, cams = cctvconf.load()
     except Exception as e:  # noqa: BLE001
