@@ -46,25 +46,41 @@ once() {  # log a message only when it changes (the script runs every minute)
 
 # Largest USB partition with a filesystem we can write (never the system disk).
 detect_usb() {
-  lsblk -J -b -o PATH,TRAN,TYPE,FSTYPE,SIZE,UUID,MOUNTPOINT 2>/dev/null | python3 -c '
-import json, sys, subprocess
-mnt = sys.argv[1]
-root = subprocess.run(["findmnt", "-no", "SOURCE", "/"], capture_output=True, text=True).stdout.strip()
-ok = {"ext4", "ext3", "ext2", "exfat", "ntfs", "vfat", "xfs", "btrfs"}
+  # flat key="value" listing (works on every lsblk version); USB is checked via TRAN of the
+  # disk OR its /sys path, because some USB-SATA bridges report no TRAN.
+  lsblk -P -b -p -o NAME,PKNAME,TRAN,TYPE,FSTYPE,SIZE,UUID,MOUNTPOINT 2>/dev/null | python3 -c '
+import os, shlex, subprocess, sys
+mnt, verbose = sys.argv[1], sys.argv[2] == "1"
+root = subprocess.run(["findmnt", "-no", "SOURCE", "/"], capture_output=True, text=True).stdout.strip().split("[")[0]
+ok = {"ext4", "ext3", "ext2", "exfat", "ntfs", "ntfs3", "vfat", "xfs", "btrfs"}
+rows = {}
+for line in sys.stdin:
+    d = dict(kv.split("=", 1) for kv in shlex.split(line))
+    rows[d["NAME"]] = d
+def disk_of(r):
+    while r.get("PKNAME") and r["PKNAME"] in rows:
+        r = rows[r["PKNAME"]]
+    return r
+def is_usb(disk):
+    if disk.get("TRAN") == "usb":
+        return True
+    return "/usb" in os.path.realpath("/sys/block/" + os.path.basename(disk["NAME"]))
+root_disk = disk_of(rows[root])["NAME"] if root in rows else None
 best = None
-for disk in json.load(sys.stdin).get("blockdevices", []):
-    if disk.get("tran") != "usb":
-        continue
-    parts = disk.get("children") or [disk]
-    if any(p.get("path") == root for p in parts) or disk.get("path") == root:
-        continue
-    for p in parts:
-        if p.get("fstype") in ok and p.get("mountpoint") in (None, "", mnt):
-            if best is None or int(p.get("size") or 0) > int(best.get("size") or 0):
-                best = p
+for r in rows.values():
+    disk = disk_of(r)
+    why = None
+    if not is_usb(disk): why = "not usb"
+    elif disk["NAME"] == root_disk: why = "system disk"
+    elif r.get("FSTYPE") not in ok: why = "filesystem %r not usable" % r.get("FSTYPE")
+    elif r.get("MOUNTPOINT") not in ("", mnt): why = "already mounted at " + r["MOUNTPOINT"]
+    if verbose and disk["NAME"] != r["NAME"] or verbose and r.get("TYPE") == "disk" and is_usb(disk):
+        print("  · check %s %s %s: %s" % (r["NAME"], r.get("FSTYPE") or "-", r.get("SIZE"), why or "OK"), file=sys.stderr)
+    if why is None and (best is None or int(r.get("SIZE") or 0) > int(best.get("SIZE") or 0)):
+        best = r
 if best:
-    print(best["path"], best["uuid"], best["fstype"])
-' "$SSD_MNT"
+    print(best["NAME"], best.get("UUID") or "-", best["FSTYPE"])
+' "$SSD_MNT" "${VERBOSE:-0}"
 }
 
 DEV=""
