@@ -91,7 +91,7 @@ public class MainActivity extends Activity {
                 if (fullscreenView != null) { cb.onCustomViewHidden(); return; }
                 fullscreenView = view; fullscreenCallback = cb;
                 root.addView(view, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-                setImmersive(true);
+                setFullscreenMode(true);
             }
 
             @Override
@@ -100,7 +100,7 @@ public class MainActivity extends Activity {
                 root.removeView(fullscreenView);
                 fullscreenView = null;
                 if (fullscreenCallback != null) fullscreenCallback.onCustomViewHidden();
-                setImmersive(false);
+                setFullscreenMode(false);
             }
         });
 
@@ -186,7 +186,7 @@ public class MainActivity extends Activity {
     }
 
     @SuppressWarnings("deprecation")
-    void setImmersive(boolean on) {
+    void setFullscreenMode(boolean on) {
         if (Build.VERSION.SDK_INT >= 30) {
             WindowInsetsController c = getWindow().getInsetsController();
             if (c == null) return;
