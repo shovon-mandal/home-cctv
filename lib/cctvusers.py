@@ -75,8 +75,8 @@ def set_user(data, name, password=None, role="viewer", cameras="*", recordings=T
             raise ValueError("A new user needs a password || নতুন user-এর password লাগবে")
         u = {"ver": 0}
     if password:
-        if len(password) < 6:
-            raise ValueError("Password must be at least 6 characters || password কমপক্ষে ৬ অক্ষর")
+        if len(password) < 8:
+            raise ValueError("Password must be at least 8 characters || password কমপক্ষে ৮ অক্ষর")
         u["hash"] = hash_password(password)
         u["ver"] = u.get("ver", 0) + 1          # logs out old sessions
     u["role"] = role

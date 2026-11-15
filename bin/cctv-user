@@ -23,8 +23,8 @@ def ask_password():
         b = getpass.getpass("Password again: ")
         if a != b:
             print("Passwords do not match, try again.")
-        elif len(a) < 6:
-            print("Use at least 6 characters.")
+        elif len(a) < 8:
+            print("Use at least 8 characters.")
         else:
             return a
 

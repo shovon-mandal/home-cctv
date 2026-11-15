@@ -113,6 +113,16 @@ sudo cctv-user passwd admin
 | Live view black on a phone | Set the camera to H.264 (many phones can't decode H.265). |
 | High CPU | Raise the motion sensitivity value, or use "Low (sub)" recording. |
 
+## Security
+
+- Live streams, the go2rtc admin API and the cameras' RTSP passwords never leave the board: go2rtc only listens on `127.0.0.1`.
+- Login: passwords are stored as PBKDF2 hashes, with a minimum of 8 characters. Sessions are signed, HttpOnly, SameSite=Strict, and also Secure over https. Changing a password or deleting a user signs out its sessions.
+- Brute force: 5 wrong passwords block that address for 10 minutes. 10 wrong passwords from the internet lock the account from the internet for 15 minutes, but it still works at home.
+- Requests from other websites are refused (Origin check, CSRF header), and the page can't be framed.
+- Viewers are limited on the server, not just hidden in the page: their cameras, recordings and PTZ permissions are all checked there.
+- Google Drive uses the `drive.file` scope, so the system can only see the files it created itself.
+- **Your part:** keep GitHub 2FA on (updates come from this repo), use strong passwords, and keep cameras on a Wi-Fi that guests don't use.
+
 ## Files
 
 | Path | What |

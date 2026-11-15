@@ -12,7 +12,7 @@ main_path = /cam/realmonitor?channel=1&subtype=0
 sub_path = /cam/realmonitor?channel=1&subtype=1
 mode = motion
 record_stream = main
-threshold = 1500
+threshold = 400
 enabled = no
 
 [cam2]
@@ -26,5 +26,5 @@ main_path =
 sub_path =
 mode = motion
 record_stream = main
-threshold = 1500
+threshold = 400
 enabled = no

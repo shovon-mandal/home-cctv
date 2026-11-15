@@ -110,7 +110,11 @@
   .pbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; background: var(--panel); font-size: 13.5px; flex-wrap: wrap; }
   .pbar b { font-variant-numeric: tabular-nums; font-size: 15px; }
   .pbar a, .pbar button { color: var(--blue); background: none; border: 0; text-decoration: none; padding: 2px 4px; }
-  .day { position: relative; height: 46px; margin: 14px 0 4px; background: #0b0f14; border: 1px solid var(--line);
+  .tlctl { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 12px 0 0; font-size: 13.5px; }
+  .tlctl .grp { display: inline-flex; gap: 5px; align-items: center; }
+  .tlctl select { padding: 5px 8px; } .tlctl .navbtn { padding: 5px 10px; }
+  .tlctl b { min-width: 42px; text-align: center; font-variant-numeric: tabular-nums; }
+  .day { position: relative; height: 56px; margin: 10px 0 4px; touch-action: none; user-select: none; -webkit-user-select: none; background: #0b0f14; border: 1px solid var(--line);
     border-radius: 10px; overflow: hidden; cursor: pointer; touch-action: pan-y; }
   .day .seg { position: absolute; top: 8px; bottom: 8px; background: #3b4552; }
   .day .ev { position: absolute; top: 4px; bottom: 4px; background: var(--motion); border-radius: 2px; min-width: 2px; opacity: .95; }
@@ -119,7 +123,8 @@
   .day .hov { position: absolute; top: -1px; transform: translateX(-50%); font-size: 11px; background: var(--panel);
     padding: 0 4px; border-radius: 4px; pointer-events: none; display: none; }
   .hours { position: relative; height: 16px; font-size: 10.5px; color: var(--muted); }
-  .hours span { position: absolute; transform: translateX(-50%); }
+  .hours span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+  .day .tick { position: absolute; top: 0; bottom: 0; width: 1px; background: #ffffff10; }
   .legend { display: flex; gap: 14px; font-size: 12.5px; color: var(--muted); margin: 4px 0 8px; }
   .legend i { display: inline-block; width: 12px; height: 8px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
   .strip { display: flex; gap: 6px; overflow-x: auto; padding: 4px 0 10px; scroll-behavior: smooth; }
@@ -246,6 +251,13 @@
           <a id="pvDl" download data-t="download"></a></span>
       </div>
     </div>
+    <div class="tlctl">
+      <span class="grp"><span class="muted" data-t="speed"></span>
+        <select id="pvRate"><option>0.5</option><option selected>1</option><option>2</option><option>4</option><option>8</option><option>16</option></select></span>
+      <span class="grp"><button class="navbtn" id="mPrev" data-t="prevMotion"></button><button class="navbtn" id="mNext" data-t="nextMotion"></button></span>
+      <span class="grp"><button class="navbtn" id="zOut" title="Zoom out">−</button><b id="zLbl">24h</b><button class="navbtn" id="zIn" title="Zoom in">+</button>
+        <button class="navbtn" id="zCur" title="Center">⌖</button></span>
+    </div>
     <div class="day" id="day"><div class="hov" id="hov"></div></div>
     <div class="hours" id="hours"></div>
     <div class="legend"><span><i style="background:#3b4552"></i><span data-t="lgRec"></span></span>
@@ -290,7 +302,9 @@
           <select id="cRec"><option value="main" data-t="qMain"></option><option value="sub" data-t="qSub"></option></select></div>
       </div>
       <div class="grid2">
-        <div><label class="f" data-t="sensitivity"></label><input type="number" id="cThr" value="1500" min="100" step="100"></div>
+        <div><label class="f" data-t="sensitivity"></label><select id="cThr">
+          <option value="200" data-t="sensVHigh"></option><option value="400" data-t="sensHigh"></option>
+          <option value="1000" data-t="sensMed"></option><option value="2500" data-t="sensLow"></option></select></div>
         <div><label class="f" data-t="options"></label>
           <div class="checks" style="margin-top:4px">
             <label><input type="checkbox" id="cEn" checked> <span data-t="enabled"></span></label>
@@ -335,6 +349,15 @@
 
     <div class="sect">👤 <span data-t="users"></span></div>
     <div class="ulist" id="ulist"></div>
+    <div class="card" id="shareCard" style="width:100%;max-width:540px;margin-bottom:14px">
+      <h2>📤 <span data-t="shareTitle"></span></h2>
+      <p data-t="shareSub"></p>
+      <select id="shareUser" style="width:100%"></select>
+      <pre id="shareText" style="white-space:pre-wrap;word-break:break-all;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:12px;font-size:13.5px;margin:10px 0 0"></pre>
+      <div id="sharePass" style="display:none;margin-top:10px;padding:10px 12px;border-radius:10px;background:#d2992222;border:1px solid #d2992266;font-size:14px"></div>
+      <div class="btnrow"><button class="btn" type="button" id="shareCopy" data-t="copyAll"></button></div>
+      <div class="err" id="shareMsg" style="color:var(--accent)"></div>
+    </div>
     <form class="card" id="uForm" style="width:100%;max-width:540px">
       <h2 id="uFormTitle"></h2>
       <p data-t="userFormSub"></p>
@@ -401,7 +424,20 @@ const I18N = {
   appServer: ["📱 Server address (app)", "📱 Server ঠিকানা (app)"], loginHint: ["Please log in", "Login করুন"],
   noAccount: ["No account yet.<br>On the Tinker Board run: <code>sudo cctv-user add admin --admin</code>",
               "এখনো কোনো account নেই।<br>Tinker Board-এ চালান: <code>sudo cctv-user add admin --admin</code>"],
-  curPass: ["Current password", "পুরোনো password"], newPass: ["New password (at least 6 characters)", "নতুন password (কমপক্ষে ৬ অক্ষর)"],
+  curPass: ["Current password", "পুরোনো password"], newPass: ["New password (at least 8 characters)", "নতুন password (কমপক্ষে ৮ অক্ষর)"],
+  shareTitle: ["Share access", "Access পাঠান"],
+  shareSub: ["Pick a user: everything they need is copied with one tap. The password is never copied: tell it separately.",
+             "User বাছুন: যা যা লাগবে এক চাপে copy হবে। Password কখনো copy হয় না, সেটা আলাদা করে জানাবেন।"],
+  copyAll: ["📋 Copy", "📋 Copy করুন"], copied: ["✅ Copied. Paste it into WhatsApp / SMS.", "✅ Copy হয়েছে। WhatsApp / SMS-এ paste করুন।"],
+  copyFail: ["Could not copy: select the text and copy it by hand.", "Copy হয়নি: লেখাটা select করে নিজে copy করুন।"],
+  sharePassNote: ["🔑 Password for <b>{0}</b>: <code>{1}</code><br><small>Not included in the copy; tell it by phone or in a separate message. It is shown only now.</small>",
+                  "🔑 <b>{0}</b>-এর password: <code>{1}</code><br><small>Copy-তে যাবে না, phone-এ বা আলাদা message-এ জানান। এটা শুধু এখনই দেখা যাচ্ছে।</small>"],
+  shareBody: ["📹 Khulna CCTV\nUsername: {0}\nPassword: (I will tell you separately)\n", "📹 Khulna CCTV\nUsername: {0}\nPassword: (আলাদা করে জানাব)\n"],
+  shareHome: ["🏠 At home (Wi-Fi): {0}\n", "🏠 বাসার Wi-Fi থেকে: {0}\n"],
+  shareNet: ["🌍 From anywhere: {0}\n", "🌍 যেকোনো জায়গা থেকে: {0}\n"],
+  shareApp: ["📱 Android app: {0}\n", "📱 Android app: {0}\n"],
+  shareHow: ["In the app, enter the two addresses above, then log in with your username and password.", "App-এ উপরের দুটো ঠিকানা বসিয়ে username আর password দিয়ে login করুন।"],
+  shareCams: ["Cameras: {0}\n", "Camera: {0}\n"],
   save: ["Save", "Save"], cancel: ["Cancel", "বাতিল"], delete: ["Delete", "Delete"], new: ["New", "নতুন"], test: ["Test", "Test"],
   passChanged: ["Password changed", "Password বদলানো হয়েছে"],
   // live
@@ -427,6 +463,8 @@ const I18N = {
   updFailed: ["Update failed: ", "Update হয়নি: "], noStorage: ["No storage status", "Storage status নেই"],
   noServer: ["Can't reach the server", "Server-এর সাথে যোগাযোগ নেই"], minAgo: ["min ago", "মি. আগে"], waiting: ["waiting", "অপেক্ষা"],
   // recordings
+  speed: ["Speed", "Speed"], prevMotion: ["⏮ Motion", "⏮ Motion"], nextMotion: ["Motion ⏭", "Motion ⏭"],
+  noMoreMotion: ["No more motion that way", "ওদিকে আর কোনো motion নেই"],
   prevMin: ["1 min", "১ মিনিট"], nextMin: ["1 min", "১ মিনিট"], download: ["Download", "Download"],
   lgRec: ["Recorded", "Recording আছে"], lgMotion: ["Motion", "Motion"], lgNow: ["Playing", "এখন চলছে"],
   motionEvents: ["Motion events", "Motion event"], noRecs: ["No recordings for this day.", "এই দিনের কোনো recording নেই।"],
@@ -443,7 +481,9 @@ const I18N = {
   recording: ["Recording", "Recording"], mode247: ["24/7 (motion marked)", "২৪ ঘণ্টা (motion চিহ্নিত)"],
   modeMotion: ["Only when motion", "শুধু motion হলে"], modeOff: ["Off (live only)", "বন্ধ (শুধু live)"],
   recQuality: ["Recording quality", "Recording quality"], qMain: ["Full (main)", "Full (main)"], qSub: ["Low (sub, less space)", "Low (sub, কম জায়গা)"],
-  sensitivity: ["Motion sensitivity (lower = more sensitive)", "Motion sensitivity (কম = বেশি sensitive)"],
+  sensitivity: ["Motion sensitivity", "Motion sensitivity"],
+  sensVHigh: ["Very high (tiny movement)", "খুব বেশি (সামান্য নড়াচড়াও)"], sensHigh: ["High: people far away (recommended)", "বেশি: দূরের মানুষ (recommended)"],
+  sensMed: ["Medium", "মাঝারি"], sensLow: ["Low (only big movement)", "কম (শুধু বড় নড়াচড়া)"],
   options: ["Options", "Options"], enabled: ["Enabled", "চালু"], sound: ["Sound", "শব্দ"], ptzCap: ["Pan/tilt (PTZ)", "ঘোরানো যায় (PTZ)"],
   testing: ["Talking to the camera… (up to 15 s)", "Camera-র সাথে কথা বলছি… (১৫ সেকেন্ড পর্যন্ত)"],
   hevcNote: [" (H.265: if live view stays black on a phone, set H.264 on the camera)", " (H.265: phone-এ live না চললে camera-য় H.264 দিন)"],
@@ -746,7 +786,7 @@ async function loadTimeline(date, keepPos) {
   const ds = $("#recDate"); ds.innerHTML = "";
   for (const d of data.dates.length ? data.dates : [data.date]) ds.add(new Option(d, d));
   ds.value = data.date;
-  drawDay(); drawHours(); drawEvents();
+  redrawBar(); drawEvents();
   if (!keepPos) {
     const lastMotion = data.events.length ? data.events[data.events.length - 1] : null;
     const segs = data.segments;
@@ -756,27 +796,64 @@ async function loadTimeline(date, keepPos) {
   } else { drawStrip(); drawCursor(); }
 }
 const relSec = ts => ts - TL.day_start;
+/* ---- zoomable view: VIEW.start/span are seconds from midnight ---- */
+let VIEW = { start: 0, span: 86400 }, lastTouch = 0, RATE = +LS.get("cctv.rate", 1);
+const MIN_SPAN = 300;
+const xPct = rel => 100 * (rel - VIEW.start) / VIEW.span;
+function clampView() {
+  VIEW.span = Math.max(MIN_SPAN, Math.min(86400, VIEW.span));
+  VIEW.start = Math.max(0, Math.min(86400 - VIEW.span, VIEW.start));
+}
+function spanLabel(s) { return s >= 3600 ? (Math.round(s / 360) / 10) + "h" : Math.round(s / 60) + "m"; }
+function zoomAround(newSpan, centerRel) {
+  const c = centerRel ?? (VIEW.start + VIEW.span / 2), frac = (c - VIEW.start) / VIEW.span;
+  VIEW.span = newSpan; VIEW.start = c - frac * VIEW.span; clampView(); redrawBar();
+}
+function curRel() { return cur ? relSec(cur.start + (pv.currentTime || 0)) : null; }
+function redrawBar() { if (!TL) return; drawDay(); drawHours(); drawCursor(); $("#zLbl").textContent = spanLabel(VIEW.span); }
 function drawDay() {
-  const day = $("#day"); day.querySelectorAll(".seg,.ev,.cur,.now").forEach(e => e.remove());
-  const pct = s => (100 * relSec(s) / 86400).toFixed(3) + "%";
-  // merge contiguous segments into blocks (fewer DOM nodes)
+  const day = $("#day"); day.querySelectorAll(".seg,.ev,.cur,.now,.tick").forEach(e => e.remove());
+  const put = (cls, a, b, minPx) => {                  // a, b = seconds from midnight
+    const l = xPct(a), r = xPct(b); if (r < -1 || l > 101) return;
+    const d = document.createElement("div"); d.className = cls;
+    d.style.left = l + "%"; d.style.width = minPx ? `max(${minPx}px, ${r - l}%)` : (r - l) + "%"; day.appendChild(d);
+  };
   let blk = null; const blocks = [];
   for (const s of TL.segments) { if (blk && s.start - blk[1] < 15) blk[1] = s.end; else { blk = [s.start, s.end]; blocks.push(blk); } }
-  for (const [a, b] of blocks) { const d = document.createElement("div"); d.className = "seg"; d.style.left = pct(a); d.style.width = `calc(${pct(b)} - ${pct(a)})`; day.appendChild(d); }
-  for (const e of TL.events) {
-    const d = document.createElement("div"); d.className = "ev"; const end = e.end ?? TL.now;
-    d.style.left = pct(e.start); d.style.width = `max(2px, calc(${pct(end)} - ${pct(e.start)}))`; day.appendChild(d);
-  }
-  if (TL.now - TL.day_start < 86400) { const n = document.createElement("div"); n.className = "now"; n.style.left = pct(TL.now); day.appendChild(n); }
+  for (const [a, b] of blocks) put("seg", relSec(a), relSec(b));
+  for (const e of TL.events) put("ev", relSec(e.start), relSec(e.end ?? TL.now), 2);
+  for (const tk of ticks()) { const x = xPct(tk); if (x > 0 && x < 100) { const d = document.createElement("div"); d.className = "tick"; d.style.left = x + "%"; day.appendChild(d); } }
+  if (TL.now - TL.day_start < 86400) { const x = xPct(relSec(TL.now)); if (x >= 0 && x <= 100) { const n = document.createElement("div"); n.className = "now"; n.style.left = x + "%"; day.appendChild(n); } }
   const c = document.createElement("div"); c.className = "cur"; c.id = "cur"; c.style.display = "none"; day.appendChild(c);
 }
-function drawHours() { $("#hours").innerHTML = [0, 3, 6, 9, 12, 15, 18, 21, 24].map(h => `<span style="left:${100 * h / 24}%">${h === 24 ? "" : pad(h)}</span>`).join(""); }
+function tickStep() { const s = VIEW.span; return s > 43200 ? 10800 : s > 21600 ? 7200 : s > 10800 ? 3600 : s > 3600 ? 1800 : s > 1800 ? 600 : s > 900 ? 300 : 60; }
+function ticks() { const st = tickStep(), out = []; for (let x = Math.ceil(VIEW.start / st) * st; x <= VIEW.start + VIEW.span; x += st) out.push(x); return out; }
+function drawHours() {
+  $("#hours").innerHTML = ticks().map(x => { const p = xPct(x); return p < 3 || p > 97 ? "" : `<span style="left:${p}%">${hms(x, false)}</span>`; }).join("");
+}
 function drawCursor() {
   const c = $("#cur"); if (!c || !cur) return;
-  const ts = cur.start + (pv.currentTime || 0);
-  c.style.display = ""; c.style.left = (100 * relSec(ts) / 86400) + "%";
-  $("#pvTime").textContent = hms(relSec(ts));
+  const rel = curRel();
+  if (Date.now() - lastTouch > 4000 && (rel < VIEW.start || rel > VIEW.start + VIEW.span) && VIEW.span < 86400) {
+    VIEW.start = rel - VIEW.span / 2; clampView(); drawDay(); drawHours(); return drawCursor();      // follow playback
+  }
+  const x = xPct(rel); c.style.display = x < 0 || x > 100 ? "none" : ""; c.style.left = x + "%";
+  $("#pvTime").textContent = hms(rel);
 }
+$("#zIn").onclick = () => zoomAround(VIEW.span / 2, curRel());
+$("#zOut").onclick = () => zoomAround(VIEW.span * 2, curRel());
+$("#zCur").onclick = () => { const r = curRel(); if (r !== null) { VIEW.start = r - VIEW.span / 2; clampView(); redrawBar(); } };
+$("#pvRate").value = String(RATE);
+$("#pvRate").onchange = () => { RATE = +$("#pvRate").value; LS.set("cctv.rate", RATE); pv.playbackRate = pv.defaultPlaybackRate = RATE; };
+function jumpMotion(dir) {
+  if (!TL) return; const now = cur ? cur.start + (pv.currentTime || 0) : TL.day_start;
+  const evs = TL.events.filter(e => dir > 0 ? e.start > now + 4 : e.start < now - 6);
+  const e = dir > 0 ? evs[0] : evs[evs.length - 1];
+  if (!e) { $("#pvInfo").textContent = t("noMoreMotion"); return; }
+  playAt(e.start - 3, true);
+}
+$("#mNext").onclick = () => jumpMotion(1);
+$("#mPrev").onclick = () => jumpMotion(-1);
 function hourSegs(h) { return TL.segments.filter(s => Math.floor(relSec(s.start) / 3600) === h); }
 function segHasMotion(s) { return TL.events.some(e => s.start < (e.end ?? TL.now) + 5 && s.end > e.start - 5); }
 function drawStrip() {
@@ -822,7 +899,11 @@ function playAt(ts, autoplay) {
 function playSeg(s, offset, autoplay = true) {
   cur = s; selHour = Math.floor(relSec(s.start) / 3600);
   pv.src = s.url; $("#pvDl").href = s.url;
-  pv.onloadedmetadata = () => { if (offset > 0.5) pv.currentTime = Math.min(offset, (pv.duration || 60) - 0.5); if (autoplay) pv.play().catch(() => {}); };
+  pv.onloadedmetadata = () => {
+    pv.playbackRate = pv.defaultPlaybackRate = RATE;
+    if (offset > 0.5) pv.currentTime = Math.min(offset, (pv.duration || 60) - 0.5);
+    if (autoplay) pv.play().catch(() => {});
+  };
   $("#pvInfo").textContent = `${CAMS.find(c => c.id === TL.cam)?.name || ""} · ${TL.date}${segHasMotion(s) ? " · ⚠ motion" : ""}`;
   drawStrip(); drawCursor();
 }
@@ -839,19 +920,50 @@ pv.addEventListener("ended", () => {                 // continue with the next m
 $("#pvPrev").onclick = () => nextSeg(-1);
 $("#pvNext").onclick = () => nextSeg(1);
 (() => {
-  const day = $("#day"), hov = $("#hov");
-  const tsAt = e => { const r = day.getBoundingClientRect(); return TL.day_start + Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * 86400; };
+  /* tap = play from there · drag = scroll · pinch / wheel = zoom */
+  const day = $("#day"), hov = $("#hov"), pts = new Map();
+  let drag = null;
+  const relAt = x => { const r = day.getBoundingClientRect(); return VIEW.start + Math.max(0, Math.min(1, (x - r.left) / r.width)) * VIEW.span; };
+  const showHov = (x, text) => { const r = day.getBoundingClientRect(); hov.style.display = "block"; hov.style.left = (100 * (x - r.left) / r.width) + "%"; hov.textContent = text; };
+  day.addEventListener("pointerdown", e => {
+    if (!TL) return; day.setPointerCapture(e.pointerId); pts.set(e.pointerId, e.clientX); lastTouch = Date.now();
+    if (pts.size === 1) drag = { x: e.clientX, start: VIEW.start, moved: false };
+    if (pts.size === 2) { const [a, b] = [...pts.values()]; drag = { pinch: Math.abs(a - b) || 1, span: VIEW.span, mid: relAt((a + b) / 2), moved: true }; }
+  });
   day.addEventListener("pointermove", e => {
-    if (!TL) return; const ts = tsAt(e); hov.style.display = "block";
-    hov.style.left = (100 * relSec(ts) / 86400) + "%"; hov.textContent = hms(relSec(ts), false);
+    if (!TL) return;
+    if (!pts.has(e.pointerId)) { if (e.pointerType === "mouse") showHov(e.clientX, hms(relAt(e.clientX), false)); return; }
+    pts.set(e.pointerId, e.clientX); lastTouch = Date.now();
+    const w = day.getBoundingClientRect().width;
+    if (pts.size >= 2 && drag && drag.pinch) {
+      const [a, b] = [...pts.values()]; const d = Math.abs(a - b) || 1;
+      VIEW.span = drag.span * drag.pinch / d; clampView();
+      const r = day.getBoundingClientRect(), frac = ((a + b) / 2 - r.left) / r.width;
+      VIEW.start = drag.mid - frac * VIEW.span; clampView(); redrawBar();
+    } else if (drag && !drag.pinch) {
+      const dx = e.clientX - drag.x;
+      if (Math.abs(dx) > 6) drag.moved = true;
+      if (drag.moved) { VIEW.start = drag.start - dx / w * VIEW.span; clampView(); redrawBar(); }
+      showHov(e.clientX, hms(relAt(e.clientX), false));
+    }
   });
-  day.addEventListener("pointerleave", () => hov.style.display = "none");
-  day.addEventListener("click", e => {
-    if (!TL || !TL.segments.length) return;
-    const ts = tsAt(e), s = TL.segments.find(x => ts >= x.start - 30 && ts < x.end + 30);
-    if (!s) { hov.style.display = "block"; hov.textContent = t("gap"); return; }
-    playAt(ts, true);
-  });
+  const up = e => {
+    if (!pts.has(e.pointerId)) return;
+    pts.delete(e.pointerId); lastTouch = Date.now();
+    if (pts.size === 0) {
+      if (drag && !drag.moved && TL && TL.segments.length) {
+        const ts = TL.day_start + relAt(e.clientX), s = TL.segments.find(x => ts >= x.start - 30 && ts < x.end + 30);
+        if (!s) showHov(e.clientX, t("gap")); else { hov.style.display = "none"; playAt(ts, true); }
+      }
+      drag = null;
+    } else if (pts.size === 1) { const [x] = pts.values(); drag = { x, start: VIEW.start, moved: true }; }
+  };
+  day.addEventListener("pointerup", up); day.addEventListener("pointercancel", up);
+  day.addEventListener("pointerleave", e => { if (e.pointerType === "mouse" && !pts.size) hov.style.display = "none"; });
+  day.addEventListener("wheel", e => {
+    if (!TL) return; e.preventDefault(); lastTouch = Date.now();
+    zoomAround(VIEW.span * (e.deltaY > 0 ? 1.25 : 0.8), relAt(e.clientX));
+  }, { passive: false });
 })();
 function camSelect() {
   const sel = $("#recCam"), prev = sel.value || LS.get("cctv.recCam", ""); sel.innerHTML = "";
@@ -947,13 +1059,18 @@ function editCam(c) {
   if (c) {
     $("#cName").value = c.name; $("#cHost").value = c.host; $("#cPort").value = c.port; $("#cUser").value = c.user;
     $("#cMain").value = c.main_path; $("#cSub").value = c.sub_path; $("#cMode").value = c.mode;
-    $("#cRec").value = c.record_stream; $("#cThr").value = c.threshold; $("#cEn").checked = c.enabled;
+    $("#cRec").value = c.record_stream; setThr(c.threshold); $("#cEn").checked = c.enabled;
     $("#cAud").checked = c.audio !== false && c.audio !== "no"; $("#cPtz").checked = !!c.ptz && c.ptz !== "no";
   } else {
     $("#cName").value = ""; $("#cHost").value = ""; $("#cMode").value = "continuous"; $("#cRec").value = "main";
-    $("#cThr").value = 1500; $("#cEn").checked = true; $("#cAud").checked = true;
+    setThr(400); $("#cEn").checked = true; $("#cAud").checked = true;
   }
   $("#cPass").value = ""; $("#cPass").placeholder = c && c.has_password ? t("keepPass") : "";
+}
+function setThr(v) {                                   // keep a custom value from cameras.conf selectable
+  const sel = $("#cThr"); sel.querySelectorAll("option.cust").forEach(o => o.remove());
+  if (![...sel.options].some(o => o.value === String(v))) { const o = new Option(`Custom (${v})`, String(v)); o.className = "cust"; sel.add(o); }
+  sel.value = String(v);
 }
 const camForm = () => ({ id: camEditing, name: $("#cName").value.trim(), type: $("#cType").value, host: $("#cHost").value.trim(),
   port: $("#cPort").value.trim(), user: $("#cUser").value.trim(), password: $("#cPass").value,
@@ -1134,6 +1251,7 @@ function resetUserForm(u) {
 }
 async function loadUsers() {
   const list = await api("/api/users"), box = $("#ulist"); box.innerHTML = "";
+  USERS = list; if (!SHARE) await loadShare(); renderShare();
   for (const u of list) {
     const row = document.createElement("div"); row.className = "urow";
     const camsTxt = u.cameras === "*" ? t("allCams") : (u.cameras.map(id => (CAMS.find(c => c.id === id) || {}).name || id).join(", ") || t("noneCams"));
@@ -1155,8 +1273,47 @@ $("#uForm").onsubmit = async e => {
   const body = { name: editing || $("#uName").value.trim(), role: formRole, recordings: $("#uRecs").checked, ptz: $("#uPtz").checked,
     cameras: formRole === "admin" || cams.length === CAMS.length ? "*" : cams };
   if ($("#uPass").value) body.password = $("#uPass").value;
-  try { await api("/api/users/save", body); if (editing === ME.name) { location.reload(); return; } resetUserForm(null); loadUsers(); }
+  try {
+    await api("/api/users/save", body);
+    if (editing === ME.name) { location.reload(); return; }
+    lastPass = body.password ? { name: body.name, pass: body.password } : null;
+    resetUserForm(null); await loadUsers();
+    if (lastPass) $("#shareCard").scrollIntoView({ behavior: "smooth" });
+  }
   catch (err) { $("#uErr").textContent = err.message; }
+};
+
+/* ============================ share access ============================ */
+let SHARE = null, USERS = [], lastPass = null;      // lastPass = {name, pass} right after create / reset
+async function loadShare() { try { SHARE = await api("/api/admin/share"); } catch { SHARE = null; } }
+function renderShare() {
+  const sel = $("#shareUser"), prev = sel.value; sel.innerHTML = "";
+  for (const u of USERS) sel.add(new Option(`${u.name} (${u.role})`, u.name));
+  if (USERS.find(u => u.name === prev)) sel.value = prev;
+  if (lastPass && !lastPass.shown && USERS.find(u => u.name === lastPass.name)) { sel.value = lastPass.name; lastPass.shown = true; }
+  const u = USERS.find(x => x.name === sel.value); if (!u || !SHARE) { $("#shareText").textContent = ""; return; }
+  const cams = u.cameras === "*" ? t("allCams") : u.cameras.map(id => (CAMS.find(c => c.id === id) || {}).name || id).join(", ");
+  let txt = t("shareBody", u.name) + t("shareCams", cams);
+  if (SHARE.lan_url) txt += t("shareHome", SHARE.lan_url);
+  if (SHARE.public_url) txt += t("shareNet", SHARE.public_url);
+  txt += t("shareApp", SHARE.app_url) + "\n" + t("shareHow");
+  $("#shareText").textContent = txt;
+  const pb = $("#sharePass");
+  if (lastPass && lastPass.name === u.name) { pb.style.display = "block"; pb.innerHTML = t("sharePassNote", esc(u.name), esc(lastPass.pass)); }
+  else pb.style.display = "none";
+  $("#shareMsg").textContent = "";
+}
+$("#shareUser").onchange = renderShare;
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; } catch {}
+  const ta = document.createElement("textarea");                 // works on plain http too
+  ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0"; document.body.appendChild(ta);
+  ta.focus(); ta.select(); let ok = false; try { ok = document.execCommand("copy"); } catch {}
+  ta.remove(); return ok;
+}
+$("#shareCopy").onclick = async () => {
+  const ok = await copyText($("#shareText").textContent);
+  $("#shareMsg").style.color = ok ? "var(--accent)" : "var(--bad)"; $("#shareMsg").textContent = ok ? t("copied") : t("copyFail");
 };
 
 /* ======================== re-render on language ======================== */
@@ -1165,7 +1322,7 @@ function rerenderAll() {
   if (!CAMS.length || !CAMS.some(c => enabled[c.id])) renderGrid();
   refreshStatus();
   if (curTab === "recs" && TL) { drawStrip(); drawEvents(); }
-  if (curTab === "users") { loadUsers(); loadSys(); if (DRV) showDrive(DRV); loadCamCfg(); $("#cFormTitle").textContent = camEditing ? t("editCam", $("#cName").value) : t("newCam"); resetUserForm(null); }
+  if (curTab === "users") { renderShare(); loadUsers(); loadSys(); if (DRV) showDrive(DRV); loadCamCfg(); $("#cFormTitle").textContent = camEditing ? t("editCam", $("#cName").value) : t("newCam"); resetUserForm(null); }
 }
 
 /* ================================ boot ================================ */

@@ -17,7 +17,7 @@ import cctvconf  # noqa: E402
 
 OUT = os.environ.get("CCTV_GEN_DIR", "/etc/cctv/generated")
 RUN = os.environ.get("CCTV_RUN", "/run/cctv")
-FRAMERATE = 4  # motion-detection frame rate (sub stream); recordings keep the camera's own fps
+FRAMERATE = 5  # motion-detection frame rate (sub stream); recordings keep the camera's own fps
 
 
 def yq(s):
@@ -79,8 +79,11 @@ def gen_motion(g, cams, outdir):
         "minimum_motion_frames 2",
         "noise_tune on",
         "despeckle_filter EedDl",
-        "lightswitch_percent 60",
-        "lightswitch_frames 5",
+        # a light switching on/off IS an event we want, so don't filter it out
+        "lightswitch_percent 0",
+        # draw a red box around what moved on the event snapshot
+        "locate_motion_mode on",
+        "locate_motion_style redbox",
         "",
     ]
     files = []
@@ -130,9 +133,40 @@ def report(ok, msg):
         pass
 
 
+MIGRATE_FLAG = os.path.join(os.path.dirname(cctvconf.CAMS_PATH), ".v3-migrated")
+
+
+def migrate():
+    """v3: recording became 24/7 + motion marks. Old cameras set to "motion" would now lose
+    every minute where detection missed something, so move them to 24/7 once, and use the
+    new, more sensitive default threshold."""
+    if os.path.exists(MIGRATE_FLAG) or not os.path.exists(cctvconf.CAMS_PATH):
+        return
+    try:
+        import configparser
+        cp = configparser.ConfigParser(interpolation=None)
+        cp.optionxform = str.lower
+        cp.read(cctvconf.CAMS_PATH, encoding="utf-8")
+        cams = []
+        for sec in cp.sections():
+            d = dict(cp.items(sec))
+            d["id"] = sec
+            if d.get("mode", "motion") == "motion":
+                d["mode"] = "continuous"
+            if d.get("threshold", "1500") == "1500":
+                d["threshold"] = "400"
+            cams.append(d)
+        cctvconf.save_cameras(cams)
+        open(MIGRATE_FLAG, "w").close()
+        print("Migrated cameras to 24/7 recording with higher motion sensitivity")
+    except Exception as e:  # noqa: BLE001
+        print(f"migration skipped: {e}")
+
+
 def main():
     restart = "--no-restart" not in sys.argv
     auto = "--auto" in sys.argv
+    migrate()
     try:
         g, cams = cctvconf.load()
     except Exception as e:  # noqa: BLE001

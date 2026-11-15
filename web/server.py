@@ -39,6 +39,8 @@ DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 general, _ = cctvconf.load()
 COOKIE = "cctv_session"
 _fails = {}            # ip -> [timestamps] for login rate limiting
+_user_fails = {}       # username -> [timestamps] of failed logins coming from the internet (Funnel)
+APP_URL = "https://github.com/shovon-mandal/home-cctv/releases/download/app-latest/HomeCCTV.apk"
 _fails_lock = threading.Lock()
 
 
@@ -198,6 +200,24 @@ def drive_status(check=False):
     return res
 
 
+def share_info():
+    """Addresses a new user needs: home Wi-Fi URL, internet URL, app download."""
+    lan = ""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("10.255.255.255", 1))        # no packet is sent; just picks the LAN interface
+        lan = s.getsockname()[0]
+        s.close()
+    except OSError:
+        pass
+    try:
+        public = open("/etc/cctv/public_url").read().strip()
+    except OSError:
+        public = ""
+    port = general.get("web_port", "8085")
+    return {"lan_url": f"http://{lan}:{port}" if lan else "", "public_url": public, "app_url": APP_URL}
+
+
 def pipe(src, dst):
     try:
         while True:
@@ -253,6 +273,22 @@ class Handler(BaseHTTPRequestHandler):
             raise PermissionError
         return json.loads(self.rfile.read(n) or b"{}")
 
+    def end_headers(self):
+        # no framing (clickjacking), no MIME sniffing, no leaking URLs to other sites
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Content-Security-Policy", "frame-ancestors 'none'")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        super().end_headers()
+
+    def same_origin(self):
+        """Requests from another website (a browser sends its Origin) are refused."""
+        origin = self.headers.get("Origin")
+        if not origin:
+            return True
+        host = self.headers.get("X-Forwarded-Host") or self.headers.get("Host", "")
+        return urlparse(origin).netloc == host
+
     def send_json(self, obj, code=200, headers=()):
         body = json.dumps(obj, ensure_ascii=False).encode()
         self.send_response(code)
@@ -294,6 +330,8 @@ class Handler(BaseHTTPRequestHandler):
             if not who:
                 return
             name, user = who
+            if p == "/api/ws" and not self.same_origin():
+                return self.send_error_json(403, "bad origin")
             if p == "/api/ws":
                 return self.ws_proxy(q, user)
             if p == "/api/cameras":
@@ -330,6 +368,10 @@ class Handler(BaseHTTPRequestHandler):
                 if user["role"] != "admin":
                     return self.send_error_json(403, "Admins only || শুধু admin পারবে")
                 return self.send_json(drive_status(check="check" in q))
+            if p == "/api/admin/share":
+                if user["role"] != "admin":
+                    return self.send_error_json(403, "Admins only || শুধু admin পারবে")
+                return self.send_json(share_info())
             if p == "/api/admin/apply":
                 return self.send_json(read_json(os.path.join(RUN, "apply.json"), {}))
             if p == "/api/users":
@@ -346,6 +388,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         p = urlparse(self.path).path
+        if not self.same_origin():
+            return self.send_error_json(403, "bad request origin")
         try:
             body = self.read_body()
         except PermissionError:
@@ -461,10 +505,19 @@ class Handler(BaseHTTPRequestHandler):
             if len(recent) >= 5:
                 return self.send_error_json(429, "Too many attempts, try again in 10 minutes || অনেকবার ভুল হয়েছে, ১০ মিনিট পর চেষ্টা করুন")
         name = str(body.get("user", "")).strip()
+        remote = self.via_proxy()               # came from the internet (Tailscale Funnel)
+        if remote:
+            with _fails_lock:
+                uf = [t for t in _user_fails.get(name, []) if now - t < 900]
+                _user_fails[name] = uf
+                if len(uf) >= 10:              # someone is guessing this account: block it from outside
+                    return self.send_error_json(429, "This account is locked from the internet for 15 minutes (too many wrong passwords). It still works at home. || অনেকবার ভুল password-এর কারণে এই account ১৫ মিনিট বাইরে থেকে বন্ধ। বাসার Wi-Fi থেকে চলবে।")
         u = cctvusers.load()["users"].get(name)
         if not u or not cctvusers.check_password(str(body.get("pass", "")), u.get("hash", "")):
             with _fails_lock:
                 _fails.setdefault(ip, []).append(now)
+                if remote:
+                    _user_fails.setdefault(name, []).append(now)
             time.sleep(1)
             return self.send_error_json(401, "Wrong username or password || username বা password ভুল")
         with _fails_lock:

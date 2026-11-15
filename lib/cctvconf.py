@@ -67,7 +67,7 @@ CAM_DEFAULTS = {
     "mode": "continuous",         # continuous (24/7) | motion (keep only motion parts) | off
     "ptz": "no",                  # camera can pan/tilt (ONVIF)
     "audio": "yes",               # sound in live view and recordings
-    "threshold": "1500",
+    "threshold": "400",
     "record_stream": "main",      # main = full quality; sub = low quality (remote cams)
 }
 
