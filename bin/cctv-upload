@@ -82,29 +82,44 @@ def main():
     if not todo:
         return status("ok", "Drive has every motion clip", "Drive-এ সব motion clip আছে")
 
-    nclips = sum(1 for p in todo if p.endswith(".mp4"))
-    status("busy", f"Uploading {nclips} motion clip(s)…", f"{nclips}টা motion clip upload হচ্ছে…")
-    with tempfile.NamedTemporaryFile("w", delete=False, suffix=".txt") as lst:
-        lst.write("\n".join(todo) + "\n")
-    try:
-        r = subprocess.run(["nice", "-n", "15", "rclone", "copy", root + "/", g["drive_remote"],
-                            "--config", RCLONE_CONF, "--files-from", lst.name, "--no-traverse",
-                            "--transfers", "2", "--bwlimit", g["drive_bwlimit"], "--retries", "2"],
-                           capture_output=True, text=True, timeout=3600)
-    finally:
-        os.unlink(lst.name)
-    if r.returncode != 0:
-        print(r.stderr[-800:])
-        return status("error", "Upload failed: check internet / Drive", "Upload ব্যর্থ: internet বা Drive দেখুন")
-
     keep_days = set(days)
-    done = {p for p in done | set(todo) if len(p.split("/")) > 1 and p.split("/")[1] in keep_days}
-    with open(STATE + ".tmp", "w") as f:
-        f.write("\n".join(sorted(done)) + "\n")
-    os.replace(STATE + ".tmp", STATE)
-    n = sum(1 for p in todo if p.endswith(".mp4"))
-    status("ok", f"Uploaded {n} motion clip(s)", f"{n}টা motion clip upload হয়েছে")
 
+    def save_state():
+        keep = {p for p in done if len(p.split("/")) > 1 and p.split("/")[1] in keep_days}
+        with open(STATE + ".tmp", "w") as f:
+            f.write("\n".join(sorted(keep)) + "\n")
+        os.replace(STATE + ".tmp", STATE)
+
+    # batches of a few clips (+ their snapshots): progress is saved after each batch, so a slow
+    # or broken connection never has to start the whole backlog again
+    clips = sorted(p for p in todo if p.endswith(".mp4"))
+    extras = [p for p in todo if not p.endswith(".mp4")]
+    total, sent, BATCH = len(clips), 0, 5
+    batches = [clips[i:i + BATCH] for i in range(0, total, BATCH)] or [[]]
+    batches[0] = batches[0] + extras
+    for batch in batches:
+        status("busy", f"Uploading motion clips: {sent}/{total} done…", f"Motion clip upload হচ্ছে: {total}টার মধ্যে {sent}টা হয়েছে…")
+        with tempfile.NamedTemporaryFile("w", delete=False, suffix=".txt") as lst:
+            lst.write("\n".join(batch) + "\n")
+        try:
+            r = subprocess.run(["nice", "-n", "15", "rclone", "copy", root + "/", g["drive_remote"],
+                                "--config", RCLONE_CONF, "--files-from", lst.name, "--no-traverse",
+                                "--transfers", "2", "--bwlimit", g["drive_bwlimit"], "--retries", "2"],
+                               capture_output=True, text=True, timeout=1800)
+        except subprocess.TimeoutExpired:
+            r = None
+        finally:
+            os.unlink(lst.name)
+        if r is None or r.returncode != 0:
+            if r is not None:
+                print(r.stderr[-800:])
+            save_state()
+            return status("error", f"Upload stopped at {sent}/{total}: check internet / Drive (retries every minute)",
+                          f"{total}টার মধ্যে {sent}টা upload হয়ে থেমেছে: internet বা Drive দেখুন (প্রতি মিনিটে আবার চেষ্টা করবে)")
+        done |= set(batch)
+        sent += sum(1 for p in batch if p.endswith(".mp4"))
+        save_state()
+    status("ok", f"Uploaded {sent} motion clip(s)", f"{sent}টা motion clip upload হয়েছে")
 
 if __name__ == "__main__":
     try:
