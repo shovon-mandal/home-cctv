@@ -75,12 +75,17 @@ def probe(url):
         return {"ok": True, "codec": st[0].get("codec_name"), "width": st[0].get("width"), "height": st[0].get("height")}
     err = (r.stderr or "").strip().splitlines()
     msg = err[-1] if err else "stream পাওয়া যায়নি"
+    msg = re.sub(r"rtsp://\S+: ", "", msg)                   # drop the URL (it contains the password)
+    msg = re.sub(r"//[^@/\s]+@", "//***@", msg)
     if "401" in msg or "Unauthorized" in msg:
         msg = "username/password ভুল"
     elif "404" in msg or "Not Found" in msg:
         msg = "path ভুল (camera এই stream চেনে না)"
     elif "Connection refused" in msg:
         msg = "port বন্ধ (RTSP/ONVIF চালু আছে তো?)"
+    elif "Invalid data found" in msg:
+        msg = ("camera সাড়া দিচ্ছে কিন্তু video পড়া যাচ্ছে না। Imou হলে app-এ 'Video Encryption' / "
+               "'Stream Encryption' বন্ধ করুন; অথবা RTSP বন্ধ আছে")
     elif "No route" in msg or "timed out" in msg.lower() or "Network is unreachable" in msg:
         msg = "camera পাওয়া যাচ্ছে না (IP ঠিক আছে তো?)"
     return {"ok": False, "error": msg[:200]}
