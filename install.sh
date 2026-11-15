@@ -87,7 +87,10 @@ fi
 systemctl restart cctv-go2rtc cctv-web cctv-storage.timer cctv-upload.timer cctv-drive-clean.timer cctv-apply.path
 systemctl restart cctv-motion || true
 
-if [ "$UPDATE" = 0 ] && ! /opt/cctv/bin/cctv-user list 2>/dev/null | grep -q " admin "; then
+has_admin() {
+  python3 -c 'import json,sys; d=json.load(open("/etc/cctv/auth/users.json")); sys.exit(0 if any(u.get("role")=="admin" for u in d["users"].values()) else 1)' 2>/dev/null
+}
+if [ "$UPDATE" = 0 ] && ! has_admin; then
   echo
   echo "==> Dashboard-এর admin account বানান"
   read -r -p "Admin username [admin]: " ADMIN_NAME
