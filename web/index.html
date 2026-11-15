@@ -865,7 +865,7 @@ async function refreshStatus() {
     const short = up.state === "busy" && up.total ? `⬆ ${up.sent || 0}/${up.total} ${t("clips")}` : up.message ? tr(up.message) : t("waiting");
     setPill("#stDrive", { ok: "ok", idle: "ok", busy: "warn", off: "", error: "bad" }[up.state] ?? "",
       `☁️ Drive · ${short}${ago > 0 ? ` · ${ago} ${t("minAgo")}` : ""}`);
-    if ($("#drvDlg").open) showDrive();
+    if ($("#drvDlg").open) showDriveDlg();
     if (s.load !== null && s.cpus) {
       const pct = Math.round(100 * s.load / s.cpus), tc = s.temp;
       const lv = Math.max(pct < 70 ? 0 : pct < 95 ? 1 : 2, tc == null ? 0 : tc < 70 ? 0 : tc < 80 ? 1 : 2);
@@ -1309,7 +1309,7 @@ let LAST_UP = { up: {}, now: 0 };
 function agoTxt(sec) {
   return sec < 90 ? t("justNow") : sec < 5400 ? Math.round(sec / 60) + " " + t("minAgo") : Math.round(sec / 3600) + " " + t("hrAgo");
 }
-function showDrive() {
+function showDriveDlg() {
   const { up, now } = LAST_UP;
   $("#drvNow").textContent = (up.message ? tr(up.message) : t("waiting")) + (up.time ? ` (${agoTxt(now - up.time)})` : "");
   const busy = up.state === "busy" && up.total;
@@ -1328,7 +1328,7 @@ function showDrive() {
   $("#drvList").innerHTML = rec.length ? rec.map(x => `<div>✅ <b>${esc(x.cam)}</b> · ${esc(x.day)} ${esc(x.file.slice(0, 5).replace("-", ":"))} · ${(x.size / 1048576).toFixed(1)} MB · <span class="muted">${agoTxt(now - x.t)}</span></div>`).join("")
     : `<span class="muted">${t("drvNoRecent")}</span>`;
 }
-$("#stDrive").onclick = () => { showDrive(); $("#drvDlg").showModal(); };
+$("#stDrive").onclick = () => { showDriveDlg(); $("#drvDlg").showModal(); };
 $("#ejBtn").onclick = () => { if (confirm(t("ejectQ"))) ssdAction("eject"); };
 $("#atBtn").onclick = () => ssdAction("attach");
 
