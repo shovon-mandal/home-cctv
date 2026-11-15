@@ -1,0 +1,14 @@
+[Unit]
+Description=CCTV web dashboard
+After=network-online.target
+
+[Service]
+User=cctv
+ExecStart=/usr/bin/python3 /opt/cctv/web/server.py
+Restart=always
+RestartSec=3
+Nice=5
+MemoryMax=150M
+
+[Install]
+WantedBy=multi-user.target

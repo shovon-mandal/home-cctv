@@ -1,0 +1,50 @@
+#!/usr/bin/env python3
+"""Keep Google Drive under control: delete clips older than drive_keep_days,
+then delete oldest clips until the CCTV folder is below drive_max_gb.
+Runs hourly as user cctv."""
+import json
+import os
+import subprocess
+import sys
+
+sys.path.insert(0, "/opt/cctv/lib")
+import cctvconf  # noqa: E402
+
+RCLONE_CONF = os.environ.get("RCLONE_CONF", "/etc/cctv/rclone.conf")
+
+
+def rclone(*args, capture=False):
+    cmd = ["rclone", "--config", RCLONE_CONF, *args]
+    if capture:
+        return subprocess.run(cmd, check=True, capture_output=True, text=True).stdout
+    return subprocess.call(cmd)
+
+
+def main():
+    g, _ = cctvconf.load()
+    configured = os.path.exists(RCLONE_CONF) and os.path.getsize(RCLONE_CONF) > 0
+    if not cctvconf.yes(g["drive_enabled"]) or not configured:
+        return 0
+    remote = g["drive_remote"]
+    keep = int(float(g["drive_keep_days"]))
+    cap = int(float(g["drive_max_gb"]) * 1024 ** 3)
+
+    rclone("delete", remote, "--min-age", f"{keep}d")
+
+    files = json.loads(rclone("lsjson", "-R", "--files-only", remote, capture=True) or "[]")
+    files.sort(key=lambda f: f.get("ModTime", ""))
+    total = sum(f.get("Size", 0) for f in files)
+    removed = 0
+    for f in files:
+        if total <= cap:
+            break
+        if rclone("deletefile", f"{remote.rstrip('/')}/{f['Path']}") == 0:
+            total -= f.get("Size", 0)
+            removed += 1
+    rclone("rmdirs", remote, "--leave-root")
+    print(f"drive: {total / 1024 ** 3:.2f} GB used, {removed} old clip(s) removed for space")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

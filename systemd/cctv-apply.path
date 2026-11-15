@@ -1,0 +1,9 @@
+[Unit]
+Description=Apply CCTV camera changes made from the dashboard
+
+[Path]
+PathChanged=/run/cctv/apply-request
+Unit=cctv-apply.service
+
+[Install]
+WantedBy=multi-user.target

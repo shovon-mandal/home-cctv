@@ -1,0 +1,21 @@
+#!/bin/bash
+# Quick health check.
+echo "== Services =="
+for s in cctv-go2rtc cctv-motion cctv-web cctv-storage.timer cctv-upload.timer cctv-drive-clean.timer cctv-apply.path cctv-update.timer; do
+  printf '  %-24s %s\n' "$s" "$(systemctl is-active "$s")"
+done
+echo "== Storage =="
+cat /run/cctv/storage.json 2>/dev/null | python3 -c '
+import json,sys
+d=json.load(sys.stdin); gb=lambda b: f"{b/1024**3:.1f} GB"
+print("  mode:", "SSD" if d["mode"]=="ssd" else "SD card buffer")
+print("  free:", gb(d["avail"]), "of", gb(d["total"]))
+print("  SD buffer:", gb(d["sd_buffer_bytes"]), "/", gb(d["sd_buffer_cap"]))' || echo "  (no status yet)"
+echo "== Drive =="
+cat /run/cctv/upload.json 2>/dev/null || echo "  (no upload yet)"
+echo
+echo "== Load =="
+uptime
+free -h | head -2
+echo
+echo "Logs: journalctl -u cctv-motion -n 50   |   journalctl -u cctv-go2rtc -n 50"

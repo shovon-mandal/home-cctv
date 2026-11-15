@@ -1,0 +1,6 @@
+[Unit]
+Description=Regenerate CCTV configs and restart streams
+
+[Service]
+Type=oneshot
+ExecStart=/opt/cctv/bin/cctv-apply --auto

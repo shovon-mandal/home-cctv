@@ -1,0 +1,18 @@
+# never commit real settings or secrets
+cctv.conf
+cameras.conf
+users.json
+rclone.conf
+secret
+*.env
+!*.example
+
+# build / local junk
+__pycache__/
+*.pyc
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+*.apk
+.DS_Store

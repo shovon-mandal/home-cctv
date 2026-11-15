@@ -1,0 +1,11 @@
+[Unit]
+Description=CCTV upload clips to Google Drive
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=cctv
+ExecStart=/opt/cctv/bin/cctv-upload
+Nice=15
+IOSchedulingClass=idle
+TimeoutStartSec=2h

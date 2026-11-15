@@ -1,0 +1,15 @@
+[Unit]
+Description=CCTV live streams (go2rtc)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=cctv
+ExecStart=/opt/cctv/bin/go2rtc -config /etc/cctv/generated/go2rtc.yaml
+Restart=always
+RestartSec=5
+Nice=5
+MemoryMax=300M
+
+[Install]
+WantedBy=multi-user.target

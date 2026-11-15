@@ -1,0 +1,56 @@
+#!/bin/bash
+# Pull the latest version from GitHub and install it. Your settings, cameras,
+# users, Drive login and recordings (/etc/cctv, /srv/cctv) are never touched.
+#
+#   sudo cctv-update          -> update now if there is something new
+#   sudo cctv-update --check  -> only report
+# Runs automatically every 10 minutes (cctv-update.timer) and when an admin
+# presses "Update" in the dashboard.
+set -u
+SRC=${CCTV_SRC:-/opt/cctv-src}
+BRANCH=${CCTV_BRANCH:-main}
+RUN=${CCTV_RUN:-/run/cctv}
+mkdir -p "$RUN"
+exec 9>"$RUN/update.lock"
+flock -n 9 || { echo "already running"; exit 0; }
+
+status() {  # state, message
+  printf '{"state":"%s","message":"%s","version":"%s","time":%s}\n' \
+    "$1" "$2" "$(git -C "$SRC" log -1 --format='%h · %cd' --date=format:'%Y-%m-%d %H:%M' 2>/dev/null)" "$(date +%s)" \
+    > "$RUN/update.json.tmp" && mv "$RUN/update.json.tmp" "$RUN/update.json"
+  chmod 644 "$RUN/update.json"
+}
+
+[ -d "$SRC/.git" ] || { status error "Source folder নেই ($SRC)"; echo "No git checkout at $SRC"; exit 1; }
+cd "$SRC"
+if ! git fetch -q origin "$BRANCH" 2>"$RUN/update.err"; then
+  status error "GitHub-এ পৌঁছানো যায়নি"; cat "$RUN/update.err"; exit 1
+fi
+LOCAL=$(git rev-parse HEAD)
+REMOTE=$(git rev-parse "origin/$BRANCH")
+if [ "$LOCAL" = "$REMOTE" ]; then
+  status ok "সর্বশেষ version চলছে"
+  echo "Up to date ($(git log -1 --format=%h))"
+  exit 0
+fi
+if [ "${1:-}" = "--check" ]; then
+  status available "নতুন version আছে"
+  git log --oneline "$LOCAL..$REMOTE"
+  exit 0
+fi
+
+status updating "Update হচ্ছে…"
+echo "Updating $(git log -1 --format=%h) -> $(git log -1 --format=%h "$REMOTE")"
+git log --oneline "$LOCAL..$REMOTE"
+git reset -q --hard "$REMOTE"
+if "$SRC/install.sh" --update > "$RUN/update.log" 2>&1; then
+  status ok "Update হয়েছে"
+  echo "Done."
+else
+  tail -20 "$RUN/update.log"
+  # roll back to the version that worked
+  git reset -q --hard "$LOCAL"
+  "$SRC/install.sh" --update >> "$RUN/update.log" 2>&1
+  status error "Update ব্যর্থ, আগের version-এ ফেরত গেছে"
+  exit 1
+fi

@@ -1,0 +1,113 @@
+#!/bin/bash
+# CCTV system installer for Asus Tinker Board (Armbian / Debian).
+#   First time:  sudo git clone https://github.com/<you>/home-cctv /opt/cctv-src
+#                sudo /opt/cctv-src/install.sh
+#   Updates:     automatic (cctv-update.timer), or: sudo cctv-update
+set -euo pipefail
+UPDATE=0; [ "${1:-}" = "--update" ] && UPDATE=1
+GO2RTC_VERSION=${GO2RTC_VERSION:-v1.9.9}
+HERE=$(cd "$(dirname "$0")" && pwd)
+
+[ "$(id -u)" -eq 0 ] || { echo "sudo দিয়ে চালান:  sudo ./install.sh"; exit 1; }
+
+case "$(uname -m)" in
+  armv7l|armv7*) ARCH=arm ;;
+  aarch64|arm64) ARCH=arm64 ;;
+  x86_64)        ARCH=amd64 ;;
+  armv6l)        ARCH=armv6 ;;
+  *) echo "Unsupported CPU: $(uname -m)"; exit 1 ;;
+esac
+echo "==> CPU: $(uname -m)  (go2rtc build: $ARCH)"
+
+echo "==> Packages"
+need_apt=1
+if [ "$UPDATE" = 1 ]; then
+  need_apt=0
+  for c in motion ffprobe rclone python3 curl parted; do command -v "$c" >/dev/null || need_apt=1; done
+fi
+[ "$need_apt" = 1 ] && apt-get update -qq
+[ "$need_apt" = 1 ] && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+  motion ffmpeg python3 rclone curl ca-certificates parted e2fsprogs psmisc util-linux >/dev/null
+# for using the SSD without formatting (exFAT / NTFS); not fatal if missing
+[ "$need_apt" = 1 ] && { DEBIAN_FRONTEND=noninteractive apt-get install -y -qq exfatprogs ntfs-3g >/dev/null 2>&1 || true; }
+systemctl disable --now motion 2>/dev/null || true     # we run our own motion service
+
+echo "==> User and folders"
+id cctv &>/dev/null || useradd --system --home-dir /srv/cctv --shell /usr/sbin/nologin cctv
+install -d -o root -g root -m 755 /opt/cctv /opt/cctv/bin /opt/cctv/lib /opt/cctv/web
+install -d -o root -g cctv -m 770 /etc/cctv
+install -d -o cctv -g cctv -m 750 /etc/cctv/generated
+install -d -o cctv -g cctv -m 700 /etc/cctv/auth
+install -d -o cctv -g cctv -m 755 /srv/cctv /srv/cctv/sd-buffer
+install -d -m 755 /mnt/cctv-ssd
+echo "d /run/cctv 0775 root cctv -" > /etc/tmpfiles.d/cctv.conf
+systemd-tmpfiles --create /etc/tmpfiles.d/cctv.conf
+
+echo "==> Files"
+install -m 755 "$HERE"/bin/cctv-* /opt/cctv/bin/
+install -m 644 "$HERE"/lib/*.py /opt/cctv/lib/
+install -m 644 "$HERE"/web/* /opt/cctv/web/
+for f in /opt/cctv/bin/cctv-*; do ln -sf "$f" /usr/local/bin/; done
+
+if [ ! -x /opt/cctv/bin/go2rtc ]; then
+  echo "==> Downloading go2rtc $GO2RTC_VERSION"
+  url="https://github.com/AlexxIT/go2rtc/releases/download/$GO2RTC_VERSION/go2rtc_linux_$ARCH"
+  if ! curl -fsSL -o /opt/cctv/bin/go2rtc.tmp "$url"; then
+    echo "    pinned version failed, trying latest"
+    curl -fsSL -o /opt/cctv/bin/go2rtc.tmp \
+      "https://github.com/AlexxIT/go2rtc/releases/latest/download/go2rtc_linux_$ARCH"
+  fi
+  chmod 755 /opt/cctv/bin/go2rtc.tmp && mv /opt/cctv/bin/go2rtc.tmp /opt/cctv/bin/go2rtc
+fi
+/opt/cctv/bin/go2rtc -version || true
+
+if [ ! -f /etc/cctv/cctv.conf ]; then
+  install -o root -g cctv -m 640 "$HERE/cctv.conf.example" /etc/cctv/cctv.conf
+  FIRST_INSTALL=1
+fi
+if [ ! -f /etc/cctv/cameras.conf ]; then
+  install -o cctv -g cctv -m 640 "$HERE/cameras.conf.example" /etc/cctv/cameras.conf
+fi
+chown cctv:cctv /etc/cctv/cameras.conf
+[ -f /etc/cctv/rclone.conf ] || install -o cctv -g cctv -m 600 /dev/null /etc/cctv/rclone.conf
+
+echo "==> Services"
+install -m 644 "$HERE"/systemd/* /etc/systemd/system/
+systemctl daemon-reload
+/opt/cctv/bin/cctv-storage || true
+/opt/cctv/bin/cctv-apply --no-restart
+systemctl enable -q cctv-go2rtc cctv-motion cctv-web cctv-storage.timer cctv-upload.timer cctv-drive-clean.timer cctv-apply.path
+if [ -d "$HERE/.git" ]; then
+  [ "$HERE" = /opt/cctv-src ] || ln -sfn "$HERE" /opt/cctv-src
+  git config --global --add safe.directory /opt/cctv-src 2>/dev/null || true
+  git config --global --add safe.directory "$HERE" 2>/dev/null || true
+  systemctl enable -q cctv-update.timer cctv-update.path
+  systemctl restart cctv-update.timer cctv-update.path
+fi
+systemctl restart cctv-go2rtc cctv-web cctv-storage.timer cctv-upload.timer cctv-drive-clean.timer cctv-apply.path
+systemctl restart cctv-motion || true
+
+if [ "$UPDATE" = 0 ] && ! /opt/cctv/bin/cctv-user list 2>/dev/null | grep -q " admin "; then
+  echo
+  echo "==> Dashboard-এর admin account বানান"
+  read -r -p "Admin username [admin]: " ADMIN_NAME
+  /opt/cctv/bin/cctv-user add "${ADMIN_NAME:-admin}" --admin || echo "পরে বানাতে: sudo cctv-user add admin --admin"
+fi
+chown -R cctv:cctv /etc/cctv/auth
+
+IP=$(hostname -I | awk '{print $1}')
+TS=$(command -v tailscale >/dev/null && tailscale ip -4 2>/dev/null | head -1 || true)
+echo
+echo "============================================================"
+echo " Install শেষ!"
+echo " Dashboard (বাসার Wi-Fi):   http://$IP:8085"
+[ -n "$TS" ] && echo " Dashboard (Tailscale):     http://$TS:8085"
+echo
+if [ "${FIRST_INSTALL:-0}" = 1 ]; then
+  echo " পরের ধাপ:"
+  echo "  1) Dashboard-এ admin দিয়ে login → ⚙️ Settings → Cameras: IP/password দিয়ে Save"
+  echo "  2) SSD (data মুছবে না):  sudo cctv-ssd-setup"
+  echo "  3) Google Drive: README-র 'Google Drive' অংশ দেখুন"
+fi
+echo " অবস্থা দেখতে:  cctv-status"
+echo "============================================================"

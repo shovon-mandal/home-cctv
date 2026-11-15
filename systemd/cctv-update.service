@@ -1,0 +1,10 @@
+[Unit]
+Description=Update the CCTV system from GitHub
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/cctv/bin/cctv-update
+Nice=10
+TimeoutStartSec=30min

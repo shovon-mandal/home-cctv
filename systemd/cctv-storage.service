@@ -1,0 +1,8 @@
+[Unit]
+Description=CCTV storage switcher (SSD / SD buffer) and cleanup
+
+[Service]
+Type=oneshot
+ExecStart=/opt/cctv/bin/cctv-storage
+Nice=10
+IOSchedulingClass=idle

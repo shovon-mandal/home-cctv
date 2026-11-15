@@ -1,0 +1,44 @@
+# =====================================================================
+#  CCTV system config  ->  /etc/cctv/cctv.conf
+#  এই file বদলানোর পর চালান:   sudo cctv-apply
+# =====================================================================
+
+[general]
+# Dashboard: http://<tinker-board-IP>:8085
+web_port = 8085
+# Login account (admin/viewer) বানাতে:  sudo cctv-user add NAME --admin
+
+# SSD না থাকলে Tinker Board-এর SD card-এ সর্বোচ্চ কত GB recording রাখবে
+sd_buffer_gb = 7
+# SD card-এ সবসময় অন্তত এতটুকু খালি থাকবে (Discord bot ইত্যাদির জন্য)
+sd_min_free_gb = 2
+
+# SSD: recording যায় SSD-র "CCTV-Recordings" folder-এ। আপনার অন্য file কখনো মোছা হয় না।
+# এই folder সর্বোচ্চ কত GB নেবে (ভরে গেলে সবচেয়ে পুরোনো clip মুছবে)
+ssd_max_gb = 200
+# SSD-তে সবসময় অন্তত এত % খালি রাখবে (শুধু CCTV clip মুছে)
+ssd_min_free_percent = 5
+
+# Google Drive (rclone remote:folder)
+drive_enabled = yes
+drive_remote = gdrive:CCTV
+# SSD লাগানো থাকলেও Drive-এ backup দেবে? (yes/no)
+drive_backup_when_ssd = yes
+# Drive-এ কত দিনের clip থাকবে, আর সর্বোচ্চ কত GB (free = 15 GB)
+drive_keep_days = 5
+drive_max_gb = 12
+# Upload speed limit, যেমন 1M = 1 MB/s  (0 = limit নেই)
+drive_bwlimit = 0
+
+# Motion detection (sub stream-এ চলে, CPU কম লাগে)
+motion_width = 640
+motion_height = 360
+# motion থামার পর কত সেকেন্ড পর্যন্ত একই clip চলবে
+event_gap = 20
+pre_capture_sec = 3
+post_capture_sec = 5
+# লম্বা motion এত মিনিটের টুকরোয় ভাগ হয়; প্রতিটা টুকরো শেষ হলেই Drive-এ যায়
+max_clip_minutes = 3
+
+
+# Camera যোগ/বদল: dashboard → ⚙️ Settings → Cameras   (বা /etc/cctv/cameras.conf)

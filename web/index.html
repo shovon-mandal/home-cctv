@@ -1,0 +1,889 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d1117">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<title>আমার CCTV</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --line: #2a313c; --text: #e6edf3; --muted: #8b949e;
+    --accent: #3fb950; --warn: #d29922; --bad: #f85149; --blue: #58a6ff;
+    --r: 12px;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans Bengali", sans-serif; }
+  body { display: flex; flex-direction: column; padding-bottom: env(safe-area-inset-bottom); }
+  button { font: inherit; color: inherit; cursor: pointer; }
+
+  header { display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+    padding-top: max(10px, env(safe-area-inset-top)); border-bottom: 1px solid var(--line); background: var(--panel); }
+  header h1 { font-size: 17px; margin: 0; font-weight: 650; white-space: nowrap; }
+  .tabs { display: flex; background: var(--bg); border-radius: 10px; padding: 3px; margin-left: auto; }
+  @media (max-width: 560px) {
+    header { gap: 6px; padding-left: 8px; padding-right: 8px; }
+    header h1 { font-size: 0; } header h1::first-letter { font-size: 20px; }
+    .tabs { margin-left: 0; } .tabs button { padding: 6px 9px; font-size: 14px; }
+    .me { margin-left: auto; padding: 6px 8px; } #meRole { display: none; }
+  }
+  .tabs button { border: 0; background: none; padding: 6px 12px; border-radius: 8px; color: var(--muted); }
+  .tabs button.on { background: var(--panel); color: var(--text); box-shadow: 0 0 0 1px var(--line); }
+
+  .statusbar { display: flex; gap: 8px; flex-wrap: wrap; padding: 8px 12px; font-size: 13px; color: var(--muted); }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 99px;
+    background: var(--panel); border: 1px solid var(--line); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
+  .dot.ok { background: var(--accent); } .dot.warn { background: var(--warn); } .dot.bad { background: var(--bad); }
+
+  .chips { display: flex; gap: 8px; padding: 0 12px 8px; overflow-x: auto; scrollbar-width: none; }
+  .chip { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; border-radius: 99px; white-space: nowrap;
+    border: 1px solid var(--line); background: var(--panel); }
+  .chip .sw { width: 28px; height: 16px; border-radius: 99px; background: #30363d; position: relative; transition: .2s; }
+  .chip .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%;
+    background: #fff; transition: .2s; }
+  .chip.on .sw { background: var(--accent); } .chip.on .sw::after { left: 14px; }
+  .chip:not(.on) { color: var(--muted); }
+
+  main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  #live { flex: 1; min-height: 0; padding: 0 8px 8px; }
+  .grid { height: 100%; display: grid; gap: 6px; grid-template-columns: 1fr; grid-auto-rows: 1fr; }
+  .grid.n2 { grid-template-columns: 1fr; }
+  .grid.n3, .grid.n4 { grid-template-columns: 1fr 1fr; }
+  @media (orientation: landscape) { .grid.n2 { grid-template-columns: 1fr 1fr; } }
+  @media (orientation: portrait) and (max-width: 700px) {
+    .grid { height: auto; grid-auto-rows: auto; }
+    .grid .tile { aspect-ratio: 16 / 9; }
+  }
+  .grid.focus { grid-template-columns: 1fr !important; height: 100%; grid-auto-rows: 1fr; }
+  .grid.focus .tile:not(.big) { display: none; }
+  .grid.focus .tile.big { aspect-ratio: auto; }
+
+  .tile { position: relative; background: #000; border-radius: var(--r); overflow: hidden; min-height: 0;
+    border: 1px solid var(--line); }
+  .tile video { width: 100%; height: 100%; object-fit: contain; display: block; background: #000; }
+  .tile .label { position: absolute; left: 8px; top: 8px; display: flex; align-items: center; gap: 6px;
+    padding: 3px 8px; border-radius: 8px; background: rgba(0,0,0,.55); font-size: 13px; backdrop-filter: blur(4px);
+    max-width: calc(100% - 100px); }
+  .tile .label .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  @media (max-width: 500px) { .tile .label { font-size: 12px; padding: 2px 6px; left: 5px; top: 5px; }
+    .tile .tools { top: 4px; right: 4px; gap: 4px; } .tile .tools button { padding: 3px 6px; } }
+  .tile .tools { position: absolute; right: 6px; top: 6px; display: flex; gap: 6px; opacity: .9; }
+  .tile .tools button { border: 0; background: rgba(0,0,0,.55); border-radius: 8px; padding: 4px 8px; font-size: 12px;
+    backdrop-filter: blur(4px); }
+  .tile .tools button.hd { color: var(--blue); }
+  .tile .msg { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 14px;
+    pointer-events: none; text-align: center; padding: 10px; }
+  .empty { height: 100%; display: grid; place-items: center; color: var(--muted); text-align: center; padding: 30px; }
+
+  #recs { flex: 1; overflow: auto; padding: 0 12px 20px; display: none; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 12px; }
+  select { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 8px 10px; }
+  .clips { display: grid; gap: 6px; }
+  .clip { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 12px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+  .clip b { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .clip span { color: var(--muted); font-size: 13px; }
+  .muted { color: var(--muted); }
+
+  dialog { border: 0; padding: 0; background: #000; color: var(--text); width: min(100vw, 1100px); max-width: 100vw;
+    border-radius: var(--r); }
+  dialog::backdrop { background: rgba(0,0,0,.8); }
+  dialog video { width: 100%; max-height: 80vh; display: block; background: #000; }
+  dialog .bar { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: var(--panel); }
+  dialog a, dialog button { color: var(--blue); background: none; border: 0; text-decoration: none; }
+
+  /* ---- login / users ---- */
+  #login { position: fixed; inset: 0; z-index: 50; display: none; place-items: center; background: var(--bg); padding: 20px; }
+  .card { width: min(360px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 22px; }
+  .card h2 { margin: 0 0 4px; font-size: 20px; }
+  .card p { margin: 0 0 16px; color: var(--muted); font-size: 14px; }
+  label.f { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
+  input[type=text], input[type=password] { width: 100%; font: inherit; color: var(--text); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+  input:focus, select:focus { outline: 2px solid var(--blue); outline-offset: -1px; }
+  .btn { border: 0; border-radius: 10px; padding: 10px 14px; background: var(--accent); color: #04140a; font-weight: 600; }
+  .btn.full { width: 100%; margin-top: 16px; }
+  .btn.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); font-weight: 500; }
+  .btn.danger { background: transparent; color: var(--bad); border: 1px solid #5c2a2a; font-weight: 500; }
+  .err { color: var(--bad); font-size: 13px; min-height: 18px; margin-top: 8px; }
+  .me { border: 1px solid var(--line); background: var(--bg); border-radius: 10px; padding: 6px 10px; font-size: 13px;
+    display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+  .role { font-size: 11px; padding: 1px 6px; border-radius: 6px; background: #1f6feb33; color: var(--blue); }
+  .role.admin { background: #3fb95033; color: var(--accent); }
+  #users { flex: 1; overflow: auto; padding: 0 12px 20px; display: none; }
+  .ulist { display: grid; gap: 8px; margin-bottom: 18px; }
+  .urow { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 12px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+  .urow small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .checks { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 6px; }
+  .checks label { display: inline-flex; gap: 6px; align-items: center; font-size: 14px; }
+  .seg { display: inline-flex; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 3px; }
+  .seg button { border: 0; background: none; padding: 6px 14px; border-radius: 8px; color: var(--muted); }
+  .seg button.on { background: var(--panel); color: var(--text); box-shadow: 0 0 0 1px var(--line); }
+  .menu { position: absolute; right: 12px; top: 54px; z-index: 40; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; padding: 6px; display: none; min-width: 180px; box-shadow: 0 8px 30px rgba(0,0,0,.5); }
+  .menu button { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 9px 10px; border-radius: 8px; }
+  .menu button:hover { background: var(--bg); }
+  .sect { font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); margin: 18px 2px 8px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
+  .grid2 > div { min-width: 0; }
+  .card select { width: 100%; }
+  input[type=number] { width: 100%; font: inherit; color: var(--text); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+  .hint { font-size: 12.5px; color: var(--warn); margin-top: 6px; min-height: 0; }
+  .btnrow { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+  .btn.small { padding: 6px 10px; font-size: 13px; }
+  .linkbtn { border: 0; background: none; color: var(--blue); padding: 6px 0; font-size: 13.5px; }
+  .tres { margin-top: 12px; font-size: 13.5px; display: grid; gap: 4px; }
+  .tres .ok { color: var(--accent); } .tres .no { color: var(--bad); }
+  .tag { font-size: 11px; padding: 1px 6px; border-radius: 6px; background: #30363d; color: var(--muted); margin-left: 4px; }
+  .pick { display: grid; gap: 6px; margin-top: 8px; }
+  .pick button { text-align: left; border: 1px solid var(--line); background: var(--bg); border-radius: 10px; padding: 8px 10px; font-size: 13px; }
+  .banner { margin: 0 0 10px; padding: 10px 12px; border-radius: 10px; background: #1f6feb22; border: 1px solid #1f6feb55; font-size: 14px; display: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>📹 আমার CCTV</h1>
+  <div class="tabs">
+    <button id="tabLive" class="on">Live</button>
+    <button id="tabRecs">Recordings</button>
+    <button id="tabUsers" style="display:none">⚙️ Settings</button>
+  </div>
+  <button class="me" id="meBtn"><span id="meName"></span><span class="role" id="meRole"></span></button>
+</header>
+<div class="menu" id="menu">
+  <button id="mApp" style="display:none">📱 Server ঠিকানা (app)</button>
+  <button id="mPass">🔑 Password বদলান</button>
+  <button id="mLogout">↩ Logout</button>
+</div>
+<div id="login">
+  <form class="card" id="loginForm" autocomplete="on">
+    <h2>📹 আমার CCTV</h2>
+    <p id="loginHint">Login করুন</p>
+    <label class="f" for="lu">Username</label>
+    <input type="text" id="lu" autocomplete="username" autocapitalize="none" required>
+    <label class="f" for="lp">Password</label>
+    <input type="password" id="lp" autocomplete="current-password" required>
+    <button class="btn full" type="submit">Login</button>
+    <div class="err" id="loginErr"></div>
+  </form>
+</div>
+<div class="statusbar">
+  <span class="pill" id="stStorage"><span class="dot"></span><span>Storage…</span></span>
+  <span class="pill" id="stDrive"><span class="dot"></span><span>Drive…</span></span>
+  <span class="pill" id="stLoad"><span class="dot"></span><span>CPU…</span></span>
+</div>
+<main>
+  <section id="liveWrap" style="display:contents">
+    <div class="chips" id="chips"></div>
+    <div id="live"><div class="grid" id="grid"></div></div>
+  </section>
+  <section id="recs">
+    <div class="row">
+      <select id="recCam"></select>
+      <select id="recDate"></select>
+    </div>
+    <div class="clips" id="clips"></div>
+  </section>
+  <section id="users">
+    <div class="banner" id="applyBanner"></div>
+    <div class="sect">📷 Cameras</div>
+    <div class="ulist" id="clist"></div>
+    <form class="card" id="cForm" style="width:100%;max-width:520px" autocomplete="off">
+      <h2 id="cFormTitle">নতুন camera</h2>
+      <p>IP বা password বদলাতে এখানে বদলে Save দিন।</p>
+      <label class="f">নাম</label>
+      <input type="text" id="cName" placeholder="যেমন: সামনের দরজা" required>
+      <label class="f">Camera brand</label>
+      <select id="cType"></select>
+      <div class="hint" id="cHint"></div>
+      <div class="grid2">
+        <div><label class="f">IP address</label><input type="text" id="cHost" inputmode="decimal" placeholder="192.168.0.100" required></div>
+        <div><label class="f">RTSP port</label><input type="number" id="cPort" value="554"></div>
+      </div>
+      <div class="grid2">
+        <div><label class="f">Username</label><input type="text" id="cUser" autocapitalize="none"></div>
+        <div><label class="f">Password</label><input type="password" id="cPass" autocomplete="new-password"></div>
+      </div>
+      <button type="button" class="linkbtn" id="cOnvif">🔍 ONVIF থেকে stream path খুঁজুন</button>
+      <div class="pick" id="cPick"></div>
+      <label class="f">Main stream path (full quality)</label>
+      <input type="text" id="cMain" placeholder="/...">
+      <label class="f">Sub stream path (low quality, ফাঁকা = main)</label>
+      <input type="text" id="cSub" placeholder="/...">
+      <div class="grid2">
+        <div><label class="f">Recording</label>
+          <select id="cMode"><option value="motion">Motion হলে</option><option value="continuous">সারাক্ষণ</option><option value="off">বন্ধ (শুধু live)</option></select></div>
+        <div><label class="f">Recording quality</label>
+          <select id="cRec"><option value="main">Full (main)</option><option value="sub">Low (sub, কম জায়গা)</option></select></div>
+      </div>
+      <div class="grid2">
+        <div><label class="f">Sensitivity (কম = বেশি sensitive)</label><input type="number" id="cThr" value="1500" min="100" step="100"></div>
+        <div><label class="f">অবস্থা</label>
+          <div class="checks" style="margin-top:10px"><label><input type="checkbox" id="cEn" checked> চালু</label></div></div>
+      </div>
+      <div class="btnrow">
+        <button class="btn ghost" type="button" id="cTest">▶ Test</button>
+        <button class="btn" type="submit">Save</button>
+        <button class="btn danger" type="button" id="cDel" style="display:none">Delete</button>
+        <button class="btn ghost" type="button" id="cNew">নতুন</button>
+      </div>
+      <div class="tres" id="cRes"></div>
+      <div class="err" id="cErr"></div>
+    </form>
+    <div class="sect">☁️ Google Drive</div>
+    <div class="card" style="width:100%;max-width:520px">
+      <div id="drvState" class="muted">…</div>
+      <div id="drvSteps" style="display:none">
+        <ol style="padding-left:18px;margin:10px 0;font-size:14px;line-height:1.6">
+          <li>নিচের button চাপুন → Google-এ login করে <b>Allow</b> দিন</li>
+          <li>এরপর একটা <b>"পাওয়া যাচ্ছে না / can't be reached"</b> page আসবে। ভয় নেই, এটাই স্বাভাবিক</li>
+          <li>ওই page-এর <b>address bar-এর পুরো link</b> copy করে নিচে paste করুন</li>
+        </ol>
+        <a class="btn" id="drvGo" target="_blank" rel="noopener" style="display:inline-block;text-decoration:none">Google দিয়ে login</a>
+        <label class="f">Allow-এর পরের link (http://127.0.0.1:53682/?state=…&code=…)</label>
+        <input type="text" id="drvUrl" placeholder="এখানে paste করুন" autocapitalize="none">
+        <div class="btnrow"><button class="btn" type="button" id="drvFinish">Connect শেষ করুন</button></div>
+      </div>
+      <div class="btnrow" id="drvBtns">
+        <button class="btn" type="button" id="drvStart">Google দিয়ে connect</button>
+        <button class="btn ghost" type="button" id="drvCheck" style="display:none">Test</button>
+        <button class="btn danger" type="button" id="drvOff" style="display:none">Disconnect</button>
+      </div>
+      <div class="err" id="drvErr"></div>
+    </div>
+    <div class="sect">🔄 System</div>
+    <div class="urow" id="sysRow"><div><b>Version</b><small id="sysVer">…</small></div>
+      <button class="btn ghost" id="sysUpd">Update দেখুন</button></div>
+    <div class="sect">👤 Users</div>
+    <div class="ulist" id="ulist"></div>
+    <form class="card" id="uForm" style="width:100%;max-width:480px">
+      <h2 id="uFormTitle">নতুন user</h2>
+      <p>Viewer শুধু বেছে দেওয়া camera দেখতে পারবে।</p>
+      <label class="f">Username</label>
+      <input type="text" id="uName" autocapitalize="none" required>
+      <label class="f" id="uPassLbl">Password</label>
+      <input type="password" id="uPass" autocomplete="new-password">
+      <label class="f">Role</label>
+      <div class="seg" id="uRole"><button type="button" data-r="viewer" class="on">Viewer</button><button type="button" data-r="admin">Admin</button></div>
+      <div id="uViewerOpts">
+        <label class="f">কোন camera দেখতে পারবে</label>
+        <div class="checks" id="uCams"></div>
+        <div class="checks" style="margin-top:12px"><label><input type="checkbox" id="uRecs" checked> Recordings দেখতে পারবে</label></div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:16px">
+        <button class="btn" type="submit">Save</button>
+        <button class="btn ghost" type="button" id="uCancel">নতুন</button>
+      </div>
+      <div class="err" id="uErr"></div>
+    </form>
+  </section>
+</main>
+<dialog id="player">
+  <video id="pv" controls playsinline></video>
+  <div class="bar"><span id="pvTitle" class="muted"></span>
+    <span><a id="pvDl" download>Download</a> &nbsp; <button id="pvDel" style="color:var(--bad);display:none">Delete</button> &nbsp; <button id="pvClose">বন্ধ করুন</button></span></div>
+</dialog>
+<dialog id="pwDlg" style="background:transparent;width:auto">
+  <form class="card" id="pwForm">
+    <h2>Password বদলান</h2>
+    <label class="f">পুরোনো password</label><input type="password" id="pwOld" autocomplete="current-password" required>
+    <label class="f">নতুন password (কমপক্ষে ৬ অক্ষর)</label><input type="password" id="pwNew" autocomplete="new-password" required>
+    <div style="display:flex;gap:8px;margin-top:16px"><button class="btn" type="submit">Save</button>
+    <button class="btn ghost" type="button" onclick="this.closest('dialog').close()">বাতিল</button></div>
+    <div class="err" id="pwErr"></div>
+  </form>
+</dialog>
+
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+const LS = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+
+/* ------------------------------------------------------------------
+ * Minimal MSE player for go2rtc's websocket API.
+ * Protocol: send {"type":"mse","value":"<codecs>"} -> server answers
+ * {"type":"mse","value":"video/mp4; codecs=..."} then binary fMP4.
+ * ------------------------------------------------------------------ */
+const CODECS = ["avc1.640029", "avc1.64002A", "avc1.640033", "hvc1.1.6.L153.B0", "mp4a.40.2", "mp4a.40.5", "flac", "opus"];
+const MSClass = window.ManagedMediaSource || window.MediaSource;
+
+class LivePlayer {
+  constructor(video, onState) {
+    this.video = video; this.onState = onState; this.src = null;
+    this.stopped = true; this.retry = 0; this.timer = null;
+  }
+  play(src) { this.stop(); this.src = src; this.stopped = false; this.connect(); }
+  stop() {
+    this.stopped = true;
+    clearTimeout(this.timer); clearInterval(this.watch);
+    if (this.ws) { this.ws.onclose = null; try { this.ws.close(); } catch {} this.ws = null; }
+    if (this.video.srcObject) this.video.srcObject = null;
+    if (this.video.getAttribute("src")) { URL.revokeObjectURL(this.video.src); this.video.removeAttribute("src"); this.video.load(); }
+    this.ms = this.sb = null; this.queue = [];
+  }
+  reconnect(reason) {
+    if (this.stopped) return;
+    this.onState("wait", reason);
+    const src = this.src; this.stop(); this.src = src; this.stopped = false;
+    const delay = Math.min(15000, 1000 * 2 ** this.retry++);
+    this.timer = setTimeout(() => this.connect(), delay);
+  }
+  connect() {
+    if (!MSClass) { this.onState("bad", "এই browser-এ live view চলে না"); return; }
+    this.onState("wait", "connect হচ্ছে…");
+    this.queue = []; this.lastData = Date.now();
+    const ms = this.ms = new MSClass();
+    if (window.ManagedMediaSource) this.video.disableRemotePlayback = true;
+    ms.addEventListener("sourceopen", () => this.openWs(ms), { once: true });
+    if (window.ManagedMediaSource && MSClass === window.ManagedMediaSource) this.video.srcObject = ms;
+    else this.video.src = URL.createObjectURL(ms);
+    this.video.muted = true; this.video.playsInline = true; this.video.autoplay = true;
+  }
+  openWs(ms) {
+    if (this.stopped || ms !== this.ms) return;
+    const url = new URL("/api/ws?src=" + encodeURIComponent(this.src), location.href);
+    url.protocol = location.protocol === "https:" ? "wss:" : "ws:";
+    const ws = this.ws = new WebSocket(url); ws.binaryType = "arraybuffer";
+    ws.onopen = () => {
+      const codecs = CODECS.filter(c => MSClass.isTypeSupported(`video/mp4; codecs="${c}"`)).join();
+      ws.send(JSON.stringify({ type: "mse", value: codecs }));
+    };
+    ws.onmessage = ev => {
+      this.lastData = Date.now();
+      if (typeof ev.data === "string") {
+        let msg; try { msg = JSON.parse(ev.data); } catch { return; }
+        if (msg.type === "mse") this.initSb(msg.value);
+        else if (msg.type === "error") this.reconnect("Camera পাওয়া যাচ্ছে না");
+        return;
+      }
+      this.append(ev.data);
+    };
+    ws.onclose = () => this.reconnect("connection কেটে গেছে");
+    clearInterval(this.watch);
+    this.watch = setInterval(() => { if (Date.now() - this.lastData > 12000) this.reconnect("stream থেমে গেছে"); }, 4000);
+  }
+  initSb(type) {
+    try {
+      const sb = this.sb = this.ms.addSourceBuffer(type);
+      sb.mode = "segments";
+      sb.addEventListener("updateend", () => this.pump());
+    } catch (e) { this.onState("bad", "Codec support নেই (camera-য় H.264 দিন)"); this.stopped = true; }
+  }
+  append(buf) {
+    if (!this.sb) return;
+    this.queue.push(buf);
+    if (this.queue.length > 50) this.queue.splice(0, this.queue.length - 50);
+    this.pump();
+  }
+  pump() {
+    const sb = this.sb, v = this.video;
+    if (!sb || sb.updating) return;
+    try {
+      const b = sb.buffered;
+      if (b.length) {
+        const start = b.start(0), end = b.end(b.length - 1);
+        if (end - v.currentTime > 2.5 || v.currentTime < start) v.currentTime = Math.max(start, end - 0.4);
+        if (v.currentTime - start > 30) { sb.remove(start, v.currentTime - 10); return; }
+      }
+      if (this.queue.length) {
+        const parts = this.queue.splice(0);
+        const size = parts.reduce((n, p) => n + p.byteLength, 0);
+        const data = new Uint8Array(size); let off = 0;
+        for (const p of parts) { data.set(new Uint8Array(p), off); off += p.byteLength; }
+        sb.appendBuffer(data);
+      }
+      if (v.paused && b.length) v.play().catch(() => {});
+      if (b.length && this.retry) this.retry = 0;
+      if (b.length) this.onState("ok", "");
+    } catch (e) {
+      if (e.name === "QuotaExceededError") { this.queue = []; }
+      else this.reconnect("player error");
+    }
+  }
+}
+
+/* ------------------------------ app ------------------------------ */
+let CAMS = [];
+const tiles = new Map();          // id -> {el, player, hd}
+let enabled = LS.get("cctv.enabled", null);   // {camId: true/false}
+let focused = null;
+
+function saveEnabled() { LS.set("cctv.enabled", enabled); }
+
+function renderChips() {
+  const box = $("#chips"); box.innerHTML = "";
+  for (const c of CAMS) {
+    const b = document.createElement("button");
+    b.className = "chip" + (enabled[c.id] ? " on" : "");
+    b.innerHTML = `<span class="sw"></span><span></span>`;
+    b.lastChild.textContent = c.name;
+    b.onclick = () => { enabled[c.id] = !enabled[c.id]; saveEnabled(); renderChips(); renderGrid(); };
+    box.appendChild(b);
+  }
+}
+
+function makeTile(c) {
+  const el = document.createElement("div");
+  el.className = "tile";
+  el.innerHTML = `<video muted playsinline autoplay></video>
+    <div class="label"><span class="dot"></span><span class="nm"></span></div>
+    <div class="tools"><button class="q">SD</button><button class="fs">⛶</button></div>
+    <div class="msg"></div>`;
+  el.querySelector(".nm").textContent = c.name;
+  const video = el.querySelector("video"), dot = el.querySelector(".label .dot"), msg = el.querySelector(".msg");
+  const t = { el, hd: LS.get("cctv.hd." + c.id, false) };
+  t.player = new LivePlayer(video, (state, text) => {
+    dot.className = "dot " + (state === "ok" ? "ok" : state === "bad" ? "bad" : "warn");
+    msg.textContent = text || "";
+  });
+  const qBtn = el.querySelector(".q");
+  const setQ = () => { qBtn.textContent = t.hd ? "HD" : "SD"; qBtn.classList.toggle("hd", t.hd); };
+  setQ();
+  t.start = () => t.player.play(t.hd ? c.id : c.id + "_sub");
+  qBtn.onclick = e => { e.stopPropagation(); t.hd = !t.hd; LS.set("cctv.hd." + c.id, t.hd); setQ(); t.start(); };
+  el.querySelector(".fs").onclick = e => {
+    e.stopPropagation();
+    const fs = document.fullscreenElement;
+    if (fs) document.exitFullscreen(); else (el.requestFullscreen || el.webkitRequestFullscreen)?.call(el);
+  };
+  el.onclick = () => {             // tap: single camera big / back to grid
+    focused = focused === c.id ? null : c.id; layout();
+  };
+  return t;
+}
+
+function renderGrid() {
+  const grid = $("#grid");
+  const visible = CAMS.filter(c => enabled[c.id]);
+  for (const [id, t] of tiles) {                    // stop cameras that were switched off
+    if (!enabled[id]) { t.player.stop(); t.el.remove(); tiles.delete(id); }
+  }
+  if (focused && !enabled[focused]) focused = null;
+  grid.querySelectorAll(".empty").forEach(e => e.remove());
+  if (!visible.length) {
+    grid.innerHTML = CAMS.length ? `<div class="empty">সব camera বন্ধ করা আছে।<br>উপরের button থেকে চালু করুন।</div>`
+      : `<div class="empty">কোনো camera নেই।<br>${ME && ME.role === "admin" ? "⚙️ Settings → Cameras থেকে যোগ করুন।" : ""}</div>`;
+    grid.className = "grid"; return;
+  }
+  for (const c of visible) {
+    let t = tiles.get(c.id);
+    if (!t) { t = makeTile(c); tiles.set(c.id, t); if (!document.hidden && liveTab) t.start(); }
+    grid.appendChild(t.el);                         // keeps camera order
+  }
+  layout();
+}
+
+function layout() {
+  const grid = $("#grid"), n = CAMS.filter(c => enabled[c.id]).length;
+  grid.className = "grid n" + Math.min(n, 4) + (focused ? " focus" : "");
+  for (const [id, t] of tiles) t.el.classList.toggle("big", id === focused);
+}
+
+let liveTab = true;
+document.addEventListener("visibilitychange", () => {   // save data when the app is in the background
+  for (const t of tiles.values()) (document.hidden || !liveTab) ? t.player.stop() : t.start();
+});
+
+/* ---------------------------- status ----------------------------- */
+const gb = b => (b / 1024 ** 3).toFixed(b > 100 * 1024 ** 3 ? 0 : 1) + " GB";
+function setPill(id, cls, text) { const p = $(id); p.firstChild.className = "dot " + cls; p.lastChild.textContent = text; }
+async function refreshStatus() {
+  try {
+    const s = await api("/api/status");
+    const st = s.storage || {};
+    if (st.mode) {
+      const where = st.mode === "ssd" ? "SSD" : "SD card";
+      const freePct = st.total ? st.avail / st.total : 1;
+      setPill("#stStorage", st.mode === "ssd" ? (freePct > .1 ? "ok" : "warn") : "warn",
+        `${where} · ${gb(st.avail)} খালি`);
+    } else setPill("#stStorage", "bad", "Storage status নেই");
+    const up = s.upload || {};
+    const ago = up.time ? Math.round((s.time - up.time) / 60) : null;
+    const dcls = { ok: "ok", idle: "ok", off: "", error: "bad" }[up.state] ?? "";
+    setPill("#stDrive", dcls, up.message ? `Drive · ${up.message}${ago !== null && ago > 0 ? ` · ${ago} মি. আগে` : ""}` : "Drive · অপেক্ষা");
+    if (s.load !== null && s.cpus) {
+      const pct = Math.round(100 * s.load / s.cpus);
+      setPill("#stLoad", pct < 70 ? "ok" : pct < 95 ? "warn" : "bad", `CPU ${pct}%`);
+    }
+  } catch { setPill("#stStorage", "bad", "Server-এর সাথে যোগাযোগ নেই"); }
+}
+
+/* -------------------------- recordings --------------------------- */
+let recIndex = {};
+async function loadRecs() {
+  recIndex = await api("/api/recordings");
+  const camSel = $("#recCam"), prev = camSel.value;
+  camSel.innerHTML = "";
+  for (const c of CAMS) camSel.add(new Option(c.name, c.id));
+  if (prev) camSel.value = prev;
+  fillDates();
+}
+function fillDates() {
+  const dates = recIndex[$("#recCam").value] || [];
+  const ds = $("#recDate"), prev = ds.value; ds.innerHTML = "";
+  for (const d of dates) ds.add(new Option(d, d));
+  if (dates.includes(prev)) ds.value = prev;
+  loadClips();
+}
+async function loadClips() {
+  const cam = $("#recCam").value, date = $("#recDate").value, box = $("#clips");
+  if (!cam || !date) { box.innerHTML = `<p class="muted">এই camera-র কোনো recording এখনো নেই।</p>`; return; }
+  const files = await api(`/api/recordings?cam=${cam}&date=${date}`);
+  box.innerHTML = "";
+  if (!files.length) { box.innerHTML = `<p class="muted">কোনো clip নেই।</p>`; return; }
+  for (const f of files) {
+    const time = f.name.slice(0, 8).replace(/-/g, ":");
+    const b = document.createElement("button");
+    b.className = "clip";
+    b.innerHTML = `<b></b><span></span>`;
+    b.firstChild.textContent = "▶ " + time;
+    b.lastChild.textContent = (f.size / 1024 ** 2).toFixed(1) + " MB";
+    b.onclick = () => openClip(f, cam, time, date);
+    box.appendChild(b);
+  }
+}
+let openClip = function (f, cam, time, date) {
+  const name = (CAMS.find(c => c.id === cam) || {}).name || cam;
+  $("#pv").src = f.url; $("#pvDl").href = f.url;
+  $("#pvTitle").textContent = `${name} · ${date} ${time}`;
+  $("#player").showModal(); $("#pv").play().catch(() => {});
+}
+$("#pvClose").onclick = () => $("#player").close();
+$("#player").addEventListener("close", () => { $("#pv").pause(); $("#pv").removeAttribute("src"); $("#pv").load(); });
+$("#recCam").onchange = fillDates;
+$("#recDate").onchange = loadClips;
+
+/* ------------------------------ api ------------------------------ */
+async function api(path, body) {
+  const opts = { cache: "no-store", credentials: "same-origin" };
+  if (body !== undefined) {
+    opts.method = "POST";
+    opts.headers = { "Content-Type": "application/json", "X-Requested-With": "cctv" };
+    opts.body = JSON.stringify(body);
+  }
+  const r = await fetch(path, opts);
+  let data = null; try { data = await r.json(); } catch {}
+  if (r.status === 401 && path !== "/api/login" && path !== "/api/me") { showLogin(); throw new Error("login"); }
+  if (!r.ok) throw new Error((data && data.error) || "Error " + r.status);
+  return data;
+}
+
+/* ----------------------------- tabs ------------------------------ */
+let ME = null;
+function showTab(name) {
+  liveTab = name === "live";
+  for (const [id, n] of [["#tabLive", "live"], ["#tabRecs", "recs"], ["#tabUsers", "users"]]) $(id).classList.toggle("on", n === name);
+  $("#liveWrap").style.display = liveTab ? "contents" : "none";
+  $("#recs").style.display = name === "recs" ? "block" : "none";
+  $("#users").style.display = name === "users" ? "block" : "none";
+  for (const t of tiles.values()) liveTab && !document.hidden ? t.start() : t.player.stop();
+  if (name === "recs") loadRecs().catch(() => { $("#clips").innerHTML = `<p class="muted">Recordings লোড হয়নি।</p>`; });
+  if (name === "users") { loadUsers(); loadSys(); loadDrive(false); loadCamCfg().then(() => { if (!camEditing && !$("#cName").value) editCam(null); }); }
+}
+$("#tabLive").onclick = () => showTab("live");
+$("#tabRecs").onclick = () => showTab("recs");
+$("#tabUsers").onclick = () => showTab("users");
+
+/* ------------------------- login / account ----------------------- */
+function showLogin(needsSetup) {
+  for (const t of tiles.values()) t.player.stop();
+  $("#login").style.display = "grid";
+  $("#loginHint").innerHTML = needsSetup
+    ? "এখনো কোনো account নেই।<br>Tinker Board-এ চালান: <code>sudo cctv-user add admin --admin</code>"
+    : "Login করুন";
+  setTimeout(() => $("#lu").focus(), 50);
+}
+$("#loginForm").onsubmit = async e => {
+  e.preventDefault(); $("#loginErr").textContent = "";
+  try {
+    await api("/api/login", { user: $("#lu").value.trim(), pass: $("#lp").value });
+    location.reload();
+  } catch (err) { $("#loginErr").textContent = err.message; }
+};
+$("#meBtn").onclick = e => { e.stopPropagation(); const m = $("#menu"); m.style.display = m.style.display === "block" ? "none" : "block"; };
+document.addEventListener("click", () => $("#menu").style.display = "none");
+if (window.CCTVApp) { $("#mApp").style.display = ""; $("#mApp").onclick = () => window.CCTVApp.openSettings(); }
+$("#mLogout").onclick = async () => { try { await api("/api/logout", {}); } catch {} location.reload(); };
+$("#mPass").onclick = () => { $("#pwErr").textContent = ""; $("#pwForm").reset(); $("#pwDlg").showModal(); };
+$("#pwForm").onsubmit = async e => {
+  e.preventDefault();
+  try { await api("/api/password", { old: $("#pwOld").value, new: $("#pwNew").value }); $("#pwDlg").close(); alert("Password বদলানো হয়েছে"); }
+  catch (err) { $("#pwErr").textContent = err.message; }
+};
+
+/* --------------------- clip delete (admin) ----------------------- */
+let openClipInfo = null;
+const _openClip = openClip;
+openClip = (f, cam, time, date) => { openClipInfo = { cam, date, name: f.name }; _openClip(f, cam, time, date); };
+$("#pvDel").onclick = async () => {
+  if (!openClipInfo || !confirm("এই clip মুছে ফেলবেন?")) return;
+  try { await api("/api/recordings/delete", openClipInfo); $("#player").close(); loadRecs(); }
+  catch (err) { alert(err.message); }
+};
+
+/* ------------------------- users (admin) ------------------------- */
+let editing = null, formRole = "viewer";
+function setRole(r) {
+  formRole = r;
+  $("#uRole").querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.r === r));
+  $("#uViewerOpts").style.display = r === "admin" ? "none" : "block";
+}
+$("#uRole").querySelectorAll("button").forEach(b => b.onclick = () => setRole(b.dataset.r));
+function resetUserForm(u) {
+  editing = u ? u.name : null;
+  $("#uFormTitle").textContent = u ? `Edit: ${u.name}` : "নতুন user";
+  $("#uName").value = u ? u.name : ""; $("#uName").disabled = !!u;
+  $("#uPass").value = ""; $("#uPassLbl").textContent = u ? "নতুন password (বদলাতে না চাইলে ফাঁকা রাখুন)" : "Password";
+  $("#uRecs").checked = u ? u.recordings : true;
+  const box = $("#uCams"); box.innerHTML = "";
+  for (const c of CAMS) {
+    const l = document.createElement("label");
+    const allowed = !u || u.cameras === "*" || u.cameras.includes(c.id);
+    l.innerHTML = `<input type="checkbox" value="${c.id}" ${allowed ? "checked" : ""}> <span></span>`;
+    l.lastChild.textContent = c.name; box.appendChild(l);
+  }
+  setRole(u ? u.role : "viewer"); $("#uErr").textContent = "";
+}
+async function loadUsers() {
+  const list = await api("/api/users"), box = $("#ulist"); box.innerHTML = "";
+  for (const u of list) {
+    const row = document.createElement("div"); row.className = "urow";
+    const camsTxt = u.cameras === "*" ? "সব camera" : (u.cameras.map(id => (CAMS.find(c => c.id === id) || {}).name || id).join(", ") || "কোনো camera নেই");
+    row.innerHTML = `<div><b></b> <span class="role ${u.role}">${u.role}</span><small></small></div>
+      <div style="display:flex;gap:6px"><button class="btn ghost">Edit</button><button class="btn danger">Delete</button></div>`;
+    row.querySelector("b").textContent = u.name;
+    row.querySelector("small").textContent = u.role === "admin" ? "সবকিছু দেখতে ও বদলাতে পারে" : `${camsTxt} · recordings: ${u.recordings ? "হ্যাঁ" : "না"}`;
+    const [eb, db] = row.querySelectorAll("button");
+    eb.onclick = () => { resetUserForm(u); $("#uForm").scrollIntoView({ behavior: "smooth" }); };
+    db.onclick = async () => {
+      if (!confirm(`${u.name} মুছে ফেলবেন?`)) return;
+      try { await api("/api/users/delete", { name: u.name }); loadUsers(); } catch (err) { alert(err.message); }
+    };
+    box.appendChild(row);
+  }
+}
+$("#uCancel").onclick = () => resetUserForm(null);
+$("#uForm").onsubmit = async e => {
+  e.preventDefault(); $("#uErr").textContent = "";
+  const cams = [...$("#uCams").querySelectorAll("input:checked")].map(i => i.value);
+  const body = { name: editing || $("#uName").value.trim(), role: formRole, recordings: $("#uRecs").checked,
+    cameras: formRole === "admin" || cams.length === CAMS.length ? "*" : cams };
+  if ($("#uPass").value) body.password = $("#uPass").value;
+  try {
+    await api("/api/users/save", body);
+    if (editing === ME.name) { location.reload(); return; }
+    resetUserForm(null); loadUsers();
+  } catch (err) { $("#uErr").textContent = err.message; }
+};
+
+/* ------------------------ cameras (admin) ------------------------ */
+let CAMCFG = { cameras: [], presets: {} }, camEditing = null;
+const esc = t => String(t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+async function loadCamCfg() {
+  CAMCFG = await api("/api/admin/cameras");
+  const sel = $("#cType");
+  if (!sel.options.length) for (const [k, v] of Object.entries(CAMCFG.presets)) sel.add(new Option(v.label, k));
+  const box = $("#clist"); box.innerHTML = "";
+  if (!CAMCFG.cameras.length) box.innerHTML = `<p class="muted">এখনো কোনো camera নেই। নিচের form দিয়ে যোগ করুন।</p>`;
+  for (const c of CAMCFG.cameras) {
+    const row = document.createElement("div"); row.className = "urow";
+    const mode = { motion: "motion হলে record", continuous: "সারাক্ষণ record", off: "শুধু live" }[c.mode];
+    row.innerHTML = `<div><b>${esc(c.name)}</b>${c.enabled ? "" : '<span class="tag">বন্ধ</span>'}
+      <small>${esc(c.host || "custom URL")} · ${esc((CAMCFG.presets[c.type] || {}).label || c.type)} · ${mode}</small></div>
+      <button class="btn ghost">Edit</button>`;
+    row.querySelector("button").onclick = () => { editCam(c); $("#cForm").scrollIntoView({ behavior: "smooth" }); };
+    box.appendChild(row);
+  }
+}
+function applyPreset(type, keepPaths) {
+  const p = CAMCFG.presets[type] || {};
+  $("#cHint").textContent = p.hint || "";
+  if (keepPaths) return;
+  $("#cPort").value = p.port || "554"; $("#cUser").value = p.user ?? "admin";
+  $("#cMain").value = p.main_path || ""; $("#cSub").value = p.sub_path || "";
+}
+$("#cType").onchange = () => applyPreset($("#cType").value, false);
+function editCam(c) {
+  camEditing = c ? c.id : null;
+  $("#cFormTitle").textContent = c ? `Edit: ${c.name}` : "নতুন camera";
+  $("#cRes").innerHTML = ""; $("#cErr").textContent = ""; $("#cPick").innerHTML = "";
+  $("#cDel").style.display = c ? "" : "none";
+  $("#cType").value = c ? c.type : "imou";
+  applyPreset($("#cType").value, !!c);
+  if (c) {
+    $("#cName").value = c.name; $("#cHost").value = c.host; $("#cPort").value = c.port; $("#cUser").value = c.user;
+    $("#cMain").value = c.main_path; $("#cSub").value = c.sub_path;
+    $("#cMode").value = c.mode; $("#cRec").value = c.record_stream; $("#cThr").value = c.threshold; $("#cEn").checked = c.enabled;
+  } else {
+    $("#cName").value = ""; $("#cHost").value = ""; $("#cMode").value = "motion"; $("#cRec").value = "main";
+    $("#cThr").value = 1500; $("#cEn").checked = true;
+  }
+  $("#cPass").value = "";
+  $("#cPass").placeholder = c && c.has_password ? "আগেরটা রাখতে ফাঁকা রাখুন" : "";
+}
+function camForm() {
+  return { id: camEditing, name: $("#cName").value.trim(), type: $("#cType").value, host: $("#cHost").value.trim(),
+    port: $("#cPort").value.trim(), user: $("#cUser").value.trim(), password: $("#cPass").value,
+    main_path: $("#cMain").value.trim(), sub_path: $("#cSub").value.trim(), mode: $("#cMode").value,
+    record_stream: $("#cRec").value, threshold: $("#cThr").value, enabled: $("#cEn").checked };
+}
+$("#cNew").onclick = () => editCam(null);
+$("#cTest").onclick = async () => {
+  const b = $("#cTest"); b.disabled = true; $("#cErr").textContent = "";
+  $("#cRes").innerHTML = `<span class="muted">Camera-র সাথে কথা বলছি… (১৫ সেকেন্ড পর্যন্ত লাগতে পারে)</span>`;
+  try {
+    const r = await api("/api/admin/cameras/test", camForm());
+    const line = (label, x) => x.ok
+      ? `<span class="ok">✅ ${label}: ${esc(x.codec)} ${x.width}×${x.height}${x.codec === "hevc" ? " (H.265: phone-এ live না চললে camera-য় H.264 দিন)" : ""}</span>`
+      : `<span class="no">❌ ${label}: ${esc(x.error)}</span>`;
+    $("#cRes").innerHTML = line("Main", r.main) + (r.sub.same ? "" : line("Sub", r.sub));
+  } catch (err) { $("#cRes").innerHTML = ""; $("#cErr").textContent = err.message; }
+  b.disabled = false;
+};
+$("#cOnvif").onclick = async () => {
+  const f = camForm(), box = $("#cPick"); $("#cErr").textContent = "";
+  if (!f.host) { $("#cErr").textContent = "আগে IP দিন"; return; }
+  box.innerHTML = `<span class="muted">ONVIF খুঁজছি…</span>`;
+  try {
+    const r = await api("/api/admin/cameras/onvif", { id: camEditing, host: f.host, user: f.user, password: f.password });
+    const st = r.streams;
+    box.innerHTML = `<span class="muted">ONVIF port ${r.onvif_port}-এ ${st.length}টা stream পাওয়া গেছে। সবচেয়ে বড়টা main, ছোটটা sub হিসেবে বসানো হলো:</span>`;
+    $("#cMain").value = st[0].path; $("#cPort").value = st[0].port;
+    $("#cSub").value = st.length > 1 ? st[st.length - 1].path : "";
+    for (const x of st) {
+      const b = document.createElement("button"); b.type = "button";
+      b.textContent = `${x.name || "stream"} · ${x.width}×${x.height} ${x.encoding || ""} → ${x.path}`;
+      b.onclick = () => { $("#cSub").value = x.path; };
+      b.title = "এটাকে sub stream বানাতে চাপুন";
+      box.appendChild(b);
+    }
+  } catch (err) { box.innerHTML = ""; $("#cErr").textContent = err.message; }
+};
+async function waitApply(since) {
+  const ban = $("#applyBanner"); ban.style.display = "block"; ban.textContent = "⏳ নতুন setting চালু হচ্ছে…";
+  for (let i = 0; i < 30; i++) {
+    await new Promise(r => setTimeout(r, 1000));
+    let a = {}; try { a = await api("/api/admin/apply"); } catch {}
+    if (a.time && a.time >= Math.floor(since)) {
+      ban.textContent = a.ok ? "✅ হয়ে গেছে: " + a.message : "❌ " + a.message;
+      setTimeout(() => ban.style.display = "none", 6000);
+      await refreshCams(); return;
+    }
+  }
+  ban.textContent = "⚠️ এখনো চালু হয়নি। Tinker Board-এ 'sudo cctv-apply' চালিয়ে দেখুন।";
+}
+async function refreshCams() {
+  try { CAMS = await api("/api/cameras"); } catch { return; }
+  for (const c of CAMS) if (!(c.id in enabled)) enabled[c.id] = true;
+  for (const [id, t] of tiles) { t.player.stop(); t.el.remove(); tiles.delete(id); }   // rebuild with new names/streams
+  $("#grid").innerHTML = "";
+  saveEnabled(); renderChips(); renderGrid();
+  if (!liveTab) for (const t of tiles.values()) t.player.stop();
+  loadCamCfg(); if (ME.role === "admin") resetUserForm(null);
+}
+$("#cForm").onsubmit = async e => {
+  e.preventDefault(); $("#cErr").textContent = "";
+  try { const r = await api("/api/admin/cameras/save", camForm()); editCam(null); await loadCamCfg(); waitApply(r.requested); }
+  catch (err) { $("#cErr").textContent = err.message; }
+};
+$("#cDel").onclick = async () => {
+  if (!camEditing || !confirm("এই camera মুছে ফেলবেন? (পুরোনো recording থেকে যাবে)")) return;
+  try { const r = await api("/api/admin/cameras/delete", { id: camEditing }); editCam(null); await loadCamCfg(); waitApply(r.requested); }
+  catch (err) { $("#cErr").textContent = err.message; }
+};
+
+/* -------------------------- google drive -------------------------- */
+function showDrive(d) {
+  const st = $("#drvState");
+  if (d.configured) {
+    let txt = `✅ Connect করা আছে · folder: <b>${esc((d.remote || "").split(":")[1] || "CCTV")}</b> · সর্বোচ্চ ${esc(d.max_gb)} GB`;
+    if (d.about && d.about.total) {
+      const g = b => (b / 1024 ** 3).toFixed(1);
+      txt += `<br>Google account: ${g(d.about.used)} / ${g(d.about.total)} GB ব্যবহার হয়েছে, ${g(d.about.free ?? (d.about.total - d.about.used))} GB খালি`;
+    }
+    if (d.ok === false) txt += `<br><span style="color:var(--bad)">❌ ${esc(d.error)}</span>`;
+    st.innerHTML = txt;
+  } else st.textContent = "এখনো connect করা হয়নি।";
+  $("#drvStart").textContent = d.configured ? "অন্য account দিয়ে connect" : "Google দিয়ে connect";
+  $("#drvCheck").style.display = $("#drvOff").style.display = d.configured ? "" : "none";
+}
+async function loadDrive(check) {
+  try { showDrive(await api("/api/admin/drive" + (check ? "?check=1" : ""))); } catch (e) { $("#drvErr").textContent = e.message; }
+}
+$("#drvStart").onclick = async () => {
+  $("#drvErr").textContent = ""; $("#drvStart").disabled = true;
+  try {
+    const r = await api("/api/admin/drive/start", {});
+    $("#drvGo").href = r.url; $("#drvSteps").style.display = "block"; $("#drvUrl").value = "";
+  } catch (e) { $("#drvErr").textContent = e.message; }
+  $("#drvStart").disabled = false;
+};
+$("#drvFinish").onclick = async () => {
+  $("#drvErr").textContent = ""; const b = $("#drvFinish"); b.disabled = true; b.textContent = "Connect হচ্ছে…";
+  try { showDrive(await api("/api/admin/drive/finish", { url: $("#drvUrl").value })); $("#drvSteps").style.display = "none"; }
+  catch (e) { $("#drvErr").textContent = e.message; }
+  b.disabled = false; b.textContent = "Connect শেষ করুন";
+};
+$("#drvCheck").onclick = async () => { $("#drvState").textContent = "Test করছি…"; await loadDrive(true); };
+$("#drvOff").onclick = async () => {
+  if (!confirm("Google Drive disconnect করবেন? (Drive-এ থাকা clip মুছবে না)")) return;
+  showDrive(await api("/api/admin/drive/disconnect", {}));
+};
+
+/* ----------------------------- system ---------------------------- */
+async function loadSys() {
+  let u = {}; try { u = await api("/api/admin/update"); } catch {}
+  const when = u.time ? new Date(u.time * 1000).toLocaleString() : "";
+  $("#sysVer").textContent = u.version ? `${u.version} · ${u.message || ""}${when ? " · চেক: " + when : ""}`
+    : "Auto-update চালু নেই (GitHub থেকে install করলে চালু হবে)";
+  return u;
+}
+$("#sysUpd").onclick = async () => {
+  const b = $("#sysUpd"); b.disabled = true; b.textContent = "দেখছি…";
+  const before = (await loadSys()).time || 0;
+  try { await api("/api/admin/update", {}); } catch (err) { alert(err.message); }
+  for (let i = 0; i < 90; i++) {                 // the server restarts if there was an update
+    await new Promise(r => setTimeout(r, 2000));
+    let u; try { u = await api("/api/admin/update"); } catch { continue; }
+    if (u.time > before && u.state !== "updating") {
+      if (u.message === "Update হয়েছে") { location.reload(); return; }
+      break;
+    }
+  }
+  await loadSys(); b.disabled = false; b.textContent = "Update দেখুন";
+};
+
+/* ----------------------------- boot ------------------------------ */
+(async () => {
+  const r = await fetch("/api/me", { cache: "no-store" });
+  const me = await r.json().catch(() => ({}));
+  if (r.status === 401) { showLogin(me.needs_setup); return; }
+  ME = me;
+  $("#meName").textContent = me.name; $("#meRole").textContent = me.role; $("#meRole").className = "role " + me.role;
+  if (!me.recordings) $("#tabRecs").style.display = "none";
+  if (me.role === "admin") { $("#tabUsers").style.display = ""; $("#pvDel").style.display = ""; }
+  try { CAMS = await api("/api/cameras"); } catch { CAMS = []; }
+  if (!enabled) { enabled = {}; }
+  for (const c of CAMS) if (!(c.id in enabled)) enabled[c.id] = true;
+  saveEnabled();
+  if (!CAMS.length) $("#grid").innerHTML = me.role === "admin"
+    ? `<div class="empty">কোনো camera নেই।<br>⚙️ Settings → Cameras থেকে যোগ করুন।</div>`
+    : `<div class="empty">আপনাকে কোনো camera দেখার অনুমতি দেওয়া হয়নি।</div>`;
+  else { renderChips(); renderGrid(); }
+  if (me.role === "admin") resetUserForm(null);
+  refreshStatus(); setInterval(refreshStatus, 15000);
+})();
+</script>
+</body>
+</html>

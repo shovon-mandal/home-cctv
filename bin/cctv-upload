@@ -1,0 +1,38 @@
+#!/bin/bash
+# Upload finished clips to Google Drive (rclone). Runs as user cctv every minute.
+# SD mode: always uploads. SSD mode: uploads when drive_backup_when_ssd = yes (default).
+set -u
+RUN=${CCTV_RUN:-/run/cctv}
+RCLONE_CONF=${RCLONE_CONF:-/etc/cctv/rclone.conf}
+eval "$(/opt/cctv/bin/cctv-config)" || exit 1
+
+status() {  # $1 = state, $2 = message
+  printf '{"state":"%s","message":"%s","time":%s}\n' "$1" "$2" "$(date +%s)" > "$RUN/upload.json.tmp" \
+    && mv "$RUN/upload.json.tmp" "$RUN/upload.json"
+}
+
+case "${CFG_DRIVE_ENABLED,,}" in yes|on|true|1) ;; *) status off "Drive upload বন্ধ"; exit 0;; esac
+[ -s "$RCLONE_CONF" ] || { status error "rclone setup করা হয়নি"; exit 0; }
+
+MODE=$(cat "$RUN/mode" 2>/dev/null || echo sd)
+if [ "$MODE" = ssd ]; then
+  case "${CFG_DRIVE_BACKUP_WHEN_SSD,,}" in yes|on|true|1) ;; *) status idle "SSD চালু, Drive upload দরকার নেই"; exit 0;; esac
+fi
+
+exec 9>"$RUN/upload.lock"
+flock -n 9 || exit 0
+
+SRC=$(readlink -f /srv/cctv/rec)
+[ -d "$SRC" ] || exit 0
+
+# --min-age skips clips still being written; --max-age keeps each run cheap.
+if out=$(nice -n 15 rclone copy "$SRC/" "$CFG_DRIVE_REMOTE" --config "$RCLONE_CONF" \
+      --min-age 45s --max-age 48h --no-traverse --transfers 2 --checkers 4 \
+      --bwlimit "$CFG_DRIVE_BWLIMIT" --stats-one-line -v 2>&1); then
+  n=$(grep -c "Copied (new)" <<<"$out")
+  status ok "শেষ upload ঠিক আছে ($n টা নতুন clip)"
+else
+  echo "$out" | tail -5
+  status error "upload ব্যর্থ, internet বা rclone চেক করুন"
+  exit 1
+fi

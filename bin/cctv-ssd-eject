@@ -1,0 +1,18 @@
+#!/bin/bash
+# Safely remove the SSD: switch recording to the SD buffer, then unmount.
+set -u
+mkdir -p /run/cctv
+touch /run/cctv/ejected
+/opt/cctv/bin/cctv-storage                 # flips the link to the SD buffer
+echo "Waiting for running clips to close..."
+systemctl restart cctv-motion 2>/dev/null   # closes files that were open on the SSD
+sleep 3
+sync
+if umount /mnt/cctv-ssd 2>/dev/null || ! mountpoint -q /mnt/cctv-ssd; then
+  echo "SSD unmounted. You can unplug it now."
+  echo "(When you plug it back in, recording returns to it within a minute.)"
+else
+  echo "Could not unmount yet, something is still using it:"
+  fuser -vm /mnt/cctv-ssd 2>&1 | head
+  exit 1
+fi

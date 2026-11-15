@@ -1,0 +1,13 @@
+#!/usr/bin/env python3
+"""Print [general] settings as shell variables: eval "$(cctv-config)"."""
+import os
+import shlex
+import sys
+
+sys.path.insert(0, "/opt/cctv/lib")
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+import cctvconf  # noqa: E402
+
+g, _ = cctvconf.load()
+for k, v in g.items():
+    print(f"CFG_{k.upper()}={shlex.quote(str(v))}")

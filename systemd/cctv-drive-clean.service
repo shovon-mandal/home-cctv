@@ -1,0 +1,9 @@
+[Unit]
+Description=CCTV Google Drive cleanup (keep under the size limit)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=cctv
+ExecStart=/opt/cctv/bin/cctv-drive-clean
+Nice=15

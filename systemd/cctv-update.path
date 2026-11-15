@@ -1,0 +1,9 @@
+[Unit]
+Description=Run a CCTV update when an admin asks for it in the dashboard
+
+[Path]
+PathChanged=/run/cctv/update-request
+Unit=cctv-update.service
+
+[Install]
+WantedBy=multi-user.target

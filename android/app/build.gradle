@@ -1,0 +1,44 @@
+plugins {
+    id "com.android.application"
+}
+
+android {
+    namespace "io.github.shovonmandal.homecctv"
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "io.github.shovonmandal.homecctv"
+        minSdk 26
+        targetSdk 34
+        versionCode (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInteger()
+        versionName "1." + (System.getenv("GITHUB_RUN_NUMBER") ?: "0")
+    }
+
+    // A fixed key kept in the repo so every build can update the previous one
+    // on your phone. It is not a secret: it only proves "same app as before".
+    signingConfigs {
+        shared {
+            storeFile file("cctv-app.keystore")
+            storePassword "cctvapp"
+            keyAlias "cctv"
+            keyPassword "cctvapp"
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.shared
+        }
+        debug {
+            signingConfig signingConfigs.shared
+        }
+    }
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

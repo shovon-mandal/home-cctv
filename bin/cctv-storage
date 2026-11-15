@@ -1,0 +1,148 @@
+#!/bin/bash
+# Storage switcher + cleanup. Runs as root every minute (cctv-storage.timer).
+#
+#  SSD (chosen with cctv-ssd-setup) plugged in -> recordings go to <SSD>/CCTV-Recordings
+#  SSD missing                                  -> recordings go to a capped buffer on the SD card
+#
+# The SSD is NOT formatted: your own files on it are left alone. Only clips
+# inside CCTV-Recordings are ever deleted (when that folder hits ssd_max_gb or
+# the disk gets nearly full).
+#
+# Motion writes into /srv/cctv/rec, which is a symlink we flip between the two.
+set -u
+CCTV_ROOT=${CCTV_ROOT:-/srv/cctv}
+SSD_MNT=${SSD_MNT:-/mnt/cctv-ssd}
+RUN=${CCTV_RUN:-/run/cctv}
+SSD_ENV=${CCTV_SSD_ENV:-/etc/cctv/ssd.env}
+LINK="$CCTV_ROOT/rec"
+BUF="$CCTV_ROOT/sd-buffer"
+FOLDER="CCTV-Recordings"
+CONFIG_CMD=${CCTV_CONFIG_CMD:-/opt/cctv/bin/cctv-config}
+
+eval "$($CONFIG_CMD)" || { echo "config error"; exit 1; }
+SSD_UUID=""; SSD_FSTYPE=""
+[ -f "$SSD_ENV" ] && . "$SSD_ENV"
+
+mkdir -p "$RUN" "$BUF" "$SSD_MNT"
+exec 9>"$RUN/storage.lock"
+flock -n 9 || exit 0
+
+log() { echo "cctv-storage: $*"; }
+
+DEV=""
+[ -n "$SSD_UUID" ] && DEV="/dev/disk/by-uuid/$SSD_UUID"
+[ -n "${CCTV_TEST_DEV:-}" ] && DEV="$CCTV_TEST_DEV"
+
+mount_ssd() {  # mount $DEV with options that suit its filesystem
+  local u g; u=$(id -u cctv 2>/dev/null || echo 0); g=$(id -g cctv 2>/dev/null || echo 0)
+  local own="uid=$u,gid=$g,umask=0022,noatime"
+  case "$SSD_FSTYPE" in
+    exfat)      mount -t exfat -o "$own" "$DEV" "$SSD_MNT" ;;
+    vfat)       mount -t vfat  -o "$own" "$DEV" "$SSD_MNT" ;;
+    ntfs|ntfs3) mount -t ntfs3 -o "$own" "$DEV" "$SSD_MNT" 2>/dev/null \
+                  || mount -t ntfs-3g -o "$own,big_writes" "$DEV" "$SSD_MNT" ;;
+    *)          mount -o noatime "$DEV" "$SSD_MNT" ;;
+  esac
+}
+
+ssd_healthy() {
+  [ -n "${CCTV_TEST_SSD_DIR:-}" ] && { [ -f "$SSD_MNT/$FOLDER/.cctv-ssd" ]; return; }
+  mountpoint -q "$SSD_MNT" || return 1
+  [ -f "$SSD_MNT/$FOLDER/.cctv-ssd" ] || return 1
+  touch "$SSD_MNT/$FOLDER/.probe" 2>/dev/null && rm -f "$SSD_MNT/$FOLDER/.probe"
+}
+
+# ---- 1. mount / unmount the SSD -------------------------------------------
+if [ -z "${CCTV_TEST_SSD_DIR:-}" ] && [ -n "$DEV" ]; then
+  if [ -e "$DEV" ] && [ ! -f "$RUN/ejected" ]; then
+    if ! mountpoint -q "$SSD_MNT"; then
+      if mount_ssd 2>/dev/null; then
+        log "SSD mounted at $SSD_MNT ($SSD_FSTYPE)"
+      else
+        log "SSD found but mount failed (run: sudo cctv-ssd-setup)"
+      fi
+    fi
+  else
+    [ -e "$DEV" ] || rm -f "$RUN/ejected"          # unplugged -> clear eject flag
+    if mountpoint -q "$SSD_MNT"; then
+      log "SSD gone, lazy-unmounting"
+      umount -l "$SSD_MNT" 2>/dev/null
+    fi
+  fi
+  # plugged but broken (I/O errors after a yank): drop it
+  if mountpoint -q "$SSD_MNT" && ! ssd_healthy; then
+    log "SSD not writable, unmounting"
+    umount -l "$SSD_MNT" 2>/dev/null
+  fi
+fi
+
+# ---- 2. choose target and flip the symlink --------------------------------
+if ssd_healthy && [ ! -f "$RUN/ejected" ]; then
+  MODE=ssd; TARGET="$SSD_MNT/$FOLDER"
+else
+  MODE=sd;  TARGET="$BUF"
+fi
+mkdir -p "$TARGET"
+chown cctv:cctv "$TARGET" 2>/dev/null
+
+CUR=$(readlink "$LINK" 2>/dev/null || true)
+if [ "$CUR" != "$TARGET" ]; then
+  [ -e "$LINK" ] && [ ! -L "$LINK" ] && mv "$LINK" "$LINK.old.$(date +%s)"
+  ln -sfn "$TARGET" "$LINK.new" && mv -T "$LINK.new" "$LINK"
+  chown -h cctv:cctv "$LINK" 2>/dev/null
+  log "recording target -> $MODE ($TARGET)"
+fi
+
+# ---- 3. SSD back: move finished clips from the SD buffer onto it ----------
+if [ "$MODE" = ssd ]; then
+  ( cd "$BUF" && find . -type f -mmin +2 -print0 ) | while IFS= read -r -d '' f; do
+    d="$TARGET/$(dirname "$f")"
+    mkdir -p "$d" && mv -n "$BUF/$f" "$d/" 2>/dev/null
+  done
+  chown -R cctv:cctv "$TARGET" 2>/dev/null
+fi
+
+# ---- 4. cleanup: delete oldest clips when space runs low ------------------
+# free_bytes DIR NEED : delete oldest clips in DIR until at least NEED bytes are freed
+free_bytes() {
+  local dir=$1 need=$2 n=0
+  [ "$need" -gt 0 ] || return 0
+  while IFS= read -r f; do
+    rm -f -- "$f" && n=$((n+1))
+  done < <(find "$dir" -type f \( -name '*.mp4' -o -name '*.mkv' -o -name '*.avi' \) -mmin +1 \
+             -printf '%T@\t%s\t%p\n' 2>/dev/null | sort -n \
+           | awk -F'\t' -v need="$need" '{ if (got >= need) exit; got += $2; print $3 }')
+  find "$dir" -mindepth 1 -type d -empty -delete 2>/dev/null
+  [ "$n" -gt 0 ] && log "deleted $n old clip(s) from $dir"
+  return 0
+}
+
+if [ "$MODE" = ssd ]; then
+  # a) our folder must stay under ssd_max_gb (your other files are never touched)
+  SSDCAP=$(awk -v g="$CFG_SSD_MAX_GB" 'BEGIN{printf "%d", g*1024*1024*1024}')
+  if [ "$SSDCAP" -gt 0 ]; then
+    used_by_us=$(du -sb "$TARGET" | cut -f1)
+    free_bytes "$TARGET" $(( used_by_us - SSDCAP ))
+  fi
+  # b) the disk must keep ssd_min_free_percent free
+  read -r total avail < <(df --output=size,avail -B1 "$TARGET" | tail -1)
+  want=$(( total * CFG_SSD_MIN_FREE_PERCENT / 100 ))
+  free_bytes "$TARGET" $(( want - avail ))
+fi
+# SD buffer cap is enforced in both modes (it should be ~empty in SSD mode)
+CAP=$(awk -v g="$CFG_SD_BUFFER_GB" 'BEGIN{printf "%d", g*1024*1024*1024}')
+MINFREE=$(awk -v g="$CFG_SD_MIN_FREE_GB" 'BEGIN{printf "%d", g*1024*1024*1024}')
+size=$(du -sb "$BUF" | cut -f1)
+free=$(df --output=avail -B1 "$BUF" | tail -1 | tr -dc 0-9)
+over=$(( size - CAP )); short=$(( MINFREE - free ))
+free_bytes "$BUF" $(( over > short ? over : short ))
+
+# ---- 5. status for the web UI ---------------------------------------------
+read -r total used avail < <(df --output=size,used,avail -B1 "$TARGET" | tail -1)
+bufsize=$(du -sb "$BUF" | cut -f1)
+cat > "$RUN/storage.json.tmp" <<EOF
+{"mode":"$MODE","target":"$TARGET","rec_bytes":$(du -sb "$TARGET" | cut -f1),"ssd_cap":${SSDCAP:-0},"total":$total,"used":$used,"avail":$avail,"sd_buffer_bytes":$bufsize,"sd_buffer_cap":$CAP,"updated":$(date +%s)}
+EOF
+mv "$RUN/storage.json.tmp" "$RUN/storage.json"
+echo "$MODE" > "$RUN/mode"
+chmod 644 "$RUN/storage.json" "$RUN/mode"

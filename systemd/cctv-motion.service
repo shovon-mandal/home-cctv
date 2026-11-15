@@ -1,0 +1,18 @@
+[Unit]
+Description=CCTV motion detection + recording (Motion)
+After=cctv-go2rtc.service cctv-storage.service
+Wants=cctv-go2rtc.service
+
+[Service]
+User=cctv
+ExecStartPre=/bin/sleep 3
+ExecStart=/usr/bin/motion -n -c /etc/cctv/generated/motion.conf
+Restart=always
+RestartSec=5
+# Keep the Discord bot and other apps responsive
+Nice=10
+CPUQuota=250%
+MemoryMax=800M
+
+[Install]
+WantedBy=multi-user.target
