@@ -24,10 +24,14 @@ RCLONE_CONF = os.environ.get("RCLONE_CONF", "/etc/cctv/rclone.conf")
 STATE = os.environ.get("CCTV_UPLOADED", "/srv/cctv/uploaded.txt")
 
 
+LOG = os.path.join(os.path.dirname(STATE), "upload-log.json")   # recent uploads, survives reboots
+INFO = {}                                                         # extra fields for the dashboard
+
+
 def status(state, en, bn):
     fd, tmp = tempfile.mkstemp(prefix=".upload.", dir=RUN)   # fresh file: never blocked by an old one
     with os.fdopen(fd, "w", encoding="utf-8") as f:
-        json.dump({"state": state, "message": f"{en} || {bn}", "time": int(time.time())}, f, ensure_ascii=False)
+        json.dump({"state": state, "message": f"{en} || {bn}", "time": int(time.time()), **INFO}, f, ensure_ascii=False)
     os.chmod(tmp, 0o644)
     os.replace(tmp, os.path.join(RUN, "upload.json"))
 
@@ -45,7 +49,7 @@ def main():
         if not c["enabled"] or c["mode"] == "off":
             continue
         for day in days:
-            d = os.path.join(root, c["id"], day)
+            d = os.path.join(cctvrec.cam_dir(root, c["id"]), day)
             evs = cctvrec.read_events(d, now)
             ivs = [(s - pre, (e + post) if e is not None else None) for s, e, _ in evs]
             for s in cctvrec.segments(d, day, now):     # full-quality segments only
@@ -84,10 +88,13 @@ def main():
         return status("ok", "Drive has every motion clip", "Drive-এ সব motion clip আছে")
 
     keep_days = set(days)
-    names = {}
-    for c in cctvconf.load()[1]:
-        n = re.sub(r'[\\/:*?"<>|]+', " ", c.get("name") or c["id"]).strip() or c["id"]
-        names[c["id"]] = n if n not in names.values() else f"{n} ({c['id']})"
+    try:
+        recent = json.load(open(LOG))
+    except (OSError, ValueError):
+        recent = []
+    INFO.update(pending=len([p for p in todo if p.endswith(".mp4")]),
+                on_board=len([p for p in to_upload if p.endswith(".mp4")]), recent=recent[:8])
+    names = cctvrec.folder_names()                  # same folder names as on the SSD
     folder_of = lambda cam: names.get(cam, cam)
     # one time: clips already on Drive under cam1/cam2 move to the camera-name folders (server-side, fast)
     flag = os.path.join(os.path.dirname(STATE), ".drive-names-v1")
@@ -117,6 +124,7 @@ def main():
     batches = [clips[i:i + BATCH] for i in range(0, total, BATCH)] or [[]]
     batches[0] = batches[0] + extras
     for batch in batches:
+        INFO.update(sent=sent, total=total)
         status("busy", f"Uploading motion clips: {sent}/{total} done…", f"Motion clip upload হচ্ছে: {total}টার মধ্যে {sent}টা হয়েছে…")
         r = None
         by_cam = {}
@@ -147,6 +155,22 @@ def main():
         done |= set(batch)
         sent += sum(1 for p in batch if p.endswith(".mp4"))
         save_state()
+        for p in batch:
+            if p.endswith(".mp4"):
+                cam, day, f = (p.split("/") + ["", ""])[:3]
+                try:
+                    size = os.path.getsize(os.path.join(root, p))
+                except OSError:
+                    size = 0
+                recent.insert(0, {"cam": folder_of(cam), "day": day, "file": f, "size": size, "t": int(time.time())})
+        recent = recent[:20]
+        try:
+            with open(LOG + ".tmp", "w") as f:
+                json.dump(recent, f)
+            os.replace(LOG + ".tmp", LOG)
+        except OSError:
+            pass
+        INFO.update(sent=sent, total=total, pending=total - sent, recent=recent[:8])
     status("ok", f"Uploaded {sent} motion clip(s)", f"{sent}টা motion clip upload হয়েছে")
 
 if __name__ == "__main__":

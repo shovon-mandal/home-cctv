@@ -186,6 +186,7 @@ fi
 
 # ---- 3. SSD connected: move everything from the SD card onto it, empty the SD card
 if [ "$MODE" = ssd ] && [ -n "$(ls -A "$BUF" 2>/dev/null)" ]; then
+  ${CCTV_FOLDERS_CMD:-/opt/cctv/bin/cctv-apply --folders} >/dev/null 2>&1 || true
   ${CCTV_MOVE_CMD:-/opt/cctv/bin/cctv-move} "$BUF" "$TARGET"
   chown -R cctv:cctv "$TARGET" 2>/dev/null
 fi

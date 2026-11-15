@@ -227,7 +227,7 @@
 
 <div class="statusbar">
   <button class="pill" id="stStorage" style="cursor:pointer;color:inherit;font:inherit"><span class="dot"></span><span>…</span></button>
-  <span class="pill" id="stDrive"><span class="dot"></span><span>…</span></span>
+  <button class="pill" id="stDrive" style="cursor:pointer;color:inherit;font:inherit"><span class="dot"></span><span>…</span></button>
   <span class="pill" id="stLoad"><span class="dot"></span><span>…</span></span>
 </div>
 
@@ -417,6 +417,24 @@
     <div class="err" id="ejMsg" style="color:var(--text)"></div>
   </div>
 </dialog>
+<dialog id="drvDlg">
+  <div class="card" style="width:min(460px,92vw)">
+    <h2>☁️ Google Drive</h2>
+    <p id="drvNow" style="margin:6px 0"></p>
+    <div id="drvProg" style="display:none;margin:8px 0">
+      <div style="height:10px;border-radius:5px;background:#2a313b;overflow:hidden"><div id="drvBar" style="height:100%;width:0;background:var(--accent);transition:width .4s"></div></div>
+      <div class="muted" id="drvProgTxt" style="margin-top:4px"></div>
+    </div>
+    <div class="sect" style="margin-top:10px" data-t="drvOnDrive"></div>
+    <p id="drvUsage" class="muted"></p>
+    <div class="sect" style="margin-top:10px" data-t="drvRecent"></div>
+    <div id="drvList" style="font-size:13.5px;line-height:1.7"></div>
+    <div class="btnrow">
+      <a class="btn" href="https://drive.google.com/drive/my-drive" target="_blank" rel="noopener" data-t="drvOpen"></a>
+      <button class="btn ghost" type="button" onclick="this.closest('dialog').close()" data-t="close"></button>
+    </div>
+  </div>
+</dialog>
 <dialog id="picDlg">
   <form class="card" id="picForm" style="width:min(440px,92vw)">
     <h2>🎛️ <span data-t="picture"></span>: <span id="picCam"></span></h2>
@@ -558,6 +576,13 @@ const I18N = {
   drvSpace: ["Google account: {0} / {1} GB used, {2} GB free", "Google account: {0} / {1} GB ব্যবহার হয়েছে, {2} GB খালি"],
   drvOffQ: ["Disconnect Google Drive? (clips already on Drive stay)", "Google Drive disconnect করবেন? (Drive-এর clip মুছবে না)"],
   drvTesting: ["Testing…", "Test করছি…"],
+  // drive dialog
+  clips: ["clips", "clip"], justNow: ["just now", "এইমাত্র"], hrAgo: ["h ago", "ঘণ্টা আগে"], checked: ["checked", "check করা হয়েছে"],
+  drvOnDrive: ["On Google Drive", "Google Drive-এ আছে"], drvRecent: ["Last uploaded", "শেষ upload হওয়া clip"],
+  drvOpen: ["Open Google Drive", "Google Drive খুলুন"], drvProg: ["{0} of {1} clips uploaded", "{1}টার মধ্যে {0}টা upload হয়েছে"],
+  drvUsage: ["{0} clips · {1} of {2} used · kept {3} days", "{0}টা clip · {2}-এর মধ্যে {1} ব্যবহার · {3} দিন রাখা হয়"],
+  drvUsageNone: ["Counting what is on Drive… (within 15 min)", "Drive-এ কী আছে গোনা হচ্ছে… (১৫ মিনিটের মধ্যে)"],
+  drvPending: ["Waiting to upload: {0} clips", "Upload বাকি: {0}টা clip"], drvNoRecent: ["Nothing uploaded yet.", "এখনো কিছু upload হয়নি।"],
   // picture
   picture: ["Picture quality", "ছবির quality"], picLoading: ["Asking the camera…", "Camera-র কাছ থেকে আনা হচ্ছে…"],
   hdr: ["HDR / WDR (bright sky + dark areas)", "HDR / WDR (উজ্জ্বল আকাশ + অন্ধকার জায়গা)"], on: ["On", "চালু"], off: ["Off", "বন্ধ"],
@@ -836,8 +861,11 @@ async function refreshStatus() {
       : `💳 ${t("sdCard")} · ${gb(Math.max(0, st.sd_buffer_cap - st.sd_buffer_bytes))} ${t("free")}`);
     else setPill("#stStorage", "bad", t("noStorage"));
     const up = s.upload || {}, ago = up.time ? Math.round((s.time - up.time) / 60) : null;
+    LAST_UP = { up, now: s.time };
+    const short = up.state === "busy" && up.total ? `⬆ ${up.sent || 0}/${up.total} ${t("clips")}` : up.message ? tr(up.message) : t("waiting");
     setPill("#stDrive", { ok: "ok", idle: "ok", busy: "warn", off: "", error: "bad" }[up.state] ?? "",
-      up.message ? `Drive · ${tr(up.message)}${ago > 0 ? ` · ${ago} ${t("minAgo")}` : ""}` : `Drive · ${t("waiting")}`);
+      `☁️ Drive · ${short}${ago > 0 ? ` · ${ago} ${t("minAgo")}` : ""}`);
+    if ($("#drvDlg").open) showDrive();
     if (s.load !== null && s.cpus) {
       const pct = Math.round(100 * s.load / s.cpus), tc = s.temp;
       const lv = Math.max(pct < 70 ? 0 : pct < 95 ? 1 : 2, tc == null ? 0 : tc < 70 ? 0 : tc < 80 ? 1 : 2);
@@ -1277,6 +1305,30 @@ async function ssdAction(kind) {
   b.disabled = false; refreshStatus(); showStorage();
 }
 $("#stStorage").onclick = showStorage;
+let LAST_UP = { up: {}, now: 0 };
+function agoTxt(sec) {
+  return sec < 90 ? t("justNow") : sec < 5400 ? Math.round(sec / 60) + " " + t("minAgo") : Math.round(sec / 3600) + " " + t("hrAgo");
+}
+function showDrive() {
+  const { up, now } = LAST_UP;
+  $("#drvNow").textContent = (up.message ? tr(up.message) : t("waiting")) + (up.time ? ` (${agoTxt(now - up.time)})` : "");
+  const busy = up.state === "busy" && up.total;
+  $("#drvProg").style.display = busy ? "" : "none";
+  if (busy) {
+    $("#drvBar").style.width = Math.round(100 * (up.sent || 0) / up.total) + "%";
+    $("#drvProgTxt").textContent = t("drvProg", up.sent || 0, up.total);
+  }
+  const u = up.usage;
+  let txt = u ? t("drvUsage", u.clips, gb(u.bytes), gb(u.cap), u.keep_days) +
+    (u.per_cam ? " · " + Object.entries(u.per_cam).map(([k, v]) => `${k}: ${v}`).join(", ") : "") +
+    ` (${t("checked")} ${agoTxt(now - u.time)})` : t("drvUsageNone");
+  if (up.pending != null) txt += "\n" + t("drvPending", up.pending);
+  $("#drvUsage").textContent = txt; $("#drvUsage").style.whiteSpace = "pre-line";
+  const rec = up.recent || [];
+  $("#drvList").innerHTML = rec.length ? rec.map(x => `<div>✅ <b>${esc(x.cam)}</b> · ${esc(x.day)} ${esc(x.file.slice(0, 5).replace("-", ":"))} · ${(x.size / 1048576).toFixed(1)} MB · <span class="muted">${agoTxt(now - x.t)}</span></div>`).join("")
+    : `<span class="muted">${t("drvNoRecent")}</span>`;
+}
+$("#stDrive").onclick = () => { showDrive(); $("#drvDlg").showModal(); };
 $("#ejBtn").onclick = () => { if (confirm(t("ejectQ"))) ssdAction("eject"); };
 $("#atBtn").onclick = () => ssdAction("attach");
 

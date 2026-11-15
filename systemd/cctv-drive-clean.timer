@@ -2,8 +2,8 @@
 Description=Hourly Google Drive cleanup for CCTV
 
 [Timer]
-OnBootSec=10min
-OnUnitActiveSec=1h
+OnBootSec=3min
+OnUnitActiveSec=15min
 
 [Install]
 WantedBy=timers.target

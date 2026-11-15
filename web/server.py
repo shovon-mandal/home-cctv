@@ -609,7 +609,7 @@ class Handler(BaseHTTPRequestHandler):
         if not (SAFE_NAME.match(cam) and DATE_RE.match(date) and SAFE_NAME.match(fname)):
             return self.send_error_json(400, "bad path")
         root = self.rec_root()
-        fp = os.path.realpath(os.path.join(root, cam, date, fname))
+        fp = os.path.realpath(os.path.join(cctvrec.cam_dir(root, cam), date, fname))
         if not fp.startswith(root + os.sep) or not os.path.isfile(fp):
             return self.send_error_json(404, "not found")
         os.remove(fp)
@@ -785,7 +785,7 @@ class Handler(BaseHTTPRequestHandler):
         days = cctvrec.dates_of(root, cam)
         if not DATE_RE.match(date):
             date = days[0] if days else time.strftime("%Y-%m-%d")
-        d = os.path.join(root, cam, date)
+        d = os.path.join(cctvrec.cam_dir(root, cam), date)
         now = time.time()
         base = f"/rec/{cam}/{date}/"
         segs = []
@@ -834,6 +834,7 @@ class Handler(BaseHTTPRequestHandler):
     def status(self):
         storage = read_json(os.path.join(RUN, "storage.json"), {})
         upload = read_json(os.path.join(RUN, "upload.json"), {})
+        upload["usage"] = read_json(os.path.join(RUN, "drive-usage.json"), None)
         try:
             load1 = os.getloadavg()[0]
         except OSError:
@@ -861,13 +862,13 @@ class Handler(BaseHTTPRequestHandler):
         if not cam:
             out = {}
             for cid in names:
-                d = os.path.join(root, cid)
+                d = cctvrec.cam_dir(root, cid)
                 dates = sorted([x for x in os.listdir(d) if DATE_RE.match(x)], reverse=True) if os.path.isdir(d) else []
                 out[cid] = dates
             return self.send_json(out)
         if cam not in names or not DATE_RE.match(date):
             return self.send_error_json(400, "bad cam/date")
-        d = os.path.join(root, cam, date)
+        d = os.path.join(cctvrec.cam_dir(root, cam), date)
         files = []
         if os.path.isdir(d):
             for name in os.listdir(d):
@@ -891,7 +892,7 @@ class Handler(BaseHTTPRequestHandler):
         if not user.get("recordings") or not cctvusers.can_see(user, parts[0]):
             return self.send_error_json(403, "No permission || অনুমতি নেই")
         root = self.rec_root()
-        fp = os.path.realpath(os.path.join(root, *parts))
+        fp = os.path.realpath(os.path.join(cctvrec.cam_dir(root, parts[0]), *parts[1:]))
         if not fp.startswith(root + os.sep) or not os.path.isfile(fp):
             return self.send_error_json(404, "not found")
         ctype = mimetypes.guess_type(fp)[0] or "application/octet-stream"

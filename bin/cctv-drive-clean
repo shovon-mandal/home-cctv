@@ -42,6 +42,18 @@ def main():
             total -= f.get("Size", 0)
             removed += 1
     rclone("rmdirs", remote, "--leave-root")
+    per_cam = {}
+    for f in files:
+        if f["Path"].endswith(".mp4"):
+            per_cam[f["Path"].split("/")[0]] = per_cam.get(f["Path"].split("/")[0], 0) + 1
+    try:
+        run = os.environ.get("CCTV_RUN", "/run/cctv")
+        with open(os.path.join(run, "drive-usage.json.tmp"), "w") as fh:
+            json.dump({"bytes": total, "cap": cap, "clips": sum(per_cam.values()), "per_cam": per_cam,
+                       "keep_days": keep, "time": int(__import__("time").time())}, fh)
+        os.replace(os.path.join(run, "drive-usage.json.tmp"), os.path.join(run, "drive-usage.json"))
+    except OSError:
+        pass
     print(f"drive: {total / 1024 ** 3:.2f} GB used, {removed} old clip(s) removed for space")
     return 0
 

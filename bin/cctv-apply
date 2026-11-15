@@ -14,6 +14,7 @@ import sys
 sys.path.insert(0, "/opt/cctv/lib")
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
 import cctvconf  # noqa: E402
+import cctvrec  # noqa: E402
 
 OUT = os.environ.get("CCTV_GEN_DIR", "/etc/cctv/generated")
 RUN = os.environ.get("CCTV_RUN", "/run/cctv")
@@ -98,7 +99,7 @@ def gen_motion(g, cams, outdir):
             # only one connection per stream no matter how many viewers.
             f"netcam_url rtsp://127.0.0.1:8554/{c['id']}_sub",
             f"threshold {int(c['threshold'])}",
-            f"picture_filename {c['id']}/%Y-%m-%d/m-%H-%M-%S",
+            f"picture_filename {cctvrec.folder_names().get(c['id'], c['id'])}/%Y-%m-%d/m-%H-%M-%S",
             f"on_event_start /opt/cctv/bin/cctv-event start {n}",
             f"on_event_end /opt/cctv/bin/cctv-event end {n} {g['event_gap']}",
             f"on_picture_save /opt/cctv/bin/cctv-event pic {n} %f",
@@ -213,8 +214,84 @@ def migrate_v5():
         print(f"migration v5 skipped: {e}")
 
 
+FOLDERS = os.environ.get("CCTV_FOLDERS", "/srv/cctv/folders.json")    # {cam_id: folder} last applied
+ROOTS = os.environ.get("CCTV_ROOTS", "/srv/cctv/rec:/srv/cctv/sd-buffer:/mnt/cctv-ssd/CCTV").split(":")
+UPLOADED = os.environ.get("CCTV_UPLOADED", "/srv/cctv/uploaded.txt")
+
+
+def _merge(src, dst):
+    """Move everything from src into dst (dst wins on clashes), then drop src."""
+    import shutil
+    for n in os.listdir(src):
+        s, d = os.path.join(src, n), os.path.join(dst, n)
+        if os.path.isdir(s) and os.path.isdir(d):
+            _merge(s, d)
+        elif not os.path.exists(d):
+            shutil.move(s, d)
+    shutil.rmtree(src, ignore_errors=True)
+
+
+def rename_folders():
+    """Give every camera's recording folder its camera name (cam1 -> "Imou Ranger 2 Pro"),
+    on the SSD and the SD buffer, and follow later renames. Returns True if anything moved."""
+    names = cctvrec.folder_names()
+    try:
+        prev = json.load(open(FOLDERS))
+    except (OSError, ValueError):
+        prev = {}
+    moved = {}
+    seen = set()
+    for root in ROOTS:
+        root = os.path.realpath(root)
+        if root in seen or not os.path.isdir(root):
+            continue
+        seen.add(root)
+        for cid, new in names.items():
+            dst = os.path.join(root, new)
+            for old in {prev.get(cid), cid} - {None, new}:
+                src = os.path.join(root, old)
+                if not os.path.isdir(src) or old in names.values():
+                    continue
+                try:
+                    if os.path.isdir(dst):
+                        _merge(src, dst)
+                    else:
+                        os.rename(src, dst)
+                    moved[old + "/"] = new + "/"
+                    print(f"folder: {root}/{old} -> {new}")
+                except OSError as e:
+                    print(f"folder rename failed ({src}): {e}")
+    if moved and os.path.exists(UPLOADED):               # keep "already on Drive" bookkeeping
+        try:
+            lines = open(UPLOADED).read().split("\n")
+            out = []
+            for ln in lines:
+                for o, n in moved.items():
+                    if ln.startswith(o):
+                        ln = n + ln[len(o):]
+                        break
+                out.append(ln)
+            with open(UPLOADED + ".tmp", "w") as f:
+                f.write("\n".join(out))
+            os.replace(UPLOADED + ".tmp", UPLOADED)
+            cctvconf.fix_owner(UPLOADED)
+        except OSError:
+            pass
+    try:
+        if names != prev:
+            with open(FOLDERS, "w") as f:
+                json.dump(names, f, ensure_ascii=False)
+            cctvconf.fix_owner(FOLDERS)
+    except OSError:
+        pass
+    return bool(moved)
+
+
 def main():
     restart = "--no-restart" not in sys.argv
+    if "--folders" in sys.argv:                          # called by cctv-storage after an SSD is mounted
+        rename_folders()
+        return 0
     auto = "--auto" in sys.argv
     migrate()
     migrate_v4()
@@ -229,6 +306,7 @@ def main():
         report(False, f"Config error: {e}")
         return 1
 
+    renamed = rename_folders()
     os.makedirs(OUT, exist_ok=True)
     write(os.path.join(OUT, "go2rtc.yaml"), gen_go2rtc(cams))
     motion_conf, has_rec = gen_motion(g, cams, OUT)
@@ -259,7 +337,8 @@ def main():
             subprocess.call(["systemctl", "restart", "cctv-motion"])
         else:
             subprocess.call(["systemctl", "stop", "cctv-motion"])
-        subprocess.call(["systemctl", "start", "cctv-recorder"])   # it reloads recorder.json by itself
+        # it reloads recorder.json by itself; a renamed folder needs fresh ffmpeg paths
+        subprocess.call(["systemctl", "restart" if renamed else "start", "cctv-recorder"])
         print("Services restarted.")
     n = len([c for c in cams if c['enabled']])
     report(True, f"{n} camera(s) active || {n}টা camera চালু")

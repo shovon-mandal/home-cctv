@@ -66,7 +66,7 @@ def read_events(daydir, now=None):
 
 def motion_active(rec, cam, now=None):
     now = now or time.time()
-    d = os.path.join(rec, cam, datetime.fromtimestamp(now).strftime("%Y-%m-%d"))
+    d = os.path.join(cam_dir(rec, cam), datetime.fromtimestamp(now).strftime("%Y-%m-%d"))
     ev = read_events(d, now)
     return bool(ev) and ev[-1][1] is None
 
@@ -118,21 +118,61 @@ def motion_intervals(rec, cam, days=2, pre=5, post=5, now=None):
     out = []
     for i in range(days, -1, -1):
         date = (datetime.fromtimestamp(now) - timedelta(days=i)).strftime("%Y-%m-%d")
-        for s, e, _ in read_events(os.path.join(rec, cam, date), now):
+        for s, e, _ in read_events(os.path.join(cam_dir(rec, cam), date), now):
             out.append((s - pre, (e + post) if e is not None else None))
     return out
 
 
-def cams_in(rec):
+# ---- camera folders: on disk (and on Drive) each camera's folder carries its NAME, e.g.
+# "Imou Ranger 2 Pro/2026-11-16/..."; code keeps using the id (cam1). Old "cam1" folders still work.
+_names = {"mtime": None, "map": {}}
+
+
+def safe_folder(name):
+    n = re.sub(r"[^\w \-().,&+]+", " ", name or "", flags=re.UNICODE)
+    return re.sub(r"\s+", " ", n).strip(" .") or None
+
+
+def folder_names():
+    """{cam_id: folder name} from cameras.conf (cached until the file changes)."""
     try:
-        return sorted(d for d in os.listdir(rec) if re.match(r"^cam\d+$", d) and os.path.isdir(os.path.join(rec, d)))
+        import cctvconf
+        path = cctvconf.CAMS_PATH
+        mt = os.path.getmtime(path)
+        if mt != _names["mtime"]:
+            out = {}
+            for c in cctvconf.load_cameras():
+                n = safe_folder(c.get("name")) or c["id"]
+                out[c["id"]] = n if n not in out.values() else f"{n} ({c['id']})"
+            _names.update(mtime=mt, map=out)
+    except Exception:  # noqa: BLE001  (no config / unreadable: fall back to ids)
+        pass
+    return _names["map"]
+
+
+def cam_dir(rec, cam):
+    """Folder of camera `cam` on storage `rec` (falls back to a legacy cam1-style folder)."""
+    name = folder_names().get(cam, cam)
+    p = os.path.join(rec, name)
+    if name != cam and not os.path.isdir(p) and os.path.isdir(os.path.join(rec, cam)):
+        return os.path.join(rec, cam)
+    return p
+
+
+def cams_in(rec):
+    """Camera ids that have a folder on this storage."""
+    try:
+        present = set(d for d in os.listdir(rec) if os.path.isdir(os.path.join(rec, d)))
     except OSError:
         return []
+    ids = {cid for cid, n in folder_names().items() if n in present or cid in present}
+    ids |= {d for d in present if re.match(r"^cam\d+$", d)}      # removed cameras' old folders
+    return sorted(ids)
 
 
 def dates_of(rec, cam):
     try:
-        return sorted((d for d in os.listdir(os.path.join(rec, cam)) if DATE_RE.match(d)), reverse=True)
+        return sorted((d for d in os.listdir(cam_dir(rec, cam)) if DATE_RE.match(d)), reverse=True)
     except OSError:
         return []
 
@@ -143,7 +183,7 @@ def all_segments(rec, now=None):
     for cam in cams_in(rec):
         for date in dates_of(rec, cam):
             for low in (False, True):
-                for s in segments(os.path.join(rec, cam, date), date, now, low):
+                for s in segments(os.path.join(cam_dir(rec, cam), date), date, now, low):
                     s["cam"], s["date"] = cam, date
                     out.append(s)
     return out

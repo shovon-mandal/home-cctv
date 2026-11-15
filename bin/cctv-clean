@@ -29,7 +29,7 @@ def main():
     for s in segs:
         key = (s["cam"], s["date"])
         if key not in motion:
-            motion[key] = cctvrec.read_events(os.path.join(root, s["cam"], s["date"]), now)
+            motion[key] = cctvrec.read_events(os.path.join(cctvrec.cam_dir(root, s["cam"]), s["date"]), now)
         s["motion"] = cctvrec.overlaps(s["start"] - 5, s["end"] + 5, [(a, b) for a, b, _ in motion[key]])
     segs.sort(key=lambda s: (s["motion"], s["start"]))
     freed = n = nm = 0
@@ -50,7 +50,7 @@ def main():
         for date in cctvrec.dates_of(root, cam):
             if date >= today:                     # today's folder may be empty for a moment
                 continue
-            d = os.path.join(root, cam, date)
+            d = os.path.join(cctvrec.cam_dir(root, cam), date)
             lowd = os.path.join(d, cctvrec.LOW)
             lows = os.listdir(lowd) if os.path.isdir(lowd) else []
             if not any(cctvrec.SEG_RE.match(f) for f in os.listdir(d) + lows):

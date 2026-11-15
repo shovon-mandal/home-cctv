@@ -63,7 +63,7 @@ class Cam:
             if not self.codec:
                 self.fail("stream not reachable")
                 return
-        pattern = os.path.join(REC, self.id, "%Y-%m-%d", *([cctvrec.LOW] if self.low else []), "%H-%M-%S.mp4")
+        pattern = os.path.join(cctvrec.cam_dir(REC, self.id), "%Y-%m-%d", *([cctvrec.LOW] if self.low else []), "%H-%M-%S.mp4")
         src = ["-rtsp_transport", "tcp", "-timeout", "10000000", "-i", url] if url.startswith("rtsp://") \
             else ["-re", "-stream_loop", "-1", "-i", url]
         cmd = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", *src,
@@ -132,7 +132,7 @@ class Cam:
 def ensure_dirs(cam):
     """ffmpeg does not create folders: make today's and the next minute's."""
     for t in (time.time(), time.time() + 90):
-        d = os.path.join(REC, cam, datetime.fromtimestamp(t).strftime("%Y-%m-%d"))
+        d = os.path.join(cctvrec.cam_dir(REC, cam), datetime.fromtimestamp(t).strftime("%Y-%m-%d"))
         try:
             os.makedirs(os.path.join(d, cctvrec.LOW), exist_ok=True)
         except OSError:
@@ -143,7 +143,7 @@ def make_thumbs(cam, limit=3, low=False):
     """Thumbnail for finished segments that do not have one yet (newest first)."""
     made = 0
     for date in cctvrec.dates_of(REC, cam)[:2]:
-        d = os.path.join(REC, cam, date)
+        d = os.path.join(cctvrec.cam_dir(REC, cam), date)
         for s in reversed(cctvrec.segments(d, date, low=low)):
             if not s["done"]:
                 continue
