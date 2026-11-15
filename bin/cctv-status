@@ -7,10 +7,18 @@ done
 printf '  %-24s %s\n' cctv-recorder "$(systemctl is-active cctv-recorder)"
 echo "== Recording =="
 python3 -c '
-import json
+import json, sys
+sys.path.insert(0, "/opt/cctv/lib")
+try:
+    import cctvconf
+    names = {c["id"]: c["name"] for c in cctvconf.load()[1]}
+except Exception:
+    names = {}
 d = json.load(open("/run/cctv/recorder.json"))
 for k, v in sorted(d.items()):
     if k.startswith("cam"):
+        cid, _, low = k.partition(":")
+        k = names.get(cid, cid) + (" (low)" if low else "")
         state = "recording" if v.get("recording") else "NOT recording"
         extra = " ".join(x for x in (v.get("codec") or "", "+audio" if v.get("audio") else "", v.get("error") or "") if x)
         print("  " + k + ": " + state + "  " + extra)

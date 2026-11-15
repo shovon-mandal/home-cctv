@@ -6,6 +6,7 @@
 """
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -83,6 +84,24 @@ def main():
         return status("ok", "Drive has every motion clip", "Drive-এ সব motion clip আছে")
 
     keep_days = set(days)
+    names = {}
+    for c in cctvconf.load()[1]:
+        n = re.sub(r'[\\/:*?"<>|]+', " ", c.get("name") or c["id"]).strip() or c["id"]
+        names[c["id"]] = n if n not in names.values() else f"{n} ({c['id']})"
+    folder_of = lambda cam: names.get(cam, cam)
+    # one time: clips already on Drive under cam1/cam2 move to the camera-name folders (server-side, fast)
+    flag = os.path.join(os.path.dirname(STATE), ".drive-names-v1")
+    if not os.path.exists(flag):
+        for cid, n in names.items():
+            src = g["drive_remote"].rstrip("/") + "/" + cid
+            subprocess.run(["rclone", "move", src, g["drive_remote"].rstrip("/") + "/" + n, "--config", RCLONE_CONF,
+                            "--delete-empty-src-dirs", "--drive-server-side-across-configs"],
+                           capture_output=True, text=True, timeout=900)
+            subprocess.run(["rclone", "rmdir", src, "--config", RCLONE_CONF], capture_output=True, timeout=120)
+        try:
+            open(flag, "w").close()
+        except OSError:
+            pass
 
     def save_state():
         keep = {p for p in done if len(p.split("/")) > 1 and p.split("/")[1] in keep_days}
@@ -99,17 +118,26 @@ def main():
     batches[0] = batches[0] + extras
     for batch in batches:
         status("busy", f"Uploading motion clips: {sent}/{total} done…", f"Motion clip upload হচ্ছে: {total}টার মধ্যে {sent}টা হয়েছে…")
-        with tempfile.NamedTemporaryFile("w", delete=False, suffix=".txt") as lst:
-            lst.write("\n".join(batch) + "\n")
-        try:
-            r = subprocess.run(["nice", "-n", "15", "rclone", "copy", root + "/", g["drive_remote"],
-                                "--config", RCLONE_CONF, "--files-from", lst.name, "--no-traverse",
-                                "--transfers", "2", "--bwlimit", g["drive_bwlimit"], "--retries", "2"],
-                               capture_output=True, text=True, timeout=1800)
-        except subprocess.TimeoutExpired:
-            r = None
-        finally:
-            os.unlink(lst.name)
+        r = None
+        by_cam = {}
+        for p in batch:
+            cam, _, rest = p.partition("/")
+            by_cam.setdefault(cam, []).append(rest)
+        for cam, files in by_cam.items():               # Drive folder = camera name, not cam1/cam2
+            with tempfile.NamedTemporaryFile("w", delete=False, suffix=".txt") as lst:
+                lst.write("\n".join(files) + "\n")
+            try:
+                r = subprocess.run(["nice", "-n", "15", "rclone", "copy", os.path.join(root, cam) + "/",
+                                    g["drive_remote"].rstrip("/") + "/" + folder_of(cam),
+                                    "--config", RCLONE_CONF, "--files-from", lst.name, "--no-traverse",
+                                    "--transfers", "2", "--bwlimit", g["drive_bwlimit"], "--retries", "2"],
+                                   capture_output=True, text=True, timeout=1800)
+            except subprocess.TimeoutExpired:
+                r = None
+            finally:
+                os.unlink(lst.name)
+            if r is None or r.returncode != 0:
+                break
         if r is None or r.returncode != 0:
             if r is not None:
                 print(r.stderr[-800:])
