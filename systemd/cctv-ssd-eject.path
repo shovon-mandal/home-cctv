@@ -1,0 +1,9 @@
+[Unit]
+Description=Eject the CCTV SSD when the dashboard asks
+
+[Path]
+PathChanged=/run/cctv/eject-request
+Unit=cctv-ssd-eject.service
+
+[Install]
+WantedBy=multi-user.target

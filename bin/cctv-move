@@ -1,0 +1,84 @@
+#!/usr/bin/env python3
+"""Move recordings from the SD-card buffer onto the SSD and empty the buffer.
+
+  cctv-move <from_dir> <to_dir>
+
+- segments, thumbnails and snapshots are moved (files still being written are left for next time)
+- events.jsonl is merged (appended, sorted by time), not overwritten
+- empty folders on the SD card are removed
+"""
+import json
+import os
+import shutil
+import sys
+import time
+
+BUSY_SECONDS = 90          # a file touched this recently may still be written
+
+
+def merge_events(src, dst):
+    lines = []
+    for p in (dst, src):
+        try:
+            with open(p, encoding="utf-8") as f:
+                for ln in f:
+                    try:
+                        lines.append(json.loads(ln))
+                    except ValueError:
+                        pass
+        except OSError:
+            pass
+    seen, out = set(), []
+    for e in sorted(lines, key=lambda e: e.get("t", 0)):
+        k = json.dumps(e, sort_keys=True)
+        if k not in seen:
+            seen.add(k)
+            out.append(e)
+    tmp = dst + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write("".join(json.dumps(e) + "\n" for e in out))
+    os.replace(tmp, dst)
+
+
+def main():
+    if len(sys.argv) != 3:
+        print(__doc__)
+        return 1
+    src_root, dst_root = sys.argv[1], sys.argv[2]
+    now = time.time()
+    moved = 0
+    for dirpath, _, files in os.walk(src_root):
+        rel = os.path.relpath(dirpath, src_root)
+        dst_dir = os.path.normpath(os.path.join(dst_root, rel))
+        for name in files:
+            s = os.path.join(dirpath, name)
+            try:
+                if now - os.path.getmtime(s) < BUSY_SECONDS and name != "events.jsonl":
+                    continue
+                os.makedirs(dst_dir, exist_ok=True)
+                d = os.path.join(dst_dir, name)
+                if name == "events.jsonl":
+                    if now - os.path.getmtime(s) < BUSY_SECONDS:
+                        continue                   # Motion may still append to it
+                    merge_events(s, d)
+                    os.remove(s)
+                elif os.path.exists(d) and os.path.getsize(d) >= os.path.getsize(s):
+                    os.remove(s)                   # already there
+                else:
+                    shutil.move(s, d)
+                moved += 1
+            except OSError as e:
+                print(f"cctv-move: {s}: {e}")
+    for dirpath, dirs, files in sorted(os.walk(src_root, topdown=False), reverse=False):
+        if dirpath != src_root and not os.listdir(dirpath):
+            try:
+                os.rmdir(dirpath)
+            except OSError:
+                pass
+    if moved:
+        print(f"cctv-move: moved {moved} file(s) from the SD card to the SSD")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

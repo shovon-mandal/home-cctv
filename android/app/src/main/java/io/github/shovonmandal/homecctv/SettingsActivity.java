@@ -48,7 +48,7 @@ public class SettingsActivity extends Activity {
 
         LinearLayout top = new LinearLayout(this);
         top.setOrientation(LinearLayout.HORIZONTAL);
-        TextView title = text(tx("📹 Home CCTV", "📹 আমার CCTV"), 24, "#e6edf3", true);
+        TextView title = text(tx("📹 Khulna CCTV", "📹 Khulna CCTV"), 24, "#e6edf3", true);
         top.addView(title, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
         Button lang = new Button(this);
         lang.setText(bn ? "EN" : "বাং");

@@ -1,18 +1,46 @@
 #!/bin/bash
-# Safely remove the SSD: switch recording to the SD buffer, then unmount.
+# Safely remove the SSD: switch recording to the SD card, close open files, unmount.
+#   sudo cctv-ssd-eject            eject
+#   sudo cctv-ssd-eject --attach   use the (still plugged-in) SSD again
+# Also run by the dashboard's "Eject SSD" button (cctv-ssd-eject.path / cctv-ssd-attach.path).
 set -u
-mkdir -p /run/cctv
-touch /run/cctv/ejected
-/opt/cctv/bin/cctv-storage                 # flips the link to the SD buffer
-echo "Waiting for running clips to close..."
-systemctl restart cctv-motion 2>/dev/null   # closes files that were open on the SSD
+RUN=/run/cctv
+MNT=/mnt/cctv-ssd
+mkdir -p "$RUN"
+
+status() {  # state, "english || bangla"
+  printf '{"state":"%s","message":"%s","time":%s}\n' "$1" "$2" "$(date +%s)" > "$RUN/eject.json.tmp" \
+    && mv "$RUN/eject.json.tmp" "$RUN/eject.json" && chmod 644 "$RUN/eject.json"
+  echo "${2%% || *}"
+}
+
+if [ "${1:-}" = "--attach" ]; then
+  rm -f "$RUN/ejected"
+  /opt/cctv/bin/cctv-storage
+  if mountpoint -q "$MNT"; then status ok "SSD is in use again || SSD আবার ব্যবহার হচ্ছে"
+  else status error "SSD not found, is it plugged in? || SSD পাওয়া যায়নি, লাগানো আছে তো?"; exit 1; fi
+  exit 0
+fi
+
+if ! mountpoint -q "$MNT"; then
+  status ok "No SSD is mounted, safe to unplug || কোনো SSD mount করা নেই, খুলতে পারেন"
+  exit 0
+fi
+status working "Ejecting… || Eject হচ্ছে…"
+touch "$RUN/ejected"
+/opt/cctv/bin/cctv-storage >/dev/null       # recording target -> SD card
+# close files that are open on the SSD
+systemctl restart cctv-recorder cctv-motion 2>/dev/null
 sleep 3
 sync
-if umount /mnt/cctv-ssd 2>/dev/null || ! mountpoint -q /mnt/cctv-ssd; then
-  echo "SSD unmounted. You can unplug it now."
-  echo "(When you plug it back in, recording returns to it within a minute.)"
-else
-  echo "Could not unmount yet, something is still using it:"
-  fuser -vm /mnt/cctv-ssd 2>&1 | head
-  exit 1
-fi
+for i in 1 2 3 4 5; do
+  if umount "$MNT" 2>/dev/null; then
+    sync
+    status ok "SSD ejected. You can unplug it now. || SSD eject হয়েছে, এখন খুলে নিতে পারেন।"
+    exit 0
+  fi
+  sleep 2
+done
+status error "SSD is busy, could not eject. Try again in a minute. || SSD ব্যস্ত, eject হয়নি। এক মিনিট পর আবার চেষ্টা করুন।"
+fuser -vm "$MNT" 2>&1 | head
+exit 1

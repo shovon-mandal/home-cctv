@@ -1,0 +1,6 @@
+[Unit]
+Description=Eject the CCTV SSD
+
+[Service]
+Type=oneshot
+ExecStart=/opt/cctv/bin/cctv-ssd-eject

@@ -108,7 +108,8 @@ if [ -z "${CCTV_TEST_SSD_DIR:-}" ] && [ -n "$DEV" ]; then
     fi
   else
     [ -e "$DEV" ] || rm -f "$RUN/ejected"          # unplugged -> clear eject flag
-    if mountpoint -q "$SSD_MNT"; then
+    # unplugged without eject: drop the dead mount (an eject unmounts by itself, cleanly)
+    if mountpoint -q "$SSD_MNT" && [ ! -e "$DEV" ]; then
       log "SSD gone, lazy-unmounting"
       umount -l "$SSD_MNT" 2>/dev/null
     fi
@@ -137,12 +138,9 @@ if [ "$CUR" != "$TARGET" ]; then
   log "recording target -> $MODE ($TARGET)"
 fi
 
-# ---- 3. SSD back: move finished clips from the SD buffer onto it ----------
-if [ "$MODE" = ssd ]; then
-  ( cd "$BUF" && find . -type f -mmin +2 -print0 ) | while IFS= read -r -d '' f; do
-    d="$TARGET/$(dirname "$f")"
-    mkdir -p "$d" && mv -n "$BUF/$f" "$d/" 2>/dev/null
-  done
+# ---- 3. SSD connected: move everything from the SD card onto it, empty the SD card
+if [ "$MODE" = ssd ] && [ -n "$(ls -A "$BUF" 2>/dev/null)" ]; then
+  ${CCTV_MOVE_CMD:-/opt/cctv/bin/cctv-move} "$BUF" "$TARGET"
   chown -R cctv:cctv "$TARGET" 2>/dev/null
 fi
 
@@ -177,7 +175,7 @@ free_bytes "$BUF" $(( over > short ? over : short ))
 read -r total used avail < <(df --output=size,used,avail -B1 "$TARGET" | tail -1)
 bufsize=$(du -sb "$BUF" | cut -f1)
 cat > "$RUN/storage.json.tmp" <<EOF
-{"mode":"$MODE","target":"$TARGET","rec_bytes":$(du -sb "$TARGET" | cut -f1),"ssd_cap":${SSDCAP:-0},"total":$total,"used":$used,"avail":$avail,"sd_buffer_bytes":$bufsize,"sd_buffer_cap":$CAP,"updated":$(date +%s)}
+{"mode":"$MODE","target":"$TARGET","ejected":$([ -f "$RUN/ejected" ] && echo true || echo false),"ssd_present":$([ -n "$DEV" ] && [ -e "$DEV" ] && echo true || echo false),"rec_bytes":$(du -sb "$TARGET" | cut -f1),"ssd_cap":${SSDCAP:-0},"total":$total,"used":$used,"avail":$avail,"sd_buffer_bytes":$bufsize,"sd_buffer_cap":$CAP,"updated":$(date +%s)}
 EOF
 mv "$RUN/storage.json.tmp" "$RUN/storage.json"
 echo "$MODE" > "$RUN/mode"

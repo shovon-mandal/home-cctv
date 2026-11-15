@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
-<title>Home CCTV</title>
+<title>Khulna CCTV</title>
 <style>
   :root {
     --bg: #0d1117; --panel: #161b22; --line: #2a313c; --text: #e6edf3; --muted: #8b949e;
@@ -183,6 +183,8 @@
   dialog { border: 0; padding: 0; background: transparent; color: var(--text); }
   dialog::backdrop { background: rgba(0,0,0,.75); }
   .loginlang { position: absolute; top: 16px; right: 16px; }
+  .bar { height: 8px; border-radius: 99px; background: #30363d; overflow: hidden; margin: 2px 0 8px; }
+  .bar i { display: block; height: 100%; background: var(--accent); }
 </style>
 </head>
 <body>
@@ -198,6 +200,7 @@
 </header>
 <div class="menu" id="menu">
   <button id="mApp" style="display:none" data-t="appServer"></button>
+  <button id="mUpd" style="display:none" data-t="updateNow"></button>
   <button id="mPass" data-t="changePass"></button>
   <button id="mLogout" data-t="logout"></button>
 </div>
@@ -217,7 +220,7 @@
 </div>
 
 <div class="statusbar">
-  <span class="pill" id="stStorage"><span class="dot"></span><span>…</span></span>
+  <button class="pill" id="stStorage" style="cursor:pointer;color:inherit;font:inherit"><span class="dot"></span><span>…</span></button>
   <span class="pill" id="stDrive"><span class="dot"></span><span>…</span></span>
   <span class="pill" id="stLoad"><span class="dot"></span><span>…</span></span>
 </div>
@@ -358,6 +361,18 @@
   </section>
 </main>
 
+<dialog id="stDlg">
+  <div class="card" style="width:min(400px,92vw)">
+    <h2 data-t="storage"></h2>
+    <div id="stBody" style="font-size:14px;line-height:1.7;margin:8px 0 4px"></div>
+    <div class="btnrow">
+      <button class="btn danger" id="ejBtn" style="display:none">⏏ <span data-t="ejectSsd"></span></button>
+      <button class="btn" id="atBtn" style="display:none" data-t="useSsdAgain"></button>
+      <button class="btn ghost" onclick="this.closest('dialog').close()" data-t="close"></button>
+    </div>
+    <div class="err" id="ejMsg" style="color:var(--text)"></div>
+  </div>
+</dialog>
 <dialog id="pwDlg">
   <form class="card" id="pwForm">
     <h2 data-t="changePass"></h2>
@@ -380,7 +395,7 @@ const esc = t => String(t ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "
 
 /* =============================== i18n =============================== */
 const I18N = {
-  title: ["Home CCTV", "আমার CCTV"], live: ["Live", "Live"], recordings: ["Recordings", "Recordings"],
+  title: ["Khulna CCTV", "Khulna CCTV"], live: ["Live", "Live"], recordings: ["Recordings", "Recordings"],
   settings: ["⚙️ Settings", "⚙️ Settings"], username: ["Username", "Username"], password: ["Password", "Password"],
   login: ["Log in", "Login"], logout: ["↩ Log out", "↩ Logout"], changePass: ["🔑 Change password", "🔑 Password বদলান"],
   appServer: ["📱 Server address (app)", "📱 Server ঠিকানা (app)"], loginHint: ["Please log in", "Login করুন"],
@@ -399,7 +414,17 @@ const I18N = {
   noCamPerm: ["You have not been given any camera.", "আপনাকে কোনো camera দেখার অনুমতি দেওয়া হয়নি।"],
   motion: ["● Motion", "● Motion"], soundOn: ["Sound on", "শব্দ চালু"], ptzBtn: ["Pan / tilt", "Camera ঘোরান"],
   // status
-  free: ["free", "খালি"], sdCard: ["SD card", "SD card"], noStorage: ["No storage status", "Storage status নেই"],
+  free: ["free", "খালি"], sdCard: ["SD card", "SD card"],
+  storage: ["Storage", "Storage"], recTo: ["Recording to: <b>{0}</b>", "Recording হচ্ছে: <b>{0}</b>"],
+  ssdLine: ["SSD: {0} free of {1}", "SSD: {1}-এর মধ্যে {0} খালি"], cctvFolder: ["CCTV folder: {0} (limit {1})", "CCTV folder: {0} (সীমা {1})"],
+  sdLine: ["SD card buffer: {0} of {1} used", "SD card buffer: {1}-এর মধ্যে {0} ব্যবহার হয়েছে"],
+  sdNote: ["Plug in an SSD and recordings move there automatically.", "SSD লাগালে recording নিজে থেকেই সেখানে চলে যাবে।"],
+  ejectedNote: ["The SSD is ejected and safe to unplug. Recording continues on the SD card.", "SSD eject করা আছে, এখন খুলে নিতে পারেন। Recording SD card-এ চলছে।"],
+  ejectSsd: ["Eject SSD", "SSD eject করুন"], useSsdAgain: ["Use SSD again", "আবার SSD ব্যবহার করুন"], close: ["Close", "বন্ধ করুন"],
+  ejectQ: ["Eject the SSD?\nRecording will continue on the SD card until you plug it back in.", "SSD eject করবেন?\nআবার না লাগানো পর্যন্ত recording SD card-এ চলবে।"],
+  ejecting: ["Ejecting… (a few seconds)", "Eject হচ্ছে… (কয়েক সেকেন্ড)"], ssdEjectedPill: ["⏏ SSD ejected · SD card", "⏏ SSD eject করা · SD card"],
+  updateNow: ["🔄 Update", "🔄 Update"], upToDate: ["Already the latest version.", "সর্বশেষ version চলছে।"],
+  updFailed: ["Update failed: ", "Update হয়নি: "], noStorage: ["No storage status", "Storage status নেই"],
   noServer: ["Can't reach the server", "Server-এর সাথে যোগাযোগ নেই"], minAgo: ["min ago", "মি. আগে"], waiting: ["waiting", "অপেক্ষা"],
   // recordings
   prevMin: ["1 min", "১ মিনিট"], nextMin: ["1 min", "১ মিনিট"], download: ["Download", "Download"],
@@ -695,8 +720,9 @@ function setPill(id, cls, text) { const p = $(id); p.firstChild.className = "dot
 async function refreshStatus() {
   try {
     const s = await api("/api/status"), st = s.storage || {};
-    if (st.mode) setPill("#stStorage", st.mode === "ssd" ? (st.total && st.avail / st.total > .1 ? "ok" : "warn") : "warn",
-      `${st.mode === "ssd" ? "SSD" : t("sdCard")} · ${gb(st.avail)} ${t("free")}`);
+    if (st.mode === "ssd") setPill("#stStorage", st.total && st.avail / st.total > .1 ? "ok" : "warn", `💾 SSD · ${gb(st.avail)} ${t("free")}`);
+    else if (st.mode) setPill("#stStorage", "warn", st.ejected && st.ssd_present ? t("ssdEjectedPill")
+      : `💳 ${t("sdCard")} · ${gb(Math.max(0, st.sd_buffer_cap - st.sd_buffer_bytes))} ${t("free")}`);
     else setPill("#stStorage", "bad", t("noStorage"));
     const up = s.upload || {}, ago = up.time ? Math.round((s.time - up.time) / 60) : null;
     setPill("#stDrive", { ok: "ok", idle: "ok", off: "", error: "bad" }[up.state] ?? "",
@@ -1022,6 +1048,41 @@ $("#drvFinish").onclick = async () => {
 $("#drvCheck").onclick = async () => { $("#drvState").textContent = t("drvTesting"); await loadDrive(true); };
 $("#drvOff").onclick = async () => { if (!confirm(t("drvOffQ"))) return; showDrive(await api("/api/admin/drive/disconnect", {})); };
 
+/* ============================= storage ============================= */
+async function showStorage() {
+  let d; try { d = await api("/api/storage"); } catch { return; }
+  const st = d.storage || {}, admin = ME && ME.role === "admin";
+  const barH = (used, total) => `<div class="bar"><i style="width:${total ? Math.min(100, 100 * used / total).toFixed(1) : 0}%"></i></div>`;
+  let h = t("recTo", st.mode === "ssd" ? "💾 SSD" : "💳 " + t("sdCard")) + "<br>";
+  if (st.mode === "ssd") {
+    h += t("ssdLine", gb(st.avail), gb(st.total)) + barH(st.used, st.total);
+    h += t("cctvFolder", gb(st.rec_bytes || 0), st.ssd_cap ? gb(st.ssd_cap) : "–") + "<br>";
+  } else {
+    h += t("sdLine", gb(st.sd_buffer_bytes || 0), gb(st.sd_buffer_cap || 0)) + barH(st.sd_buffer_bytes, st.sd_buffer_cap);
+    h += `<span class="muted">${st.ejected && st.ssd_present ? t("ejectedNote") : t("sdNote")}</span>`;
+  }
+  $("#stBody").innerHTML = h;
+  $("#ejBtn").style.display = admin && st.mode === "ssd" ? "" : "none";
+  $("#atBtn").style.display = admin && st.mode !== "ssd" && st.ejected && st.ssd_present ? "" : "none";
+  if (!$("#stDlg").open) { $("#ejMsg").textContent = ""; $("#stDlg").showModal(); }
+}
+async function ssdAction(kind) {
+  const b = kind === "eject" ? $("#ejBtn") : $("#atBtn"); b.disabled = true;
+  $("#ejMsg").textContent = t("ejecting");
+  let before = 0; try { before = ((await api("/api/storage")).eject || {}).time || 0; } catch {}
+  try { await api("/api/admin/ssd/" + kind, {}); } catch (e) { $("#ejMsg").textContent = e.message; b.disabled = false; return; }
+  for (let i = 0; i < 40; i++) {
+    await new Promise(r => setTimeout(r, 1500));
+    let d; try { d = await api("/api/storage"); } catch { continue; }
+    const e = d.eject || {};
+    if (e.time > before && e.state !== "working") { $("#ejMsg").textContent = (e.state === "ok" ? "✅ " : "❌ ") + tr(e.message); break; }
+  }
+  b.disabled = false; refreshStatus(); showStorage();
+}
+$("#stStorage").onclick = showStorage;
+$("#ejBtn").onclick = () => { if (confirm(t("ejectQ"))) ssdAction("eject"); };
+$("#atBtn").onclick = () => ssdAction("attach");
+
 /* ============================== system ============================== */
 async function loadSys() {
   let u = {}; try { u = await api("/api/admin/update"); } catch {}
@@ -1030,17 +1091,24 @@ async function loadSys() {
   $("#sysVer").textContent = u.version ? `${u.version} · ${tr(u.message || "")}${when ? ` · ${t("checked")}: ${when}` : ""}` : t("noAutoUpd");
   return u;
 }
-$("#sysUpd").onclick = async () => {
-  const b = $("#sysUpd"); b.disabled = true; b.textContent = t("checking");
+async function runUpdate(b, label) {
+  b.disabled = true; const old = b.textContent; b.textContent = t("checking");
   const before = (await loadSys()).time || 0;
   try { await api("/api/admin/update", {}); } catch (err) { alert(err.message); }
+  let res = null;
   for (let i = 0; i < 90; i++) {
     await new Promise(r => setTimeout(r, 2000));
-    let u; try { u = await api("/api/admin/update"); } catch { continue; }
-    if (u.time > before && u.state !== "updating") { if (u.state === "ok" && /Updated|Update হয়েছে/.test(u.message || "")) { location.reload(); return; } break; }
+    let u; try { u = await api("/api/admin/update"); } catch { continue; }     // server restarts while updating
+    if (u.time > before && u.state !== "updating") { res = u; break; }
   }
-  await loadSys(); b.disabled = false; b.textContent = t("checkUpdate");
-};
+  b.disabled = false; b.textContent = label ? t(label) : old;
+  if (res && /^Updated/.test(res.message || "")) { location.reload(); return; }
+  if (res && res.state === "error") alert(t("updFailed") + tr(res.message));
+  else if (res) alert(t("upToDate"));
+  loadSys();
+}
+$("#sysUpd").onclick = () => runUpdate($("#sysUpd"), "checkUpdate");
+$("#mUpd").onclick = e => { e.stopPropagation(); $("#menu").style.display = "none"; runUpdate($("#mUpd"), "updateNow"); };
 
 /* =========================== users (admin) =========================== */
 let editing = null, formRole = "viewer";
@@ -1110,7 +1178,7 @@ applyLang();
   if (!LS.get("cctv.lang", null) && me.lang && me.lang !== LANG) { LANG = me.lang; applyLang(); }
   $("#meName").textContent = me.name; $("#meRole").textContent = me.role; $("#meRole").className = "role " + me.role;
   if (!me.recordings) $("#tabRecs").style.display = "none";
-  if (me.role === "admin") $("#tabUsers").style.display = "";
+  if (me.role === "admin") { $("#tabUsers").style.display = ""; $("#mUpd").style.display = ""; }
   try { CAMS = await api("/api/cameras"); } catch { CAMS = []; }
   if (!enabled) enabled = {};
   for (const c of CAMS) if (!(c.id in enabled)) enabled[c.id] = true;

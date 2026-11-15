@@ -306,6 +306,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.timeline(q, user)
             if p == "/api/status":
                 return self.status()
+            if p == "/api/storage":
+                return self.send_json({"storage": read_json(os.path.join(RUN, "storage.json"), {}),
+                                       "eject": read_json(os.path.join(RUN, "eject.json"), {})})
             if p == "/api/recordings":
                 return self.recordings(q, user)
             if p.startswith("/rec/"):
@@ -398,6 +401,11 @@ class Handler(BaseHTTPRequestHandler):
                 cctvusers.delete_user(data, str(body.get("name", "")))
                 cctvusers.save(data)
                 return self.send_json({"ok": True})
+            if p in ("/api/admin/ssd/eject", "/api/admin/ssd/attach"):
+                name = "eject-request" if p.endswith("eject") else "attach-request"
+                with open(os.path.join(RUN, name), "w") as f:            # watched by cctv-ssd-*.path
+                    f.write(str(time.time()))
+                return self.send_json({"ok": True, "requested": time.time()})
             if p == "/api/admin/update":
                 with open(os.path.join(RUN, "update-request"), "w") as f:   # watched by cctv-update.path
                     f.write(str(time.time()))

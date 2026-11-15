@@ -1,0 +1,9 @@
+[Unit]
+Description=Use the CCTV SSD again when the dashboard asks
+
+[Path]
+PathChanged=/run/cctv/attach-request
+Unit=cctv-ssd-attach.service
+
+[Install]
+WantedBy=multi-user.target
