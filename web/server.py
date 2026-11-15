@@ -301,7 +301,12 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/admin/update":
                 if user["role"] != "admin":
                     return self.send_error_json(403, "শুধু admin পারবে")
-                return self.send_json(read_json(os.path.join(RUN, "update.json"), {}))
+                d = read_json(os.path.join(RUN, "update.json"), {})
+                try:
+                    d["public_url"] = open("/etc/cctv/public_url").read().strip()
+                except OSError:
+                    d["public_url"] = ""
+                return self.send_json(d)
             if p == "/api/admin/drive":
                 if user["role"] != "admin":
                     return self.send_error_json(403, "শুধু admin পারবে")
@@ -390,8 +395,18 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError as e:
             self.send_error_json(400, re.sub(r"^\[cam\d+\] ", "", str(e)))
 
+    def via_proxy(self):
+        """True when the request came through Tailscale Funnel/serve (a local reverse proxy)."""
+        return self.client_address[0] in ("127.0.0.1", "::1") and bool(self.headers.get("X-Forwarded-For"))
+
+    def client_ip(self):
+        if self.via_proxy():
+            return self.headers["X-Forwarded-For"].split(",")[0].strip()
+        return self.client_address[0]
+
     def cookie(self, tok):
-        return f"{COOKIE}={tok}; Path=/; Max-Age={cctvusers.SESSION_DAYS * 86400}; HttpOnly; SameSite=Strict"
+        secure = "; Secure" if self.via_proxy() or self.headers.get("X-Forwarded-Proto") == "https" else ""
+        return f"{COOKIE}={tok}; Path=/; Max-Age={cctvusers.SESSION_DAYS * 86400}; HttpOnly; SameSite=Strict{secure}"
 
     def me(self):
         data = cctvusers.load()
@@ -401,7 +416,7 @@ class Handler(BaseHTTPRequestHandler):
         return self.send_json(cctvusers.public_view(*who))
 
     def login(self, body):
-        ip = self.client_address[0]
+        ip = self.client_ip()
         now = time.time()
         with _fails_lock:
             recent = [t for t in _fails.get(ip, []) if now - t < 600]

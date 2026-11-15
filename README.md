@@ -86,14 +86,20 @@ sudo cctv-ssd-setup /dev/sda1    # list-এ যেটা আপনার SSD-র
 
 > Free ১৫GB আপনার Gmail আর Photos-এর সাথে ভাগ হয়। Settings-এ দেখাবে কত জায়গা খালি আছে। দরকার হলে `/etc/cctv/cctv.conf`-এ `drive_max_gb` কমিয়ে দিন।
 
-## ৬. বাইরে থেকে দেখা (Real IP লাগবে না)
+## ৬. যেকোনো জায়গা থেকে দেখা (Real IP বা VPN লাগবে না)
 
+Tailscale Funnel board-কে একটা public https link দেয়। সেই link যেকোনো phone বা PC থেকে খোলা যায়, phone-এ Tailscale লাগে না।
 ```bash
-curl -fsSL https://tailscale.com/install.sh | sh
-sudo tailscale up
-tailscale ip -4          # 100.x.x.x, এটা app-এ "বাইরের ঠিকানা" হিসেবে বসাবেন
+# Tailscale আগে থেকে না থাকলে:
+curl -fsSL https://tailscale.com/install.sh | sh && sudo tailscale up
+
+sudo cctv-funnel          # link দেখাবে: https://<board>.<tailnet>.ts.net:8443
+sudo cctv-funnel off      # বন্ধ করতে
 ```
-Phone-এ **Tailscale** app install করে একই account দিয়ে login করুন।
+- Port **8443** ব্যবহার হয়, তাই একই board-এর অন্য app (যেমন 443-এ চলা কিছু) ঝামেলা পায় না।
+- Link-টা dashboard-এর **⚙️ Settings → System**-এও দেখায়। Android app-এ "বাইরের ঠিকানা" হিসেবে এটা বসান।
+- Dashboard internet-এ খোলা থাকছে, তাই **সব account-এ শক্ত password দিন** (১০ অক্ষর বা তার বেশি)। ৫ বার ভুল password দিলে ১০ মিনিট login আটকে থাকে।
+- বাসার Wi-Fi-তে থাকলে app নিজে থেকেই local ঠিকানা ব্যবহার করে, তাই video দ্রুত আসে।
 
 ## ৭. Android app
 
@@ -101,9 +107,9 @@ Repo-র **[Releases → Android app (latest)](../../releases/tag/app-latest)** 
 
 App প্রথমবার খুললে দুটো ঠিকানা চাইবে:
 - 🏠 **বাসার ঠিকানা:** Tinker Board-এর IP (যেমন `192.168.0.10`)
-- 🌍 **বাইরের ঠিকানা:** Tailscale IP (`100.x.x.x`)
+- 🌍 **বাইরের ঠিকানা:** `sudo cctv-funnel`-এর দেওয়া link (`https://….ts.net:8443`)
 
-বাসায় থাকলে app প্রথম ঠিকানা দিয়ে খোলে, বাইরে থাকলে নিজে থেকেই Tailscale-এ চলে যায়। App-এর নতুন version GitHub Actions নিজে থেকেই build করে।
+বাসায় থাকলে app প্রথম ঠিকানা দিয়ে খোলে, বাইরে থাকলে নিজে থেকেই দ্বিতীয় ঠিকানায় চলে যায়। App-এর নতুন version GitHub Actions নিজে থেকেই build করে।
 
 App ছাড়াও চলে: Chrome-এ dashboard খুলে ⋮ → **Add to Home screen** দিলেই হবে।
 
@@ -128,6 +134,7 @@ sudo cctv-user passwd admin
 |---|---|
 | সবকিছুর অবস্থা | `cctv-status` |
 | এখনই update | `sudo cctv-update` |
+| বাইরে থেকে খোলার link চালু বা বন্ধ | `sudo cctv-funnel` / `sudo cctv-funnel off` |
 | Recording log | `journalctl -u cctv-motion -f` |
 | Live stream log | `journalctl -u cctv-go2rtc -f` |
 | SSD নিরাপদে খোলা | `sudo cctv-ssd-eject` |

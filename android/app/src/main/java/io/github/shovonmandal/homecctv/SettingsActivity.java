@@ -40,11 +40,11 @@ public class SettingsActivity extends Activity {
         home = input("192.168.0.10", p.getString(MainActivity.KEY_HOME, ""));
         col.addView(home);
 
-        col.addView(label("🌍 বাইরে থেকে (Tailscale IP, 100.x.x.x)"));
-        remote = input("100.101.102.103", p.getString(MainActivity.KEY_REMOTE, ""));
+        col.addView(label("🌍 বাইরে থেকে (https://….ts.net:8443 link)"));
+        remote = input("https://tinkerboard.xxxx.ts.net:8443", p.getString(MainActivity.KEY_REMOTE, ""));
         col.addView(remote);
 
-        TextView hint = text("বাসায় থাকলে app প্রথম ঠিকানা দিয়ে খুলবে, বাইরে থাকলে নিজে থেকে Tailscale ঠিকানায় যাবে। বাইরে থেকে দেখতে phone-এ Tailscale app চালু রাখুন।", 13, "#8b949e", false);
+        TextView hint = text("বাসায় থাকলে app প্রথম ঠিকানা দিয়ে খুলবে (দ্রুত), বাইরে থাকলে নিজে থেকে দ্বিতীয় ঠিকানায় যাবে। Link-টা dashboard-এর ⚙️ Settings → System-এ পাবেন। (Tailscale IP-ও দেওয়া যায়।)", 13, "#8b949e", false);
         hint.setPadding(0, dp(12), 0, 0);
         col.addView(hint);
 

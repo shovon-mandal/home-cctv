@@ -262,6 +262,7 @@
     <div class="sect">🔄 System</div>
     <div class="urow" id="sysRow"><div><b>Version</b><small id="sysVer">…</small></div>
       <button class="btn ghost" id="sysUpd">Update দেখুন</button></div>
+    <div class="urow" style="margin-top:8px"><small id="sysPub" style="font-size:13.5px;word-break:break-all">…</small></div>
     <div class="sect">👤 Users</div>
     <div class="ulist" id="ulist"></div>
     <form class="card" id="uForm" style="width:100%;max-width:480px">
@@ -845,6 +846,9 @@ $("#drvOff").onclick = async () => {
 async function loadSys() {
   let u = {}; try { u = await api("/api/admin/update"); } catch {}
   const when = u.time ? new Date(u.time * 1000).toLocaleString() : "";
+  $("#sysPub").innerHTML = u.public_url
+    ? `🌍 যেকোনো জায়গা থেকে: <a href="${esc(u.public_url)}" style="color:var(--blue)">${esc(u.public_url)}</a>`
+    : "🌍 বাইরে থেকে খোলার link চালু নেই (Tinker Board-এ: sudo cctv-funnel)";
   $("#sysVer").textContent = u.version ? `${u.version} · ${u.message || ""}${when ? " · চেক: " + when : ""}`
     : "Auto-update চালু নেই (GitHub থেকে install করলে চালু হবে)";
   return u;

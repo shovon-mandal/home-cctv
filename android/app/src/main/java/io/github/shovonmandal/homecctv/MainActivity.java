@@ -143,7 +143,7 @@ public class MainActivity extends Activity {
             final String chosen = pick;
             ui.post(() -> {
                 if (chosen == null) {
-                    showError("বাসার Wi-Fi বা Tailscale, কোনোটা দিয়েই Tinker Board পাওয়া যাচ্ছে না।");
+                    showError("বাসার বা বাইরের, কোনো ঠিকানাতেই Tinker Board পাওয়া যাচ্ছে না।");
                 } else {
                     baseUrl = chosen;
                     web.loadUrl(chosen + "/");
@@ -170,7 +170,7 @@ public class MainActivity extends Activity {
     void showError(String msg) {
         showingError = true;
         web.loadDataWithBaseURL(null, page("⚠️ " + msg,
-                "Tinker Board চালু আছে তো? বাইরে থাকলে phone-এ Tailscale চালু আছে তো?", true), "text/html", "utf-8", null);
+                "Tinker Board চালু আছে তো? Internet আছে তো?", true), "text/html", "utf-8", null);
     }
 
     static String page(String title, String sub, boolean buttons) {
