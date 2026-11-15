@@ -26,18 +26,23 @@ eval "$($CONFIG_CMD)" || { echo "config error"; exit 1; }
 SSD_UUID=""; SSD_FSTYPE=""
 [ -f "$SSD_ENV" ] && . "$SSD_ENV"
 
+VERBOSE=0; [ -t 1 ] && VERBOSE=1                    # run by hand -> explain every decision
+say() { [ "$VERBOSE" = 1 ] && echo "  · $*"; return 0; }
 mkdir -p "$RUN" "$BUF" "$SSD_MNT"
 exec 9>"$RUN/storage.lock"
 flock -n 9 || { say "another cctv-storage is running, try again in a few seconds"; exit 0; }
 
 log() { echo "cctv-storage: $*"; }
-VERBOSE=0; [ -t 1 ] && VERBOSE=1                    # run by hand -> explain every decision
-say() { [ "$VERBOSE" = 1 ] && echo "  · $*"; return 0; }
 
 # self-heal: settings written by root must stay readable by the cctv services (Drive upload, web)
-for f in /etc/cctv/cctv.conf /etc/cctv/cameras.conf; do
-  [ -f "$f" ] && [ "$(stat -c %U "$f")" != cctv ] && chown cctv:cctv "$f" && chmod 640 "$f" && log "fixed owner of $f"
+for f in /etc/cctv/cctv.conf /etc/cctv/cameras.conf /etc/cctv/rclone.conf; do
+  [ -f "$f" ] || continue
+  if [ "$(stat -c %U:%G:%a "$f")" != "cctv:cctv:640" ] && [ "$(stat -c %U:%G:%a "$f")" != "cctv:cctv:600" ]; then
+    chown cctv:cctv "$f" && chmod 640 "$f" && log "fixed owner/permissions of $f"
+  fi
 done
+# status files the cctv services rewrite must not be left owned by root (e.g. after a manual run)
+find "$RUN" -maxdepth 1 -type f \( -name 'upload.json*' -o -name 'drive*' \) ! -user cctv -exec chown cctv:cctv {} + 2>/dev/null
 yes_cfg() { case "${1,,}" in yes|on|true|1) return 0;; esac; return 1; }
 once() {  # log a message only when it changes (the script runs every minute)
   local f="$RUN/msg-$1"; [ "$(cat "$f" 2>/dev/null)" = "$2" ] && return 0

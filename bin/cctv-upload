@@ -24,9 +24,10 @@ STATE = os.environ.get("CCTV_UPLOADED", "/srv/cctv/uploaded.txt")
 
 
 def status(state, en, bn):
-    tmp = os.path.join(RUN, "upload.json.tmp")
-    with open(tmp, "w", encoding="utf-8") as f:
+    fd, tmp = tempfile.mkstemp(prefix=".upload.", dir=RUN)   # fresh file: never blocked by an old one
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
         json.dump({"state": state, "message": f"{en} || {bn}", "time": int(time.time())}, f, ensure_ascii=False)
+    os.chmod(tmp, 0o644)
     os.replace(tmp, os.path.join(RUN, "upload.json"))
 
 
@@ -110,6 +111,6 @@ if __name__ == "__main__":
         print("cctv-upload:", e)
         try:
             status("error", f"Upload error: {e}", f"Upload সমস্যা: {e}")
-        except OSError:
-            pass
+        except OSError as e2:
+            print("cctv-upload: cannot write status:", e2)
         sys.exit(1)

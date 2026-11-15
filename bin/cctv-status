@@ -32,6 +32,9 @@ cat /run/cctv/update.json 2>/dev/null | sed 's/^/  /'
 echo "== Drive =="
 cat /run/cctv/upload.json 2>/dev/null || echo "  (no upload yet)"
 echo
+echo "  last upload run:"
+journalctl -u cctv-upload -n 6 --no-pager -o cat 2>/dev/null | sed 's/^/    /'
+echo "  files: $(stat -c '%n %U:%G %a' /etc/cctv/cctv.conf /etc/cctv/cameras.conf /etc/cctv/rclone.conf 2>/dev/null | tr '\n' ';')"
 echo "== Load =="
 uptime
 free -h | head -2
