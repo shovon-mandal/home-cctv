@@ -1,10 +1,10 @@
 [Unit]
 Description=CCTV: keep the board's power draw steady (CPU speed limit)
-After=sysinit.target
+# after Armbian's own CPU settings, which would otherwise undo the limit
+After=sysinit.target cpufrequtils.service loadcpufreq.service armbian-hardware-optimize.service
 
 [Service]
 Type=oneshot
-RemainAfterExit=yes
 ExecStart=/opt/cctv/bin/cctv-power
 
 [Install]

@@ -93,8 +93,8 @@ fi
 printf 'kernel.panic = 10\nkernel.panic_on_oops = 1\n' > /etc/sysctl.d/90-cctv.conf
 sysctl -q -p /etc/sysctl.d/90-cctv.conf 2>/dev/null || true
 systemctl daemon-reload
-systemctl enable -q cctv-power
-systemctl restart cctv-power || true
+systemctl enable -q cctv-power cctv-power.timer
+systemctl restart cctv-power cctv-power.timer || true
 /opt/cctv/bin/cctv-storage || true
 /opt/cctv/bin/cctv-apply --no-restart
 systemctl enable -q cctv-go2rtc cctv-motion cctv-recorder cctv-web cctv-storage.timer cctv-upload.timer cctv-drive-clean.timer cctv-apply.path cctv-ssd-eject.path cctv-ssd-attach.path cctv-watchdog.timer cctv-merge.timer
