@@ -1084,7 +1084,11 @@ function setFocus(id, fromHistory) {
   if (id && !was) history.pushState({ focus: id }, "");                // phone Back button = back to all cameras
   else if (!id && was && history.state && history.state.focus) history.back();
 }
-window.addEventListener("popstate", () => { if (focused) setFocus(null, true); });
+window.addEventListener("popstate", e => {
+  const st = e.state || {};
+  if (focused && !st.focus) setFocus(null, true);
+  if ((st.tab || "live") !== curTab) showTab(st.tab || "live", true);
+});
 /* one camera on a phone held upright: ⟳ shows it sideways (landscape) */
 function applyRot() {
   const portrait = innerHeight > innerWidth;
@@ -1393,13 +1397,16 @@ $("#dNext").onclick = () => { const o = $("#recDate"); if (o.selectedIndex > 0) 
 setInterval(() => { if (curTab === "recs" && TL && TL.now - TL.day_start < 86400 && !document.hidden) loadTimeline(TL.date, true); }, 30000);
 
 /* =============================== tabs =============================== */
-function showTab(name) {
+function showTab(name, fromHistory) {
+  // each tab is a step in the browser history: the phone's Back button returns to Live
+  // instead of leaving / reloading the page (which made every camera "Connecting" again)
+  if (!fromHistory && name !== curTab) history.pushState({ tab: name }, "");
   curTab = name; liveTab = name === "live";
   for (const [id, n] of [["#tabLive", "live"], ["#tabRecs", "recs"], ["#tabUsers", "users"]]) $(id).classList.toggle("on", n === name);
   $("#liveWrap").style.display = liveTab ? "contents" : "none";
   $("#recs").style.display = name === "recs" ? "block" : "none";
   $("#users").style.display = name === "users" ? "block" : "none";
-  if (!liveTab && focused) setFocus(null);
+  if (!liveTab && focused) setFocus(null, true);
   syncPlayers();
   if (name !== "recs") pv.pause();
   if (name === "recs") { camSelect(); loadTimeline(TL && TL.cam === $("#recCam").value ? TL.date : ""); }
