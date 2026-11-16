@@ -111,6 +111,11 @@
   .navbtn { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 8px 11px; }
   .player { position: relative; background: #000; border-radius: var(--r); overflow: hidden; border: 1px solid var(--line); }
   .player video { width: 100%; max-height: 62vh; display: block; background: #000; aspect-ratio: 16 / 9; }
+  .vids { position: relative; background: #000; }
+  .vids video.stand { position: absolute; inset: 0; height: 100%; visibility: hidden; pointer-events: none; }
+  .vids:fullscreen video { max-height: none; height: 100%; aspect-ratio: auto; }
+  #pvFull { position: absolute; top: 6px; right: 6px; z-index: 2; background: rgba(0,0,0,.45); color: #fff; border: 0;
+    border-radius: 6px; padding: 2px 8px; font-size: 18px; display: none; }
   .pbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; background: var(--panel); font-size: 13.5px; flex-wrap: wrap; }
   .pbar b { font-variant-numeric: tabular-nums; font-size: 15px; }
   .pbar a, .pbar button { color: var(--blue); background: none; border: 0; text-decoration: none; padding: 2px 4px; }
@@ -252,7 +257,11 @@
       <button class="navbtn" id="dNext">▶</button>
     </div>
     <div class="player">
-      <video id="pv" controls playsinline preload="metadata"></video>
+      <div class="vids" id="vids">
+        <video id="pv" controls playsinline preload="metadata"></video>
+        <video id="pv2" class="stand" playsinline preload="auto" muted></video>
+        <button type="button" id="pvFull" title="Full screen">⛶</button>
+      </div>
       <div class="pbar">
         <span><b id="pvTime">--:--:--</b> <span class="muted" id="pvInfo"></span></span>
         <span><button id="pvPrev">⏮ <span data-t="prevMin"></span></button><button id="pvNext"><span data-t="nextMin"></span> ⏭</button>
@@ -1120,7 +1129,19 @@ async function refreshStatus() {
 const pad = n => String(n).padStart(2, "0");
 const hms = (sec, s = true) => { sec = Math.max(0, Math.floor(sec)); return `${pad(Math.floor(sec / 3600))}:${pad(Math.floor(sec / 60) % 60)}${s ? ":" + pad(sec % 60) : ""}`; };
 let TL = null, cur = null, selHour = null;          // timeline data, playing segment, selected hour
-const pv = $("#pv");
+/* two video elements: while one plays, the next file loads in the hidden one, then they swap.
+   No "loading" pause between the HD motion pieces and the low-quality 24h copy. */
+let pv = $("#pv"), pvB = $("#pv2"), PRE = null;
+const segKey = x => x && x.url + "@" + x.start;
+const vids = $("#vids"), canWrapFull = !!(vids.requestFullscreen || vids.webkitRequestFullscreen);
+if (canWrapFull) {                                   // full screen on the box, so the swap keeps working in it
+  for (const v of [pv, pvB]) v.setAttribute("controlsList", "nofullscreen");
+  $("#pvFull").style.display = "";
+  $("#pvFull").onclick = () => {
+    if (document.fullscreenElement || document.webkitFullscreenElement) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    else (vids.requestFullscreen || vids.webkitRequestFullscreen).call(vids);
+  };
+}
 
 async function loadTimeline(date, keepPos) {
   const cam = $("#recCam").value; if (!cam) return;
@@ -1200,7 +1221,7 @@ $("#zIn").onclick = () => zoomAround(VIEW.span / 2, curRel());
 $("#zOut").onclick = () => zoomAround(VIEW.span * 2, curRel());
 $("#zCur").onclick = () => { const r = curRel(); if (r !== null) { VIEW.start = r - VIEW.span / 2; clampView(); redrawBar(); } };
 $("#pvRate").value = String(RATE);
-$("#pvRate").onchange = () => { RATE = +$("#pvRate").value; LS.set("cctv.rate", RATE); pv.playbackRate = pv.defaultPlaybackRate = RATE; };
+$("#pvRate").onchange = () => { RATE = +$("#pvRate").value; LS.set("cctv.rate", RATE); for (const v of [pv, pvB]) v.playbackRate = v.defaultPlaybackRate = RATE; };
 function jumpMotion(dir) {
   if (!TL) return; const now = cur ? fileStart(cur) + (pv.currentTime || 0) : TL.day_start;
   const evs = TL.events.filter(e => dir > 0 ? e.start > now + 4 : e.start < now - 6);
@@ -1263,33 +1284,77 @@ function playAt(ts, autoplay) {
   if (!s) { s = segs.find(x => x.start > ts) || segs[segs.length - 1]; ts = s.start; }
   playSeg(s, ts - s.start, autoplay);
 }
-function playSeg(s, offset, autoplay = true) {
+function segUI(s) {
   cur = s; selHour = Math.floor(relSec(s.start) / 3600);
-  pv.src = s.url; $("#pvDl").href = s.url;
+  $("#pvDl").href = s.url;
   $("#pvDl").style.display = ME && (ME.role === "admin" || ME.download) ? "" : "none";
   $("#pvDel").style.display = ME && (ME.role === "admin" || ME.delete) && TL.src !== "drive" ? "" : "none";
+  $("#pvInfo").textContent = `${CAMS.find(c => c.id === TL.cam)?.name || ""} · ${TL.date}${segHasMotion(s) ? " · ⚠ motion" : ""}`;
+  drawStrip(); drawCursor();
+}
+function playSeg(s, offset, autoplay = true) {
+  if (PRE && segKey(PRE.seg) === segKey(s) && PRE.ready && offset < 1 && autoplay) return swapTo(s);
+  segUI(s);
+  pv.src = s.url;
   pv.onloadedmetadata = () => {
     pv.playbackRate = pv.defaultPlaybackRate = RATE;
     const at = offset + (s.start - fileStart(s));
     if (at > 0.5) pv.currentTime = Math.min(at, (pv.duration || 60) - 0.5);
     if (autoplay) pv.play().catch(() => {});
   };
-  $("#pvInfo").textContent = `${CAMS.find(c => c.id === TL.cam)?.name || ""} · ${TL.date}${segHasMotion(s) ? " · ⚠ motion" : ""}`;
-  drawStrip(); drawCursor();
+}
+function nextOf(s) {                                 // the piece that follows without a gap
+  const i = TL.segments.findIndex(x => segKey(x) === segKey(s)), n = TL.segments[i + 1];
+  return n && n.start - s.end < 15 ? n : null;
+}
+function preloadNext() {                             // load the next file in the hidden player
+  if (!cur || !TL) return;
+  const n = nextOf(cur);
+  if (!n || n.url === cur.url || (PRE && segKey(PRE.seg) === segKey(n))) return;
+  const p = PRE = { seg: n, ready: false };
+  pvB.oncanplay = null;
+  pvB.src = n.url;
+  pvB.onloadedmetadata = () => {
+    if (PRE !== p) return;
+    pvB.playbackRate = pvB.defaultPlaybackRate = RATE;
+    const at = n.start - fileStart(n);
+    if (at > 0.5) pvB.currentTime = Math.min(at, (pvB.duration || 60) - 0.5);
+    pvB.oncanplay = () => { if (PRE === p) p.ready = true; };
+  };
+}
+function swapTo(n) {
+  const old = pv, inFull = old.webkitDisplayingFullscreen;   // iPhone: native full screen of one video
+  if (inFull) { PRE = null; return playSeg(n, 0); }
+  pv = pvB; pvB = old; PRE = null;
+  pv.oncanplay = pv.onloadedmetadata = null;
+  pv.muted = old.muted; pv.volume = old.volume;
+  pv.playbackRate = pv.defaultPlaybackRate = RATE;
+  pv.controls = true; pv.preload = "metadata";
+  pv.play().catch(() => {});
+  pv.classList.remove("stand"); old.classList.add("stand");
+  old.controls = false; old.pause();
+  segUI(n);
 }
 function nextSeg(dir) {
   if (!cur) return; const i = curIndex(), n = TL.segments[i + dir];
   if (n) playSeg(n, 0);
 }
-pv.addEventListener("timeupdate", drawCursor);
-pv.addEventListener("timeupdate", () => {            // a piece of a long file: stop at its end
-  if (cur && fileStart(cur) + pv.currentTime >= cur.end - 0.2 && cur.end < fileStart(cur) + (pv.duration || 1e9) - 1) goNext();
-});
-pv.addEventListener("ended", goNext);
+for (const v of [pv, pvB]) {
+  v.addEventListener("timeupdate", () => {
+    if (v !== pv || !cur) return;
+    drawCursor();
+    const pos = fileStart(cur) + v.currentTime;
+    if (cur.end - pos < 25) preloadNext();          // start loading the next file in time
+    // a piece of a long file: move on at its end
+    if (pos >= cur.end - 0.2 && cur.end < fileStart(cur) + (v.duration || 1e9) - 1) goNext();
+  });
+  v.addEventListener("ended", () => { if (v === pv) goNext(); });
+}
 function goNext() {                                  // continue with the next minute / piece
   if (!cur) return;
-  const i = curIndex(), n = TL.segments[i + 1];
-  if (n && n.start - cur.end < 15) playSeg(n, 0);
+  const n = nextOf(cur);
+  if (n && n.url === cur.url && !pv.ended && Math.abs(fileStart(n) + pv.currentTime - n.start) < 3) { segUI(n); return; }
+  if (n) playSeg(n, 0);
   else if (!cur.done) loadTimeline(TL.date, true).then(() => { const m = TL.segments.find(x => x.start > cur.start); if (m) playSeg(m, 0); });
 }
 $("#pvDel").onclick = async () => {
@@ -1371,7 +1436,7 @@ function showTab(name, fromHistory) {
   $("#users").style.display = name === "users" ? "block" : "none";
   if (!liveTab && focused) setFocus(null, true);
   syncPlayers();
-  if (name !== "recs") pv.pause();
+  if (name !== "recs") { pv.pause(); pvB.pause(); }
   if (name === "recs") { camSelect(); loadTimeline(TL && TL.cam === $("#recCam").value ? TL.date : ""); }
   if (name === "users") { loadUsers(); loadSys(); loadDrive(false); loadLimits(); loadCamCfg().then(() => { if (!camEditing && !$("#cName").value) editCam(null); }); }
 }
