@@ -10,6 +10,7 @@ import json
 import mimetypes
 import os
 import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -72,6 +73,7 @@ SSD_DIR = os.environ.get("CCTV_SSD_DIR", "/mnt/cctv-ssd/CCTV")
 DRIVE_CACHE = os.environ.get("CCTV_DRIVE_CACHE", "/srv/cctv/drive-cache")
 DRIVE_CACHE_MAX = 2 * 1024 ** 3          # clips played from Drive are kept here (oldest removed)
 THUMB_SEM = threading.Semaphore(2)
+SEND_RATE = 3 * 1024 * 1024              # bytes/s per video file
 EXPORT_SEM = threading.Semaphore(1)      # one range download at a time (the board's disk is slow)       # at most 2 thumbnails made at the same time
 _drive_ls, _drive_lock = {}, threading.Lock()
 
@@ -1140,28 +1142,32 @@ class Handler(BaseHTTPRequestHandler):
 
     @staticmethod
     def make_missing_jpg(fp, parts):
-        """Thumbnail of a clip, or the picture of a motion event (m-HH-MM-SS.jpg) taken from the recording."""
-        name = os.path.basename(fp)
+        """A missing picture, made ONLY from the small 24h copy (H.264, 640 px): decoding the
+        full-quality 4 MP H.265 video takes the whole CPU of a small board, and that peak can
+        make a weak power supply drop out. Without a small copy: reuse a picture of that minute,
+        or leave it to the recorder (it makes clip pictures one by one in the background)."""
+        name, day = os.path.basename(fp), os.path.dirname(fp)
+        if os.path.basename(day) == cctvrec.LOW:
+            return False
         m = re.match(r"^m-(\d{2})-(\d{2})-(\d{2})", name)
-        if not m:
-            mp4 = fp[:-4] + ".mp4"
-            if not os.path.isfile(mp4):
-                return False
-            # the small 24h copy of the same minute decodes many times faster than 4 MP H.265
-            low = os.path.join(os.path.dirname(mp4), cctvrec.LOW, os.path.basename(mp4))
-            if os.path.basename(os.path.dirname(mp4)) != cctvrec.LOW and os.path.isfile(low) \
-                    and os.path.getsize(low) > 20000:
-                return make_thumb(low, fp) or make_thumb(mp4, fp)
-            return make_thumb(mp4, fp)
         date = parts[1]
         if not DATE_RE.match(date):
             return False
+        if not m:                                # picture of a clip
+            low = os.path.join(day, cctvrec.LOW, name[:-4] + ".mp4")
+            return os.path.isfile(low) and os.path.getsize(low) > 20000 and make_thumb(low, fp)
         t = cctvrec.midnight(date) + int(m.group(1)) * 3600 + int(m.group(2)) * 60 + int(m.group(3))
-        day = os.path.dirname(fp)
-        for low in (True, False):                # the small copy first: much faster to decode
-            for x in cctvrec.segments(day, date, low=low):
-                if x["start"] - 1 <= t < x["end"] and make_thumb(x["path"], fp, t - x["start"], 480):
+        for x in cctvrec.segments(day, date, low=True):
+            if x["start"] - 1 <= t < x["end"] and x["size"] > 20000:
+                return make_thumb(x["path"], fp, t - x["start"], 480)
+        for x in cctvrec.segments(day, date):    # no small copy: the clip's own picture
+            jp = x["path"][:-4] + ".jpg"
+            if x["start"] - 1 <= t < x["end"] and os.path.isfile(jp) and os.path.getsize(jp) > 0:
+                try:
+                    shutil.copyfile(jp, fp)
                     return True
+                except OSError:
+                    return False
         return False
 
     def export_range(self, q, user):
@@ -1360,12 +1366,21 @@ class Handler(BaseHTTPRequestHandler):
                 return
             f.seek(start)
             remaining = length
+            # video is sent at up to ~3 MB/s (16x playback needs ~3): a small board then never
+            # runs WiFi and the disk flat out, which also keeps its power draw steady
+            slow = ranged and ctype.startswith("video/") and length > 2 * 1024 * 1024
+            t0, sent = time.monotonic(), 0
             while remaining > 0:
+                if slow and sent > 1024 * 1024:
+                    ahead = sent / SEND_RATE - (time.monotonic() - t0)
+                    if ahead > 0:
+                        time.sleep(min(ahead, 0.5))
                 chunk = f.read(min(262144, remaining))
                 if not chunk:
                     break
                 self.wfile.write(chunk)
                 remaining -= len(chunk)
+                sent += len(chunk)
 
 
 def main():

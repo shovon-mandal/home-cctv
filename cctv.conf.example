@@ -14,6 +14,11 @@ web_port = 8085
 # update from Settings -> System or with: sudo cctv-update)
 auto_update = yes
 
+# Highest CPU speed in MHz. auto = 1416 on an Asus Tinker Board (its CPU then draws far less
+# current at peaks, so it does not switch off on a weaker power supply), no limit elsewhere.
+# 0 = no limit. Recording copies the video and needs very little CPU.
+cpu_max_mhz = auto
+
 # --- Storage -----------------------------------------------------------
 # Recordings folder size limit when no SSD is used (on a single-board computer this is
 # the SD card; in Docker it is the recordings folder)

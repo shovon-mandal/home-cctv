@@ -184,7 +184,7 @@ def is_fragmented(path):
         return False
 
 
-def finalize(cam, low=False, limit=2):
+def finalize(cam, low=False, limit=1):
     """Rewrite finished fragmented segments as indexed MP4 (newest first): they then start
     in a second or two instead of many, also when jumping into the middle."""
     try:

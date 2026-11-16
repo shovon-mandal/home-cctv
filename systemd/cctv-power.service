@@ -1,0 +1,11 @@
+[Unit]
+Description=CCTV: keep the board's power draw steady (CPU speed limit)
+After=sysinit.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/opt/cctv/bin/cctv-power
+
+[Install]
+WantedBy=multi-user.target
