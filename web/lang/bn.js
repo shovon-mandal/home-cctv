@@ -210,6 +210,16 @@ window.I18N_BN = {
   src_folder: "📁 PC",
   src_rec: "📁 Recording",
   src_drive: "☁️ Drive",
+  xTitle: "একটা সময়ের range এক video-তে download",
+  xFrom: "শুরু",
+  xTo: "শেষ",
+  xAuto: "যেটা সবচেয়ে ভালো আছে",
+  xHd: "শুধু full quality",
+  xLow: "কম quality (সারাদিন)",
+  xPick: "শুরু আর শেষের সময় দিন",
+  xStarted: "Download শুরু হয়েছে ({0} মিনিট)। বড় range হলে শুরু হতে একটু সময় লাগতে পারে।",
+  autoUpd: "Auto update",
+  autoUpdHint: "নতুন version GitHub থেকে নিজে install হবে (প্রতি ১০ মিনিটে check)। বন্ধ থাকলে শুধু জানাবে যে update আছে।",
 };
 
 window.I18N_BN_LABEL = "বাং";
@@ -227,6 +237,11 @@ window.I18N_BN_DOCKER = {
 window.I18N_BN_MSGS = {
   "Please log in": "Login করুন",
   "Admins only": "শুধু admin পারবে",
+  "Pick a start and end time": "শুরু আর শেষের সময় দিন",
+  "The end time must be after the start time": "শেষের সময় শুরুর পরে হতে হবে",
+  "Another download is being prepared, try again in a minute": "আরেকটা download তৈরি হচ্ছে, এক মিনিট পর আবার চেষ্টা করুন",
+  "No recording in this time range": "এই সময়ে কোনো recording নেই",
+  "No permission to download": "Download করার অনুমতি নেই",
   "Google Drive did not answer, try again": "Google Drive সাড়া দেয়নি, আবার চেষ্টা করুন",
   "Could not get the clip from Google Drive": "Google Drive থেকে clip আনা যায়নি",
   "No permission for recordings": "Recording দেখার অনুমতি নেই",

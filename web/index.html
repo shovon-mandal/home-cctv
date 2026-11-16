@@ -145,6 +145,10 @@
   .hourpick button.on { background: var(--blue); color: #001; border-color: var(--blue); }
   .evs { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
   .evc { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; overflow: hidden; padding: 0; text-align: left; }
+  .xbox { margin: 10px 0 4px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r); }
+  .xbox summary { cursor: pointer; font-weight: 600; }
+  .xrow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0 4px; }
+  .xrow input[type=time] { padding: 6px; }
   .evc img, .evc .ph { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; display: block; background: #222a33; }
   .evc div { padding: 6px 8px; font-size: 12.5px; } .evc b { color: var(--motion); font-variant-numeric: tabular-nums; }
   .sect { font-size: 12.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); margin: 18px 2px 8px; }
@@ -273,6 +277,16 @@
       <span><i style="background:#4f7fb8"></i><span data-t="lgHq"></span></span>
       <span><i style="background:var(--motion)"></i><span data-t="lgMotion"></span></span>
       <span><i style="background:var(--blue)"></i><span data-t="lgNow"></span></span></div>
+    <details class="xbox" id="xBox" style="display:none">
+      <summary>⬇ <span data-t="xTitle"></span></summary>
+      <div class="xrow">
+        <label><span data-t="xFrom"></span> <input type="time" id="xFrom" step="60"></label>
+        <label><span data-t="xTo"></span> <input type="time" id="xTo" step="60"></label>
+        <select id="xQ"><option value="auto" data-t="xAuto"></option><option value="hd" data-t="xHd"></option><option value="low" data-t="xLow"></option></select>
+        <button class="btn" type="button" id="xGo" data-t="download"></button>
+      </div>
+      <small class="muted" id="xMsg"></small>
+    </details>
     <div class="hourpick" id="hourpick"></div>
     <div class="strip" id="strip"></div>
     <div class="sect"><span data-t="motionEvents"></span> <span id="evCount" class="muted"></span></div>
@@ -393,6 +407,8 @@
       <button class="btn ghost" type="submit" data-t="save"></button><small id="siteMsg" style="width:100%"></small></form>
     <div class="urow"><div><b data-t="version"></b><small id="sysVer">…</small></div>
       <button class="btn ghost" id="sysUpd" data-t="checkUpdate"></button></div>
+    <label class="urow" style="margin-top:8px;cursor:pointer" id="autoUpdRow"><span><b data-t="autoUpd"></b><br><small data-t="autoUpdHint"></small></span>
+      <input type="checkbox" id="autoUpd" style="width:22px;height:22px"></label>
     <div class="urow" style="margin-top:8px"><small id="sysPub" style="font-size:13.5px;word-break:break-all">…</small></div>
 
     <div class="sect">👤 <span data-t="users"></span></div>
@@ -775,6 +791,16 @@ const I18N = {
   src_folder: "📁 PC",
   src_rec: "📁 Recordings",
   src_drive: "☁️ Drive",
+  xTitle: "Download a time range as one video",
+  xFrom: "From",
+  xTo: "To",
+  xAuto: "Best available",
+  xHd: "Full quality only",
+  xLow: "Low quality (all day)",
+  xPick: "Pick a start and end time",
+  xStarted: "Download started ({0} min). A long range can take a while to begin.",
+  autoUpd: "Auto update",
+  autoUpdHint: "Install new versions from GitHub by itself (checked every 10 minutes). Off: only shows that an update is available.",
 };
 /* wording when running in Docker on a PC / NAS (no SD card, no SSD switching) */
 const I18N_DOCKER = {
@@ -1252,6 +1278,7 @@ function playSeg(s, offset, autoplay = true) {
   cur = s; selHour = Math.floor(relSec(s.start) / 3600);
   pv.src = s.url; $("#pvDl").href = s.url;
   $("#pvDl").style.display = ME && (ME.role === "admin" || ME.download) ? "" : "none";
+  $("#xBox").style.display = $("#pvDl").style.display;
   $("#pvDel").style.display = ME && (ME.role === "admin" || ME.delete) && TL.src !== "drive" ? "" : "none";
   pv.onloadedmetadata = () => {
     pv.playbackRate = pv.defaultPlaybackRate = RATE;
@@ -1285,6 +1312,25 @@ $("#pvDel").onclick = async () => {
   const name = cur.url.split("/" + TL.date + "/")[1];
   try { await api("/api/recordings/delete", { cam: TL.cam, date: TL.date, name: name.split("?")[0], src: TL.src }); cur = null; pv.removeAttribute("src"); pv.load(); loadTimeline(TL.date, true); }
   catch (err) { alert(err.message); }
+};
+/* ---- download a time range as one video ---- */
+const hhmm = sec => hms(Math.max(0, Math.min(86340, sec)), false);
+$("#xBox").addEventListener("toggle", () => {          // start: 5 min before what is playing, end: 5 min after
+  if (!$("#xBox").open || !TL) return;
+  const r = curRel() ?? (TL.segments.length ? relSec(TL.segments[TL.segments.length - 1].start) : 0);
+  if (!$("#xFrom").value) $("#xFrom").value = hhmm(r - 300);
+  if (!$("#xTo").value) $("#xTo").value = hhmm(r + 300);
+});
+$("#xGo").onclick = () => {
+  if (!TL) return;
+  const a = $("#xFrom").value, z = $("#xTo").value;
+  if (!a || !z) { $("#xMsg").textContent = t("xPick"); return; }
+  const toS = v => { const [h, m] = v.split(":").map(Number); return h * 3600 + m * 60; };
+  let len = toS(z) - toS(a); if (len <= 0) len += 86400;
+  const qs = new URLSearchParams({ cam: TL.cam, date: TL.date, from: a, to: z, q: $("#xQ").value, src: TL.src === "drive" ? "" : TL.src });
+  const link = document.createElement("a"); link.href = "/api/export?" + qs; link.download = "";
+  document.body.appendChild(link); link.click(); link.remove();
+  $("#xMsg").textContent = t("xStarted", Math.round(len / 60));
 };
 $("#pvPrev").onclick = () => nextSeg(-1);
 $("#pvNext").onclick = () => nextSeg(1);
@@ -1764,6 +1810,8 @@ async function loadSys() {
   let u = {}; try { u = await api("/api/admin/update"); } catch {}
   $("#sysPub").innerHTML = u.public_url ? `${t("pubOn")}<a href="${esc(u.public_url)}" style="color:var(--blue)">${esc(u.public_url)}</a>` : t("pubOff");
   const when = u.time ? new Date(u.time * 1000).toLocaleString() : "";
+  $("#autoUpdRow").style.display = u.version ? "" : "none";
+  if (u.version) $("#autoUpd").checked = u.auto_update !== false;
   $("#sysVer").textContent = u.version ? `${u.version} · ${tr(u.message || "")}${when ? ` · ${t("checked")}: ${when}` : ""}` : t("noAutoUpd");
   return u;
 }
@@ -1784,6 +1832,12 @@ async function runUpdate(b, label) {
   loadSys();
 }
 $("#sysUpd").onclick = () => runUpdate($("#sysUpd"), "checkUpdate");
+$("#mUpd").onclick = e => { e.stopPropagation(); $("#menu").style.display = "none"; runUpdate($("#mUpd"), "updateNow"); };
+
+$("#autoUpd").onchange = async () => {
+  try { await api("/api/admin/autoupdate", { on: $("#autoUpd").checked }); }
+  catch (err) { alert(err.message); $("#autoUpd").checked = !$("#autoUpd").checked; }
+};
 $("#mUpd").onclick = e => { e.stopPropagation(); $("#menu").style.display = "none"; runUpdate($("#mUpd"), "updateNow"); };
 
 /* =========================== users (admin) =========================== */

@@ -15,6 +15,7 @@ CAMS_PATH = os.environ.get("CCTV_CAMS", os.path.join(os.path.dirname(CONF_PATH),
 
 DEFAULTS = {
     "site_name": "Home CCTV",
+    "auto_update": "yes",           # install new versions from GitHub by itself (no: only check)
     "web_port": "8085",
     "sd_buffer_gb": "7",
     "sd_min_free_gb": "2",

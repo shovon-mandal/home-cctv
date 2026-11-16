@@ -5,12 +5,23 @@
 #   sudo cctv-update          -> update now if there is something new
 #   sudo cctv-update --check  -> only report
 # Runs automatically every 10 minutes (cctv-update.timer) and when an admin
-# presses "Update" in the dashboard.
+# presses "Update" in the dashboard. With "auto_update = no" in cctv.conf
+# (Settings -> System) the 10-minute runs only check and report; the dashboard
+# button and running it by hand still install.
 set -u
 SRC=${CCTV_SRC:-/opt/cctv-src}
 BRANCH=${CCTV_BRANCH:-main}
 RUN=${CCTV_RUN:-/run/cctv}
+CONF=${CCTV_CONF:-/etc/cctv/cctv.conf}
 mkdir -p "$RUN"
+MODE=${1:-}
+if [ -z "$MODE" ] && [ ! -t 0 ]; then          # started by the timer or the dashboard button
+  REQ="$RUN/update-request"
+  ASKED=0
+  [ -f "$REQ" ] && [ $(( $(date +%s) - $(stat -c %Y "$REQ") )) -lt 300 ] && ASKED=1
+  AUTO=$(sed -n 's/^[[:space:]]*auto_update[[:space:]]*=[[:space:]]*\([A-Za-z0-9]*\).*/\1/p' "$CONF" 2>/dev/null | tail -1 | tr 'A-Z' 'a-z')
+  case "$AUTO" in no|off|false|0) [ "$ASKED" = 1 ] || MODE=--check ;; esac
+fi
 exec 9>"$RUN/update.lock"
 flock -n 9 || { echo "already running"; exit 0; }
 
@@ -29,11 +40,16 @@ fi
 LOCAL=$(git rev-parse HEAD)
 REMOTE=$(git rev-parse "origin/$BRANCH")
 if [ "$LOCAL" = "$REMOTE" ]; then
+  # files left empty by a power cut during an earlier update: put them back
+  if [ -n "$(find /opt/cctv -type f -size 0 ! -name '*.jpg' 2>/dev/null | head -1)" ] && [ "${MODE:-}" != "--check" ]; then
+    git reset -q --hard "$REMOTE"; sync
+    "$SRC/install.sh" --update > "$RUN/update.log" 2>&1 && status ok "Repaired" && echo "Repaired empty files." && exit 0
+  fi
   status ok "Up to date"
   echo "Up to date ($(git log -1 --format=%h))"
   exit 0
 fi
-if [ "${1:-}" = "--check" ]; then
+if [ "$MODE" = "--check" ]; then
   status available "Update available"
   git log --oneline "$LOCAL..$REMOTE"
   exit 0
