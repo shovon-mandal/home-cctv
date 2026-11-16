@@ -5,6 +5,39 @@ for s in cctv-go2rtc cctv-motion cctv-web cctv-storage.timer cctv-upload.timer c
   printf '  %-24s %s\n' "$s" "$(systemctl is-active "$s")"
 done
 printf '  %-24s %s\n' cctv-recorder "$(systemctl is-active cctv-recorder)"
+echo "== Network =="
+dev=$(ip route show default 2>/dev/null | awk '{print $5; exit}')
+echo "  internet via: ${dev:-NONE}   $(ip route show default 2>/dev/null | awk '{print "gateway " $3; exit}')"
+ip -br -4 addr 2>/dev/null | grep -v '^lo' | grep -v '^tailscale' | sed 's/^/  /'
+for w in $(ls /sys/class/net 2>/dev/null | grep -E '^wl'); do
+  if command -v iw >/dev/null; then
+    iw dev "$w" link 2>/dev/null | grep -E 'SSID|signal|tx bitrate' | sed "s/^\s*/  $w /"
+  fi
+done
+python3 - <<'PY'
+import socket, subprocess, sys
+sys.path.insert(0, "/opt/cctv/lib")
+try:
+    import cctvconf
+    cams = cctvconf.load()[1]
+except Exception as e:
+    cams = []; print("  (cannot read cameras:", e, ")")
+for c in cams:
+    h = c.get("host") or ""
+    if not h:
+        continue
+    try:
+        ping = subprocess.run(["ping", "-c", "2", "-W", "2", h], capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        ping = subprocess.CompletedProcess([], 1, "", "")
+    loss = next((x for x in ping.stdout.splitlines() if "packet loss" in x), "no reply").split(",")[2:3]
+    rtt = next((x.split("=")[1].split("/")[1] + " ms" for x in ping.stdout.splitlines() if "rtt" in x or "round-trip" in x), "-")
+    try:
+        socket.create_connection((h, int(c.get("port") or 554)), 3).close(); rtsp = "RTSP port open"
+    except OSError as e:
+        rtsp = f"RTSP port CLOSED ({e.__class__.__name__})"
+    print(f"  {c['name']} ({h}): ping {'OK ' + rtt if ping.returncode == 0 else 'FAILED'}{(',' + loss[0]) if loss else ''} · {rtsp}")
+PY
 echo "== Recording =="
 python3 -c '
 import json, sys
