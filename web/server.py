@@ -1158,7 +1158,9 @@ class Handler(BaseHTTPRequestHandler):
             segs = hd if hd and (hd_cov >= 0.97 * (b - a) or hd_cov >= lo_cov) else lo
         if not segs:
             return self.send_error_json(404, "No recording in this time range")
-        if not EXPORT_SEM.acquire(blocking=False):
+        # the phone app asks twice: its web view starts the download, stops it as soon as it sees
+        # a file, and hands the same link to Android's download manager -> wait for the first to end
+        if not EXPORT_SEM.acquire(timeout=30):
             return self.send_error_json(429, "Another download is being prepared, try again in a minute")
         lst = None
         try:
