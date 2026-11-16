@@ -191,8 +191,13 @@ def finalize(cam, low=False, limit=1):
         g = cctvconf.load()[0]
         keep = float(g.get("motion_only_keep_minutes", "10")) * 60
         ssd = open(os.path.join(RUN, "mode")).read().strip() == "ssd"
+        hd = cctvconf.yes(g.get("fast_start_hd", "no"))
     except (OSError, ValueError, KeyError):
-        keep, ssd = 600, False
+        keep, ssd, hd = 600, False, False
+    if not low and not hd:
+        # full-quality files are big (~12 MB a minute for 4 MP): rewriting them keeps the disk
+        # busy all the time, which a USB disk powered by the board may not cope with
+        return 0
     # on the SD card a full-quality minute may still be deleted (no motion): don't write it twice
     wait = 0 if (low or ssd) else keep + 180
     now, made = time.time(), 0

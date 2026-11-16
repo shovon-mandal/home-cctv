@@ -263,7 +263,7 @@
     <div class="player">
       <div class="vids" id="vids">
         <video id="pv" controls playsinline preload="metadata"></video>
-        <video id="pv2" class="stand" playsinline preload="auto" muted></video>
+        <video id="pv2" class="stand" playsinline preload="metadata" muted></video>
         <button type="button" id="pvFull" title="Full screen">⛶</button>
       </div>
       <div class="pbar">
@@ -1387,7 +1387,7 @@ for (const v of [pv, pvB]) {
     if (v !== pv || !cur) return;
     drawCursor();
     const pos = fileStart(cur) + v.currentTime;
-    if (cur.end - pos < 25) preloadNext();          // start loading the next file in time
+    if (cur.end - pos < 8 * Math.max(1, RATE)) preloadNext();   // load the next file only shortly before
     // a piece of a long file: move on at its end
     if (pos >= cur.end - 0.2 && cur.end < fileStart(cur) + (v.duration || 1e9) - 1) goNext();
   });

@@ -73,7 +73,7 @@ SSD_DIR = os.environ.get("CCTV_SSD_DIR", "/mnt/cctv-ssd/CCTV")
 DRIVE_CACHE = os.environ.get("CCTV_DRIVE_CACHE", "/srv/cctv/drive-cache")
 DRIVE_CACHE_MAX = 2 * 1024 ** 3          # clips played from Drive are kept here (oldest removed)
 THUMB_SEM = threading.Semaphore(2)
-SEND_RATE = 3 * 1024 * 1024              # bytes/s per video file
+SEND_RATE = 2 * 1024 * 1024              # bytes/s per video file
 EXPORT_SEM = threading.Semaphore(1)      # one range download at a time (the board's disk is slow)       # at most 2 thumbnails made at the same time
 _drive_ls, _drive_lock = {}, threading.Lock()
 

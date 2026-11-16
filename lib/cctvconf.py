@@ -36,6 +36,7 @@ DEFAULTS = {
     "motion_only_keep_minutes": "10",
     "merge_minutes": "0",           # join finished 1-minute files into files this long (0 = off)
     "auto_update": "yes",
+    "fast_start_hd": "no",          # also rewrite full-quality minutes for quick start (more disk work)
     "cpu_max_mhz": "auto",          # auto: Tinker Board at most 1416 MHz (steady power); 0 = no limit           # install new versions from GitHub by itself (no: only check)
     "merge_ssd_only": "no",         # yes: join only on the SSD, keep 1-minute files on the SD card
 }
