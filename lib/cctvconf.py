@@ -34,6 +34,8 @@ DEFAULTS = {
     "post_capture_sec": "5",
     "max_clip_minutes": "3",
     "motion_only_keep_minutes": "10",
+    "merge_minutes": "15",          # join finished 1-minute files into files this long (0 = off)
+    "merge_ssd_only": "yes",        # only on the SSD (no: also on the SD card / Docker folder)
 }
 
 # Ready-made RTSP settings per brand (shown in the dashboard's brand list, in this order).
@@ -176,7 +178,8 @@ def rtsp_url(c, which):
 
 def normalize_cam(cid, raw):
     c = dict(CAM_DEFAULTS)
-    c.update({k: str(v).strip() for k, v in raw.items()})
+    c.update({k: str(v).strip() for k, v in raw.items()
+              if str(v).strip() or k not in ("mode", "record_stream", "port", "threshold", "enabled")})
     c["id"] = cid
     c["name"] = c["name"] or cid
     c["enabled"] = _yes(c["enabled"])

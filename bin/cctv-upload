@@ -53,7 +53,7 @@ def main():
             evs = cctvrec.read_events(d, now)
             ivs = [(s - pre, (e + post) if e is not None else None) for s, e, _ in evs]
             for s in cctvrec.segments(d, day, now):     # full-quality segments only
-                if not s["done"]:
+                if not s["done"] or s["merged"]:        # joined 15-min files never go to Drive
                     continue
                 if cctvrec.overlaps(s["start"], s["end"], ivs):
                     to_upload.append(os.path.relpath(s["path"], root))

@@ -1,0 +1,9 @@
+[Unit]
+Description=CCTV join finished 1-minute recordings into longer files
+
+[Service]
+Type=oneshot
+User=cctv
+ExecStart=/opt/cctv/bin/cctv-merge
+Nice=15
+IOSchedulingClass=idle

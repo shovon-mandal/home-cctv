@@ -1,7 +1,9 @@
 """Recording layout helpers shared by the recorder, uploader, cleaner and web server.
 
 <rec>/<cam>/<YYYY-MM-DD>/
-    HH-MM-SS.mp4      continuous 1-minute segment (start time, local)
+    HH-MM-SS.mp4      continuous 1-minute segment (start time, local); on the SSD, finished
+                      minutes are later joined into longer files (bin/cctv-merge), whose real
+                      length is kept in .merged.json (same folder)
     HH-MM-SS.jpg      thumbnail of that segment
     m-HH-MM-SS.jpg    snapshot taken when motion started (from Motion)
     events.jsonl      {"e": "start"|"end"|"pic", "t": epoch, ["f": file]}
@@ -18,6 +20,23 @@ SEG_RE = re.compile(r"^(\d{2})-(\d{2})-(\d{2})\.mp4$")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 SEGMENT_SECONDS = int(os.environ.get("CCTV_SEGMENT_SECONDS", 60))
 LOW = "low"
+MERGE_INDEX = ".merged.json"     # {"HH-MM-SS.mp4": seconds} for joined (longer) files
+
+
+def merged_index(folder):
+    try:
+        with open(os.path.join(folder, MERGE_INDEX), encoding="utf-8") as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def save_merged_index(folder, idx):
+    tmp = os.path.join(folder, MERGE_INDEX + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(idx, f)
+    os.replace(tmp, os.path.join(folder, MERGE_INDEX))
 
 
 def seg_epoch(date, name):
@@ -82,6 +101,7 @@ def segments(daydir, date, now=None, low=False):
         names = sorted(n for n in os.listdir(daydir) if SEG_RE.match(n))
     except OSError:
         return []
+    idx = merged_index(daydir)
     segs = []
     for n in names:
         p = os.path.join(daydir, n)
@@ -90,22 +110,40 @@ def segments(daydir, date, now=None, low=False):
         except OSError:
             continue
         segs.append({"name": n, "path": p, "start": seg_epoch(date, n), "size": st.st_size, "mtime": st.st_mtime,
-                     "low": low, "rel": f"{LOW}/{n}" if low else n})
+                     "low": low, "rel": f"{LOW}/{n}" if low else n, "merged": n in idx})
     for i, s in enumerate(segs):
         nxt = segs[i + 1]["start"] if i + 1 < len(segs) else None
-        end = min(nxt, s["start"] + SEGMENT_SECONDS + 5) if nxt else max(s["start"] + 1, min(s["mtime"], now))
+        if s["merged"]:                          # joined file: its length is known
+            end = s["start"] + float(idx[s["name"]])
+        elif nxt:
+            end = min(nxt, s["start"] + SEGMENT_SECONDS + 5)
+        else:
+            end = max(s["start"] + 1, min(s["mtime"], now))
         s["end"] = end
-        s["done"] = nxt is not None or now - s["mtime"] > 30
+        s["done"] = s["merged"] or nxt is not None or now - s["mtime"] > 30
     return segs
 
 
 def merged_segments(daydir, date, now=None):
-    """What to play: full-quality segments, and the low copy wherever no full one exists."""
+    """What to play: full-quality segments, and the low copy wherever no full one exists.
+    A low file that is only partly covered (joined files are long) is cut into pieces:
+    "fstart" is the start time of the file itself, "start"/"end" the part to play."""
     main = segments(daydir, date, now)
-    have = [s["start"] for s in main]               # both are cut on the clock, so starts line up
-    extra = [s for s in segments(daydir, date, now, low=True)
-             if not any(abs(a - s["start"]) <= 1 for a in have)]
-    return sorted(main + extra, key=lambda s: s["start"])
+    for s in main:
+        s["fstart"] = s["start"]
+    cover = sorted((s["start"], s["end"]) for s in main)
+    out = list(main)
+    for s in segments(daydir, date, now, low=True):
+        a = s["start"]
+        for c0, c1 in cover:
+            if c1 <= a or c0 >= s["end"]:
+                continue
+            if c0 - a >= 2:
+                out.append(dict(s, start=a, end=c0, fstart=s["start"]))
+            a = max(a, c1)
+        if s["end"] - a >= 2:
+            out.append(dict(s, start=a, end=s["end"], fstart=s["start"]))
+    return sorted(out, key=lambda s: s["start"])
 
 
 def overlaps(a0, a1, intervals):

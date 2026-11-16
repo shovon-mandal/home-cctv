@@ -1,0 +1,206 @@
+#!/usr/bin/env python3
+"""Join finished 1-minute recordings into longer files (default: 15 minutes).
+
+Recording itself stays in 1-minute pieces (a power cut loses at most the current minute,
+smart mode can drop full-quality minutes without motion, Drive gets single motion minutes).
+Every few minutes this joins the minutes of each finished clock block (:00, :15, :30, :45)
+into ONE file, without re-encoding:
+
+    10-00-00.mp4 + 10-01-00.mp4 + ... + 10-14-00.mp4  ->  10-00-00.mp4 (15 min)
+
+- only on the SSD by default (merge_ssd_only = no: also on the SD card / in Docker)
+- a block is joined only after it is complete, smart-mode cleanup is done, and every motion
+  minute in it is already on Google Drive
+- gaps (camera offline, minutes without motion in smart mode) split a block into several files
+- the real length of joined files is kept in .merged.json next to them (see lib/cctvrec.py)
+"""
+import fcntl
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import time
+from datetime import datetime, timedelta
+
+sys.path.insert(0, "/opt/cctv/lib")
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+import cctvconf  # noqa: E402
+import cctvrec  # noqa: E402
+
+RUN = os.environ.get("CCTV_RUN", "/run/cctv")
+REC = os.environ.get("CCTV_REC", "/srv/cctv/rec")
+STATE = os.environ.get("CCTV_UPLOADED", "/srv/cctv/uploaded.txt")
+RCLONE_CONF = os.environ.get("RCLONE_CONF", "/etc/cctv/rclone.conf")
+DOCKER = os.environ.get("CCTV_SUPERVISOR") == "1"
+SETTLE = 180            # seconds after a block ends before it is touched
+BUDGET = [30]           # at most this many joins per run, so a full SSD of old minutes is done gently
+
+
+def drive_waits(g):
+    """True if motion minutes must reach Drive before they may be joined."""
+    if not cctvconf.yes(g["drive_enabled"]):
+        return False
+    if not (os.path.exists(RCLONE_CONF) and os.path.getsize(RCLONE_CONF)):
+        return False
+    try:
+        mode = open(os.path.join(RUN, "mode")).read().strip()
+    except OSError:
+        mode = "sd"
+    return not (mode == "ssd" and not cctvconf.yes(g["drive_backup_when_ssd"]))
+
+
+def concat(paths, out, hevc):
+    fd, lst = tempfile.mkstemp(prefix=".merge-", suffix=".txt", dir=os.path.dirname(out))
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        for p in paths:
+            f.write("file '" + p.replace("'", "'\\''") + "'\n")
+    cmd = ["nice", "-n", "15", "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+           "-f", "concat", "-safe", "0", "-i", lst, "-map", "0", "-c", "copy",
+           *(["-tag:v", "hvc1"] if hevc else []), "-movflags", "+faststart", "-f", "mp4", out]
+    try:
+        r = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, timeout=900)
+        return r.returncode == 0, (r.stderr or "").strip()[-200:]
+    except subprocess.TimeoutExpired:
+        return False, "timeout"
+    finally:
+        os.remove(lst)
+
+
+def duration(path):
+    try:
+        out = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path],
+                             capture_output=True, text=True, timeout=60).stdout
+        return float(out.strip())
+    except (ValueError, subprocess.TimeoutExpired, OSError):
+        return 0.0
+
+
+def codec(path):
+    try:
+        return subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+                               "stream=codec_name", "-of", "csv=p=0", path],
+                              capture_output=True, text=True, timeout=60).stdout.strip()
+    except (subprocess.TimeoutExpired, OSError):
+        return ""
+
+
+def merge_folder(daydir, date, low, block, settle, pending, now):
+    folder = os.path.join(daydir, cctvrec.LOW) if low else daydir
+    segs = cctvrec.segments(daydir, date, now, low)
+    if len(segs) < 2:
+        return 0
+    day0 = cctvrec.midnight(date)
+    blocks = {}
+    for s in segs:
+        blocks.setdefault(int((s["start"] - day0) // block), []).append(s)
+    joined = 0
+    for bid, group in sorted(blocks.items()):
+        if now < day0 + (bid + 1) * block + settle:
+            continue                                     # block not finished / still being cleaned
+        if not all(s["done"] for s in group):
+            continue
+        if any(os.path.relpath(s["path"], os.path.realpath(REC)) in pending for s in group):
+            continue                                     # a motion minute is not on Drive yet
+        runs, run = [], [group[0]]
+        for s in group[1:]:
+            if s["start"] - run[-1]["end"] <= 3:
+                run.append(s)
+            else:
+                runs.append(run)
+                run = [s]
+        runs.append(run)
+        for run in runs:
+            if len(run) < 2:
+                continue
+            if BUDGET[0] <= 0:
+                return joined
+            BUDGET[0] -= 1
+            first = run[0]
+            want = run[-1]["end"] - first["start"]
+            tmp = os.path.join(folder, ".merging.mp4")
+            ok, err = concat([s["path"] for s in run], tmp, codec(first["path"]) in ("hevc", "h265"))
+            got = duration(tmp) if ok else 0
+            if not ok or got < want * 0.8:
+                print(f"cctv-merge: {folder}/{first['name']}: skipped ({err or f'{got:.0f}s of {want:.0f}s'})")
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
+                continue
+            idx = cctvrec.merged_index(folder)
+            idx[first["name"]] = round(min(got, want + 1), 1)   # index first: a crash now just joins again
+            cctvrec.save_merged_index(folder, idx)
+            os.replace(tmp, first["path"])
+            for s in run[1:]:
+                for p in (s["path"], s["path"][:-4] + ".jpg"):
+                    try:
+                        os.remove(p)
+                    except OSError:
+                        pass
+                if idx.pop(s["name"], None) is not None:
+                    cctvrec.save_merged_index(folder, idx)
+            joined += 1
+    return joined
+
+
+def main():
+    g, cams = cctvconf.load()
+    minutes = int(float(g.get("merge_minutes", "15") or 0))
+    if minutes < 2:
+        return 0
+    try:
+        mode = open(os.path.join(RUN, "mode")).read().strip()
+    except OSError:
+        mode = "sd"
+    if mode != "ssd" and cctvconf.yes(g.get("merge_ssd_only", "yes")) and not DOCKER:
+        return 0
+    lock = open(os.path.join(RUN, "merge.lock"), "w")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        return 0                                         # another run is still busy
+    now = time.time()
+    root = os.path.realpath(REC)
+    keep = float(g["motion_only_keep_minutes"]) * 60
+    pre, post = float(g["pre_capture_sec"]), float(g["post_capture_sec"])
+    waits = drive_waits(g)
+    done = set()
+    if waits and os.path.exists(STATE):
+        with open(STATE) as f:
+            done = {ln.strip() for ln in f if ln.strip()}
+    upload_days = {(datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d") for i in (0, 1)}
+    total = 0
+    for c in cams:
+        cam = c["id"]
+        prune = c["mode"] in ("motion", "smart")
+        for date in cctvrec.dates_of(root, cam):
+            d = os.path.join(cctvrec.cam_dir(root, cam), date)
+            marker = os.path.join(d, ".merge-done")
+            try:
+                if open(marker).read().strip() == str(minutes):
+                    continue                             # old day, already joined
+            except OSError:
+                pass
+            pending = set()
+            if waits and date in upload_days:            # what cctv-upload still has to send
+                ivs = [(s - pre, (e + post) if e is not None else None) for s, e, _ in cctvrec.read_events(d, now)]
+                for s in cctvrec.segments(d, date, now):
+                    rel = os.path.relpath(s["path"], root)
+                    if not s["merged"] and rel not in done and cctvrec.overlaps(s["start"], s["end"], ivs):
+                        pending.add(rel)
+            total += merge_folder(d, date, False, minutes * 60, SETTLE + (keep if prune else 0), pending, now)
+            total += merge_folder(d, date, True, minutes * 60, SETTLE, set(), now)
+            if date not in upload_days and BUDGET[0] > 0:   # older than yesterday and finished
+                try:
+                    with open(marker, "w") as f:
+                        f.write(str(minutes))
+                except OSError:
+                    pass
+    if total:
+        print(f"cctv-merge: joined {total} block(s) into {minutes}-minute files")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

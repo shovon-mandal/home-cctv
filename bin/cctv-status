@@ -9,7 +9,7 @@ if [ "$DOCKER" = 1 ]; then
   python3 -c 'import json; [print(f"  {k:<24} {v}") for k, v in json.load(open("/run/cctv/services.json")).items()]' 2>/dev/null \
     || echo "  (supervisor not running yet)"
 else
-  for s in cctv-go2rtc cctv-motion cctv-web cctv-recorder cctv-storage.timer cctv-upload.timer cctv-drive-clean.timer cctv-watchdog.timer cctv-apply.path cctv-update.timer; do
+  for s in cctv-go2rtc cctv-motion cctv-web cctv-recorder cctv-storage.timer cctv-upload.timer cctv-drive-clean.timer cctv-watchdog.timer cctv-merge.timer cctv-apply.path cctv-update.timer; do
     printf '  %-24s %s\n' "$s" "$(systemctl is-active "$s")"
   done
 fi

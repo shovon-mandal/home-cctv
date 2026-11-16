@@ -894,8 +894,8 @@ class Handler(BaseHTTPRequestHandler):
         for s in cctvrec.merged_segments(d, date, now):
             jpg = s["rel"][:-4] + ".jpg"
             has = os.path.exists(os.path.join(d, jpg)) and os.path.getsize(os.path.join(d, jpg)) > 0
-            segs.append({"start": s["start"], "end": s["end"], "size": s["size"], "done": s["done"], "low": s["low"],
-                         "url": base + s["rel"], "thumb": base + jpg if has else None})
+            segs.append({"start": s["start"], "end": s["end"], "fstart": s["fstart"], "size": s["size"],
+                         "done": s["done"], "low": s["low"], "url": base + s["rel"], "thumb": base + jpg if has else None})
         evs = [{"start": a, "end": b, "live": b is None, "pic": base + pic if pic else None}
                for a, b, pic in cctvrec.read_events(d, now)]
         self.send_json({"cam": cam, "date": date, "day_start": cctvrec.midnight(date),

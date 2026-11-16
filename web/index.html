@@ -1084,7 +1084,9 @@ function zoomAround(newSpan, centerRel) {
   const c = centerRel ?? (VIEW.start + VIEW.span / 2), frac = (c - VIEW.start) / VIEW.span;
   VIEW.span = newSpan; VIEW.start = c - frac * VIEW.span; clampView(); redrawBar();
 }
-function curRel() { return cur ? relSec(cur.start + (pv.currentTime || 0)) : null; }
+const fileStart = x => x.fstart ?? x.start;      /* a piece of a long (joined) file starts inside it */
+const curIndex = () => cur ? TL.segments.findIndex(x => x.url === cur.url && x.start === cur.start) : -1;
+function curRel() { return cur ? relSec(fileStart(cur) + (pv.currentTime || 0)) : null; }
 function redrawBar() { if (!TL) return; drawDay(); drawHours(); drawCursor(); $("#zLbl").textContent = spanLabel(VIEW.span); }
 function drawDay() {
   const day = $("#day"); day.querySelectorAll(".seg,.ev,.cur,.now,.tick").forEach(e => e.remove());
@@ -1126,7 +1128,7 @@ $("#zCur").onclick = () => { const r = curRel(); if (r !== null) { VIEW.start = 
 $("#pvRate").value = String(RATE);
 $("#pvRate").onchange = () => { RATE = +$("#pvRate").value; LS.set("cctv.rate", RATE); pv.playbackRate = pv.defaultPlaybackRate = RATE; };
 function jumpMotion(dir) {
-  if (!TL) return; const now = cur ? cur.start + (pv.currentTime || 0) : TL.day_start;
+  if (!TL) return; const now = cur ? fileStart(cur) + (pv.currentTime || 0) : TL.day_start;
   const evs = TL.events.filter(e => dir > 0 ? e.start > now + 4 : e.start < now - 6);
   const e = dir > 0 ? evs[0] : evs[evs.length - 1];
   if (!e) { $("#pvInfo").textContent = t("noMoreMotion"); return; }
@@ -1150,7 +1152,7 @@ function drawStrip() {
   if (selHour === null) return;
   for (const s of hourSegs(selHour)) {
     const b = document.createElement("button");
-    b.className = "thumb" + (segHasMotion(s) ? " m" : "") + (cur && cur.url === s.url ? " sel" : "");
+    b.className = "thumb" + (segHasMotion(s) ? " m" : "") + (cur && cur.url === s.url && cur.start === s.start ? " sel" : "");
     b.innerHTML = (s.thumb ? `<img loading="lazy" src="${s.thumb}" alt="">` : `<div class="ph"></div>`) + `<span>${hms(relSec(s.start), false)}${s.done ? "" : " · " + t("live2")}</span>`;
     b.onclick = () => playSeg(s, 0);
     strip.appendChild(b);
@@ -1181,22 +1183,28 @@ function playSeg(s, offset, autoplay = true) {
   pv.src = s.url; $("#pvDl").href = s.url;
   pv.onloadedmetadata = () => {
     pv.playbackRate = pv.defaultPlaybackRate = RATE;
-    if (offset > 0.5) pv.currentTime = Math.min(offset, (pv.duration || 60) - 0.5);
+    const at = offset + (s.start - fileStart(s));
+    if (at > 0.5) pv.currentTime = Math.min(at, (pv.duration || 60) - 0.5);
     if (autoplay) pv.play().catch(() => {});
   };
   $("#pvInfo").textContent = `${CAMS.find(c => c.id === TL.cam)?.name || ""} · ${TL.date}${segHasMotion(s) ? " · ⚠ motion" : ""}`;
   drawStrip(); drawCursor();
 }
 function nextSeg(dir) {
-  if (!cur) return; const i = TL.segments.findIndex(x => x.url === cur.url), n = TL.segments[i + dir];
+  if (!cur) return; const i = curIndex(), n = TL.segments[i + dir];
   if (n) playSeg(n, 0);
 }
 pv.addEventListener("timeupdate", drawCursor);
-pv.addEventListener("ended", () => {                 // continue with the next minute
-  const i = TL.segments.findIndex(x => x.url === cur.url), n = TL.segments[i + 1];
+pv.addEventListener("timeupdate", () => {            // a piece of a long file: stop at its end
+  if (cur && fileStart(cur) + pv.currentTime >= cur.end - 0.2 && cur.end < fileStart(cur) + (pv.duration || 1e9) - 1) goNext();
+});
+pv.addEventListener("ended", goNext);
+function goNext() {                                  // continue with the next minute / piece
+  if (!cur) return;
+  const i = curIndex(), n = TL.segments[i + 1];
   if (n && n.start - cur.end < 15) playSeg(n, 0);
   else if (!cur.done) loadTimeline(TL.date, true).then(() => { const m = TL.segments.find(x => x.start > cur.start); if (m) playSeg(m, 0); });
-});
+}
 $("#pvPrev").onclick = () => nextSeg(-1);
 $("#pvNext").onclick = () => nextSeg(1);
 (() => {

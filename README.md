@@ -152,7 +152,10 @@ Recording modes per camera:
 | Off | live view only |
 
 Files are plain MP4s: `<recordings>/<camera name>/<YYYY-MM-DD>/HH-MM-SS.mp4` (+ `.jpg` thumbnail,
-`low/` for the low-quality copy, `events.jsonl` for motion events). When the size limit
+`low/` for the low-quality copy, `events.jsonl` for motion events). Recording is cut into 1-minute
+files (a power cut loses at most one minute); on the SSD each finished quarter hour is then joined,
+without re-encoding, into one 15-minute file (`merge_minutes` in `cctv.conf`, 0 = off). Google Drive
+still gets the single motion minutes. When the size limit
 (**Settings → Storage limits**) is reached, the oldest minutes without motion are deleted first.
 
 **Linux only, USB SSD:** plug it in and within a minute a `CCTV` folder is created on it and

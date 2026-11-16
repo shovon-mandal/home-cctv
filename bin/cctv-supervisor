@@ -41,6 +41,7 @@ JOBS = {
     "upload":      (120, 60, [sys.executable, os.path.join(BIN, "cctv-upload")]),
     "drive-clean": (180, 900, [sys.executable, os.path.join(BIN, "cctv-drive-clean")]),
     "watchdog":    (180, 120, [sys.executable, os.path.join(BIN, "cctv-watchdog")]),
+    "merge":       (240, 300, [sys.executable, os.path.join(BIN, "cctv-merge")]),
 }
 # file the dashboard touches -> what to do
 REQUESTS = {
