@@ -198,10 +198,12 @@ def finalize(cam, low=False, limit=1):
     now, made = time.time(), 0
     if len(_final_seen) > 60000:
         _final_seen.clear()
-    for date in cctvrec.dates_of(REC, cam):
+    for date in cctvrec.dates_of(REC, cam)[:2]:
         d = os.path.join(cctvrec.cam_dir(REC, cam), date)
         for s in reversed(cctvrec.segments(d, date, low=low)):
             p = s["path"]
+            if now - s["mtime"] > wait + 6 * 3600:
+                break                               # only the last hours: no long catch-up work after a restart
             if p in _final_seen or not s["done"] or s["merged"] or now - s["mtime"] < max(wait, 8):
                 continue
             if not is_fragmented(p):
