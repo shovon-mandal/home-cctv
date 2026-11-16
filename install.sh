@@ -91,7 +91,7 @@ if [ -e /dev/watchdog ] || [ -e /dev/watchdog0 ]; then
   mkdir -p /etc/systemd/system.conf.d
   printf '[Manager]\nRuntimeWatchdogSec=30s\nRebootWatchdogSec=2min\n' > /etc/systemd/system.conf.d/cctv-watchdog.conf
 fi
-printf 'kernel.panic = 10\nkernel.panic_on_oops = 1\n' > /etc/sysctl.d/90-cctv.conf
+printf 'kernel.panic = 10\nkernel.panic_on_oops = 0\n' > /etc/sysctl.d/90-cctv.conf
 sysctl -q -p /etc/sysctl.d/90-cctv.conf 2>/dev/null || true
 systemctl daemon-reload
 systemctl enable -q cctv-power cctv-power.timer
