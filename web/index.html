@@ -106,16 +106,11 @@
   /* ---- recordings / timeline ---- */
   #recs { flex: 1; overflow: auto; padding: 0 12px 24px; display: none; }
   .row { display: flex; gap: 6px; align-items: center; margin: 4px 0 10px; }
-  .row select { min-width: 0; flex: 1 1 auto; } .row #recCam { flex: 2 1 0; min-width: 7em; } .row #recSrc { flex: 0 0 auto; } .row #recDate { flex: 0 0 auto; }
+  .row select { min-width: 0; flex: 1 1 auto; } .row #recCam { flex: 2 1 0; }
   select { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
   .navbtn { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 8px 11px; }
   .player { position: relative; background: #000; border-radius: var(--r); overflow: hidden; border: 1px solid var(--line); }
   .player video { width: 100%; max-height: 62vh; display: block; background: #000; aspect-ratio: 16 / 9; }
-  .vids { position: relative; background: #000; }
-  .vids video.stand { position: absolute; inset: 0; height: 100%; visibility: hidden; pointer-events: none; }
-  .vids:fullscreen video { max-height: none; height: 100%; aspect-ratio: auto; }
-  #pvFull { position: absolute; top: 6px; right: 6px; z-index: 2; background: rgba(0,0,0,.45); color: #fff; border: 0;
-    border-radius: 6px; padding: 2px 8px; font-size: 18px; display: none; }
   .pbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; background: var(--panel); font-size: 13.5px; flex-wrap: wrap; }
   .pbar b { font-variant-numeric: tabular-nums; font-size: 15px; }
   .pbar a, .pbar button { color: var(--blue); background: none; border: 0; text-decoration: none; padding: 2px 4px; }
@@ -150,10 +145,6 @@
   .hourpick button.on { background: var(--blue); color: #001; border-color: var(--blue); }
   .evs { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
   .evc { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; overflow: hidden; padding: 0; text-align: left; }
-  .xbox { margin: 10px 0 4px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r); }
-  .xbox summary { cursor: pointer; font-weight: 600; }
-  .xrow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0 4px; }
-  .xrow input[type=time] { padding: 6px; }
   .evc img, .evc .ph { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; display: block; background: #222a33; }
   .evc div { padding: 6px 8px; font-size: 12.5px; } .evc b { color: var(--motion); font-variant-numeric: tabular-nums; }
   .sect { font-size: 12.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); margin: 18px 2px 8px; }
@@ -254,18 +245,13 @@
 
   <section id="recs">
     <div class="row">
-      <select id="recSrc" style="display:none"></select>
       <select id="recCam"></select>
       <button class="navbtn" id="dPrev">◀</button>
       <select id="recDate"></select>
       <button class="navbtn" id="dNext">▶</button>
     </div>
     <div class="player">
-      <div class="vids" id="vids">
-        <video id="pv" controls playsinline preload="metadata"></video>
-        <video id="pv2" class="stand" playsinline preload="metadata" muted></video>
-        <button type="button" id="pvFull" title="Full screen">⛶</button>
-      </div>
+      <video id="pv" controls playsinline preload="metadata"></video>
       <div class="pbar">
         <span><b id="pvTime">--:--:--</b> <span class="muted" id="pvInfo"></span></span>
         <span><button id="pvPrev">⏮ <span data-t="prevMin"></span></button><button id="pvNext"><span data-t="nextMin"></span> ⏭</button>
@@ -286,16 +272,6 @@
       <span><i style="background:#4f7fb8"></i><span data-t="lgHq"></span></span>
       <span><i style="background:var(--motion)"></i><span data-t="lgMotion"></span></span>
       <span><i style="background:var(--blue)"></i><span data-t="lgNow"></span></span></div>
-    <details class="xbox" id="xBox" style="display:none">
-      <summary>⬇ <span data-t="xTitle"></span></summary>
-      <div class="xrow">
-        <label><span data-t="xFrom"></span> <input type="time" id="xFrom" step="60"></label>
-        <label><span data-t="xTo"></span> <input type="time" id="xTo" step="60"></label>
-        <select id="xQ"><option value="auto" data-t="xAuto"></option><option value="hd" data-t="xHd"></option><option value="low" data-t="xLow"></option></select>
-        <button class="btn" type="button" id="xGo" data-t="download"></button>
-      </div>
-      <small class="muted" id="xMsg"></small>
-    </details>
     <div class="hourpick" id="hourpick"></div>
     <div class="strip" id="strip"></div>
     <div class="sect"><span data-t="motionEvents"></span> <span id="evCount" class="muted"></span></div>
@@ -416,8 +392,6 @@
       <button class="btn ghost" type="submit" data-t="save"></button><small id="siteMsg" style="width:100%"></small></form>
     <div class="urow"><div><b data-t="version"></b><small id="sysVer">…</small></div>
       <button class="btn ghost" id="sysUpd" data-t="checkUpdate"></button></div>
-    <label class="urow" style="margin-top:8px;cursor:pointer" id="autoUpdRow"><span><b data-t="autoUpd"></b><br><small data-t="autoUpdHint"></small></span>
-      <input type="checkbox" id="autoUpd" style="width:22px;height:22px"></label>
     <div class="urow" style="margin-top:8px"><small id="sysPub" style="font-size:13.5px;word-break:break-all">…</small></div>
 
     <div class="sect">👤 <span data-t="users"></span></div>
@@ -795,21 +769,6 @@ const I18N = {
   delRec: "🗑 Delete",
   delRecQ: "Delete this recording ({0})? It can't be undone.",
   rotate: "Landscape / portrait",
-  src_ssd: "💾 SSD",
-  src_sd: "💳 SD",
-  src_folder: "📁 PC",
-  src_rec: "📁 Recordings",
-  src_drive: "☁️ Drive",
-  xTitle: "Download a time range as one video",
-  xFrom: "From",
-  xTo: "To",
-  xAuto: "Best available",
-  xHd: "Full quality only",
-  xLow: "Low quality (all day)",
-  xPick: "Pick a start and end time",
-  xStarted: "Download started ({0} min). A long range can take a while to begin.",
-  autoUpd: "Auto update",
-  autoUpdHint: "Install new versions from GitHub by itself (checked every 10 minutes). Off: only shows that an update is available.",
 };
 /* wording when running in Docker on a PC / NAS (no SD card, no SSD switching) */
 const I18N_DOCKER = {
@@ -1093,11 +1052,7 @@ function setFocus(id, fromHistory) {
   if (id && !was) history.pushState({ focus: id }, "");                // phone Back button = back to all cameras
   else if (!id && was && history.state && history.state.focus) history.back();
 }
-window.addEventListener("popstate", e => {
-  const st = e.state || {};
-  if (focused && !st.focus) setFocus(null, true);
-  if ((st.tab || "live") !== curTab) showTab(st.tab || "live", true);
-});
+window.addEventListener("popstate", () => { if (focused) setFocus(null, true); });
 /* one camera on a phone held upright: ⟳ shows it sideways (landscape) */
 function applyRot() {
   const portrait = innerHeight > innerWidth;
@@ -1155,54 +1110,14 @@ async function refreshStatus() {
 const pad = n => String(n).padStart(2, "0");
 const hms = (sec, s = true) => { sec = Math.max(0, Math.floor(sec)); return `${pad(Math.floor(sec / 3600))}:${pad(Math.floor(sec / 60) % 60)}${s ? ":" + pad(sec % 60) : ""}`; };
 let TL = null, cur = null, selHour = null;          // timeline data, playing segment, selected hour
-/* Pictures load two at a time and only when on screen: a missing one is made by the server from
-   the video, and a page full of them must not keep the video itself waiting. */
-const IMG_OK = new Set(), imgQ = []; let imgBusy = 0;
-const qImg = url => IMG_OK.has(url) ? `<img src="${url}" alt="">` : `<img class="ph" data-src="${url}" alt="">`;
-const imgIO = new IntersectionObserver(es => {
-  for (const e of es) if (e.isIntersecting) { imgIO.unobserve(e.target); imgQ.push(e.target); }
-  imgPump();
-}, { rootMargin: "150px" });
-function imgPump() {
-  while (imgBusy < 2 && imgQ.length) {
-    const el = imgQ.pop();                             // newest request first: what is on screen now
-    if (!el.isConnected) continue;
-    const url = el.dataset.src; let tries = 0; imgBusy++;
-    const probe = new Image();
-    const done = () => { imgBusy--; imgPump(); };
-    probe.onload = () => { IMG_OK.add(url); el.src = url; el.classList.remove("ph"); done(); };
-    probe.onerror = () => {
-      if (++tries < 3 && el.isConnected) setTimeout(() => { probe.src = url + (url.includes("?") ? "&" : "?") + "r=" + tries; }, 3000);
-      else done();
-    };
-    probe.src = url;
-  }
-}
-const watchImgs = box => box.querySelectorAll("img[data-src]").forEach(i => imgIO.observe(i));
-/* two video elements: while one plays, the next file loads in the hidden one, then they swap.
-   No "loading" pause between the HD motion pieces and the low-quality 24h copy. */
-let pv = $("#pv"), pvB = $("#pv2"), PRE = null;
-const segKey = x => x && x.url + "@" + x.start;
-const vids = $("#vids"), canWrapFull = !!(vids.requestFullscreen || vids.webkitRequestFullscreen);
-if (canWrapFull) {                                   // full screen on the box, so the swap keeps working in it
-  for (const v of [pv, pvB]) v.setAttribute("controlsList", "nofullscreen");
-  $("#pvFull").style.display = "";
-  $("#pvFull").onclick = () => {
-    if (document.fullscreenElement || document.webkitFullscreenElement) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
-    else (vids.requestFullscreen || vids.webkitRequestFullscreen).call(vids);
-  };
-}
+const pv = $("#pv");
 
 async function loadTimeline(date, keepPos) {
   const cam = $("#recCam").value; if (!cam) return;
   let data;
-  const src = $("#recSrc").value || LS.get("cctv.recSrc", "");
-  try { data = await api(`/api/timeline?cam=${encodeURIComponent(cam)}&date=${encodeURIComponent(date || "")}&src=${encodeURIComponent(src)}`); }
+  try { data = await api(`/api/timeline?cam=${encodeURIComponent(cam)}&date=${encodeURIComponent(date || "")}`); }
   catch (e) { $("#evs").innerHTML = `<p class="muted">${esc(e.message)}</p>`; return; }
   TL = data;
-  const ss = $("#recSrc"); ss.innerHTML = "";
-  for (const id of data.sources) ss.add(new Option(t("src_" + (id === "sd" && DOCKER ? "folder" : id)), id));
-  ss.value = data.src; ss.style.display = data.sources.length > 1 ? "" : "none";
   const ds = $("#recDate"); ds.innerHTML = "";
   for (const d of data.dates.length ? data.dates : [data.date]) ds.add(new Option(d, d));
   ds.value = data.date;
@@ -1271,7 +1186,7 @@ $("#zIn").onclick = () => zoomAround(VIEW.span / 2, curRel());
 $("#zOut").onclick = () => zoomAround(VIEW.span * 2, curRel());
 $("#zCur").onclick = () => { const r = curRel(); if (r !== null) { VIEW.start = r - VIEW.span / 2; clampView(); redrawBar(); } };
 $("#pvRate").value = String(RATE);
-$("#pvRate").onchange = () => { RATE = +$("#pvRate").value; LS.set("cctv.rate", RATE); for (const v of [pv, pvB]) v.playbackRate = v.defaultPlaybackRate = RATE; };
+$("#pvRate").onchange = () => { RATE = +$("#pvRate").value; LS.set("cctv.rate", RATE); pv.playbackRate = pv.defaultPlaybackRate = RATE; };
 function jumpMotion(dir) {
   if (!TL) return; const now = cur ? fileStart(cur) + (pv.currentTime || 0) : TL.day_start;
   const evs = TL.events.filter(e => dir > 0 ? e.start > now + 4 : e.start < now - 6);
@@ -1297,13 +1212,11 @@ function drawStrip() {
   if (selHour === null) return;
   for (const s of hourSegs(selHour)) {
     const b = document.createElement("button");
-    b.className = "thumb" + (segHasMotion(s) ? " m" : "") + (cur && segKey(cur) === segKey(s) ? " sel" : "");
-    b.innerHTML = (s.thumb ? qImg(s.thumb) : `<div class="ph"></div>`) +
-      `<span>${hms(relSec(s.start), false)}${s.done ? "" : " · " + t("live2")}</span>`;
+    b.className = "thumb" + (segHasMotion(s) ? " m" : "") + (cur && cur.url === s.url && cur.start === s.start ? " sel" : "");
+    b.innerHTML = (s.thumb ? `<img loading="lazy" src="${s.thumb}" alt="">` : `<div class="ph"></div>`) + `<span>${hms(relSec(s.start), false)}${s.done ? "" : " · " + t("live2")}</span>`;
     b.onclick = () => playSeg(s, 0);
     strip.appendChild(b);
   }
-  watchImgs(strip);
   const sel = strip.querySelector(".sel"); if (sel) sel.scrollIntoView({ block: "nearest", inline: "center" });
 }
 function drawEvents() {
@@ -1313,12 +1226,11 @@ function drawEvents() {
   for (const e of [...TL.events].reverse()) {
     const dur = Math.round((e.end ?? TL.now) - e.start);
     const b = document.createElement("button"); b.className = "evc";
-    b.innerHTML = (e.pic ? qImg(e.pic) : `<div class="ph"></div>`) +
+    b.innerHTML = (e.pic ? `<img loading="lazy" src="${e.pic}" alt="">` : `<div class="ph"></div>`) +
       `<div><b>${hms(relSec(e.start))}</b> · ${e.live ? t("ongoing") : dur < 90 ? dur + " " + t("secs") : Math.round(dur / 60) + " " + t("mins")}</div>`;
     b.onclick = () => { playAt(e.start - 3, true); $("#recs").scrollTo({ top: 0, behavior: "smooth" }); };
     box.appendChild(b);
   }
-  watchImgs(box);
 }
 function playAt(ts, autoplay) {
   const segs = TL.segments; if (!segs.length) return;
@@ -1326,78 +1238,33 @@ function playAt(ts, autoplay) {
   if (!s) { s = segs.find(x => x.start > ts) || segs[segs.length - 1]; ts = s.start; }
   playSeg(s, ts - s.start, autoplay);
 }
-function segUI(s) {
-  cur = s; selHour = Math.floor(relSec(s.start) / 3600);
-  $("#pvDl").href = s.url;
-  $("#pvDl").style.display = ME && (ME.role === "admin" || ME.download) ? "" : "none";
-  $("#xBox").style.display = $("#pvDl").style.display;
-  $("#pvDel").style.display = ME && (ME.role === "admin" || ME.delete) && TL.src !== "drive" ? "" : "none";
-  $("#pvInfo").textContent = `${CAMS.find(c => c.id === TL.cam)?.name || ""} · ${TL.date}${segHasMotion(s) ? " · ⚠ motion" : ""}`;
-  drawStrip(); drawCursor();
-}
 function playSeg(s, offset, autoplay = true) {
-  if (PRE && segKey(PRE.seg) === segKey(s) && PRE.ready && offset < 1 && autoplay) return swapTo(s);
-  segUI(s);
-  pv.src = s.url;
+  cur = s; selHour = Math.floor(relSec(s.start) / 3600);
+  pv.src = s.url; $("#pvDl").href = s.url;
+  $("#pvDl").style.display = ME && (ME.role === "admin" || ME.download) ? "" : "none";
+  $("#pvDel").style.display = ME && (ME.role === "admin" || ME.delete) ? "" : "none";
   pv.onloadedmetadata = () => {
     pv.playbackRate = pv.defaultPlaybackRate = RATE;
     const at = offset + (s.start - fileStart(s));
     if (at > 0.5) pv.currentTime = Math.min(at, (pv.duration || 60) - 0.5);
     if (autoplay) pv.play().catch(() => {});
   };
-}
-function nextOf(s) {                                 // the piece that follows without a gap
-  const i = TL.segments.findIndex(x => segKey(x) === segKey(s)), n = TL.segments[i + 1];
-  return n && n.start - s.end < 15 ? n : null;
-}
-function preloadNext() {                             // load the next file in the hidden player
-  if (!cur || !TL) return;
-  const n = nextOf(cur);
-  if (!n || n.url === cur.url || (PRE && segKey(PRE.seg) === segKey(n))) return;
-  const p = PRE = { seg: n, ready: false };
-  pvB.oncanplay = null;
-  pvB.src = n.url;
-  pvB.onloadedmetadata = () => {
-    if (PRE !== p) return;
-    pvB.playbackRate = pvB.defaultPlaybackRate = RATE;
-    const at = n.start - fileStart(n);
-    if (at > 0.5) pvB.currentTime = Math.min(at, (pvB.duration || 60) - 0.5);
-    pvB.oncanplay = () => { if (PRE === p) p.ready = true; };
-  };
-}
-function swapTo(n) {
-  const old = pv, inFull = old.webkitDisplayingFullscreen;   // iPhone: native full screen of one video
-  if (inFull) { PRE = null; return playSeg(n, 0); }
-  pv = pvB; pvB = old; PRE = null;
-  pv.oncanplay = pv.onloadedmetadata = null;
-  pv.muted = old.muted; pv.volume = old.volume;
-  pv.playbackRate = pv.defaultPlaybackRate = RATE;
-  pv.controls = true; pv.preload = "metadata";
-  pv.play().catch(() => {});
-  pv.classList.remove("stand"); old.classList.add("stand");
-  old.controls = false; old.pause();
-  segUI(n);
+  $("#pvInfo").textContent = `${CAMS.find(c => c.id === TL.cam)?.name || ""} · ${TL.date}${segHasMotion(s) ? " · ⚠ motion" : ""}`;
+  drawStrip(); drawCursor();
 }
 function nextSeg(dir) {
   if (!cur) return; const i = curIndex(), n = TL.segments[i + dir];
   if (n) playSeg(n, 0);
 }
-for (const v of [pv, pvB]) {
-  v.addEventListener("timeupdate", () => {
-    if (v !== pv || !cur) return;
-    drawCursor();
-    const pos = fileStart(cur) + v.currentTime;
-    if (cur.end - pos < 8 * Math.max(1, RATE)) preloadNext();   // load the next file only shortly before
-    // a piece of a long file: move on at its end
-    if (pos >= cur.end - 0.2 && cur.end < fileStart(cur) + (v.duration || 1e9) - 1) goNext();
-  });
-  v.addEventListener("ended", () => { if (v === pv) goNext(); });
-}
+pv.addEventListener("timeupdate", drawCursor);
+pv.addEventListener("timeupdate", () => {            // a piece of a long file: stop at its end
+  if (cur && fileStart(cur) + pv.currentTime >= cur.end - 0.2 && cur.end < fileStart(cur) + (pv.duration || 1e9) - 1) goNext();
+});
+pv.addEventListener("ended", goNext);
 function goNext() {                                  // continue with the next minute / piece
   if (!cur) return;
-  const n = nextOf(cur);
-  if (n && n.url === cur.url && !pv.ended && Math.abs(fileStart(n) + pv.currentTime - n.start) < 3) { segUI(n); return; }
-  if (n) playSeg(n, 0);
+  const i = curIndex(), n = TL.segments[i + 1];
+  if (n && n.start - cur.end < 15) playSeg(n, 0);
   else if (!cur.done) loadTimeline(TL.date, true).then(() => { const m = TL.segments.find(x => x.start > cur.start); if (m) playSeg(m, 0); });
 }
 $("#pvDel").onclick = async () => {
@@ -1406,27 +1273,8 @@ $("#pvDel").onclick = async () => {
   const fs = fileStart(cur), fe = cur.low ? Math.max(cur.end, fs + 60) : cur.end;
   if (!confirm(t("delRecQ", `${hm(fs)}–${hm(fe)}`))) return;
   const name = cur.url.split("/" + TL.date + "/")[1];
-  try { await api("/api/recordings/delete", { cam: TL.cam, date: TL.date, name: name.split("?")[0], src: TL.src }); cur = null; pv.removeAttribute("src"); pv.load(); loadTimeline(TL.date, true); }
+  try { await api("/api/recordings/delete", { cam: TL.cam, date: TL.date, name }); cur = null; pv.removeAttribute("src"); pv.load(); loadTimeline(TL.date, true); }
   catch (err) { alert(err.message); }
-};
-/* ---- download a time range as one video ---- */
-const hhmm = sec => hms(Math.max(0, Math.min(86340, sec)), false);
-$("#xBox").addEventListener("toggle", () => {          // start: 5 min before what is playing, end: 5 min after
-  if (!$("#xBox").open || !TL) return;
-  const r = curRel() ?? (TL.segments.length ? relSec(TL.segments[TL.segments.length - 1].start) : 0);
-  if (!$("#xFrom").value) $("#xFrom").value = hhmm(r - 300);
-  if (!$("#xTo").value) $("#xTo").value = hhmm(r + 300);
-});
-$("#xGo").onclick = () => {
-  if (!TL) return;
-  const a = $("#xFrom").value, z = $("#xTo").value;
-  if (!a || !z) { $("#xMsg").textContent = t("xPick"); return; }
-  const toS = v => { const [h, m] = v.split(":").map(Number); return h * 3600 + m * 60; };
-  let len = toS(z) - toS(a); if (len <= 0) len += 86400;
-  const qs = new URLSearchParams({ cam: TL.cam, date: TL.date, from: a, to: z, q: $("#xQ").value, src: TL.src === "drive" ? "" : TL.src });
-  const link = document.createElement("a"); link.href = "/api/export?" + qs; link.download = "";
-  document.body.appendChild(link); link.click(); link.remove();
-  $("#xMsg").textContent = t("xStarted", Math.round(len / 60));
 };
 $("#pvPrev").onclick = () => nextSeg(-1);
 $("#pvNext").onclick = () => nextSeg(1);
@@ -1483,22 +1331,20 @@ function camSelect() {
 }
 $("#recCam").onchange = () => { LS.set("cctv.recCam", $("#recCam").value); loadTimeline(""); };
 $("#recDate").onchange = () => loadTimeline($("#recDate").value);
-$("#recSrc").onchange = () => { LS.set("cctv.recSrc", $("#recSrc").value); cur = null; loadTimeline(TL ? TL.date : ""); };
 $("#dPrev").onclick = () => { const o = $("#recDate"); if (o.selectedIndex < o.options.length - 1) { o.selectedIndex++; loadTimeline(o.value); } };
 $("#dNext").onclick = () => { const o = $("#recDate"); if (o.selectedIndex > 0) { o.selectedIndex--; loadTimeline(o.value); } };
 setInterval(() => { if (curTab === "recs" && TL && TL.now - TL.day_start < 86400 && !document.hidden) loadTimeline(TL.date, true); }, 30000);
 
 /* =============================== tabs =============================== */
-function showTab(name, fromHistory) {
-  if (!fromHistory && name !== curTab) history.pushState({ tab: name }, "");
+function showTab(name) {
   curTab = name; liveTab = name === "live";
   for (const [id, n] of [["#tabLive", "live"], ["#tabRecs", "recs"], ["#tabUsers", "users"]]) $(id).classList.toggle("on", n === name);
   $("#liveWrap").style.display = liveTab ? "contents" : "none";
   $("#recs").style.display = name === "recs" ? "block" : "none";
   $("#users").style.display = name === "users" ? "block" : "none";
-  if (!liveTab && focused) setFocus(null, true);
+  if (!liveTab && focused) setFocus(null);
   syncPlayers();
-  if (name !== "recs") { pv.pause(); pvB.pause(); }
+  if (name !== "recs") pv.pause();
   if (name === "recs") { camSelect(); loadTimeline(TL && TL.cam === $("#recCam").value ? TL.date : ""); }
   if (name === "users") { loadUsers(); loadSys(); loadDrive(false); loadLimits(); loadCamCfg().then(() => { if (!camEditing && !$("#cName").value) editCam(null); }); }
 }
@@ -1907,8 +1753,6 @@ async function loadSys() {
   let u = {}; try { u = await api("/api/admin/update"); } catch {}
   $("#sysPub").innerHTML = u.public_url ? `${t("pubOn")}<a href="${esc(u.public_url)}" style="color:var(--blue)">${esc(u.public_url)}</a>` : t("pubOff");
   const when = u.time ? new Date(u.time * 1000).toLocaleString() : "";
-  $("#autoUpdRow").style.display = u.version ? "" : "none";
-  if (u.version) $("#autoUpd").checked = u.auto_update !== false;
   $("#sysVer").textContent = u.version ? `${u.version} · ${tr(u.message || "")}${when ? ` · ${t("checked")}: ${when}` : ""}` : t("noAutoUpd");
   return u;
 }
@@ -1929,10 +1773,6 @@ async function runUpdate(b, label) {
   loadSys();
 }
 $("#sysUpd").onclick = () => runUpdate($("#sysUpd"), "checkUpdate");
-$("#autoUpd").onchange = async () => {
-  try { await api("/api/admin/autoupdate", { on: $("#autoUpd").checked }); }
-  catch (err) { alert(err.message); $("#autoUpd").checked = !$("#autoUpd").checked; }
-};
 $("#mUpd").onclick = e => { e.stopPropagation(); $("#menu").style.display = "none"; runUpdate($("#mUpd"), "updateNow"); };
 
 /* =========================== users (admin) =========================== */

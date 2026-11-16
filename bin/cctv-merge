@@ -8,7 +8,7 @@ into ONE file, without re-encoding:
 
     10-00-00.mp4 + 10-01-00.mp4 + ... + 10-14-00.mp4  ->  10-00-00.mp4 (15 min)
 
-- on the SSD and the SD card (merge_ssd_only = yes: only on the SSD)
+- only on the SSD by default (merge_ssd_only = no: also on the SD card / in Docker)
 - a block is joined only after it is complete, smart-mode cleanup is done, and every motion
   minute in it is already on Google Drive
 - gaps (camera offline, minutes without motion in smart mode) split a block into several files
@@ -146,14 +146,14 @@ def merge_folder(daydir, date, low, block, settle, pending, now):
 
 def main():
     g, cams = cctvconf.load()
-    minutes = int(float(g.get("merge_minutes", "0") or 0))
+    minutes = int(float(g.get("merge_minutes", "15") or 0))
     if minutes < 2:
         return 0
     try:
         mode = open(os.path.join(RUN, "mode")).read().strip()
     except OSError:
         mode = "sd"
-    if mode != "ssd" and cctvconf.yes(g.get("merge_ssd_only", "no")) and not DOCKER:
+    if mode != "ssd" and cctvconf.yes(g.get("merge_ssd_only", "yes")) and not DOCKER:
         return 0
     lock = open(os.path.join(RUN, "merge.lock"), "w")
     try:

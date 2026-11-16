@@ -20,7 +20,6 @@ SEG_RE = re.compile(r"^(\d{2})-(\d{2})-(\d{2})\.mp4$")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 SEGMENT_SECONDS = int(os.environ.get("CCTV_SEGMENT_SECONDS", 60))
 LOW = "low"
-MIN_EVENT_SECONDS = 1.0
 MERGE_INDEX = ".merged.json"     # {"HH-MM-SS.mp4": seconds} for joined (longer) files
 
 
@@ -81,8 +80,7 @@ def read_events(daydir, now=None):
         # open event: still going, unless it is from long ago (crash) -> cap at 10 min
         cur[1] = None if now - cur[0] < 600 else cur[0] + 600
         out.append(cur)
-    # a blip of under a second is noise (an insect, a flicker), not an event
-    return [tuple(x) for x in out if x[1] is None or x[1] - x[0] >= MIN_EVENT_SECONDS]
+    return [tuple(x) for x in out]
 
 
 def motion_active(rec, cam, now=None):

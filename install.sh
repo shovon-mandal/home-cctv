@@ -83,19 +83,13 @@ fi
 chown cctv:cctv /etc/cctv/cameras.conf
 [ -f /etc/cctv/rclone.conf ] || install -o cctv -g cctv -m 600 /dev/null /etc/cctv/rclone.conf
 
-sync   # write the new program files to the card now: a power cut must not leave them empty
+sync   # write the program files to the card now: a power cut must not leave them empty
+# a kernel oops must not turn into a reboot (a Tinker Board can hang on reboot from an SD card)
+[ -f /etc/sysctl.d/90-cctv.conf ] && sed -i 's/panic_on_oops = 1/panic_on_oops = 0/' /etc/sysctl.d/90-cctv.conf
+sysctl -q kernel.panic_on_oops=0 2>/dev/null || true
 echo "==> Services"
 install -m 644 "$HERE"/systemd/* /etc/systemd/system/
-# if the system ever freezes, restart it by itself (hardware watchdog; kernel crash -> reboot)
-if [ -e /dev/watchdog ] || [ -e /dev/watchdog0 ]; then
-  mkdir -p /etc/systemd/system.conf.d
-  printf '[Manager]\nRuntimeWatchdogSec=30s\nRebootWatchdogSec=2min\n' > /etc/systemd/system.conf.d/cctv-watchdog.conf
-fi
-printf 'kernel.panic = 10\nkernel.panic_on_oops = 0\n' > /etc/sysctl.d/90-cctv.conf
-sysctl -q -p /etc/sysctl.d/90-cctv.conf 2>/dev/null || true
 systemctl daemon-reload
-systemctl enable -q cctv-power cctv-power.timer
-systemctl restart cctv-power cctv-power.timer || true
 /opt/cctv/bin/cctv-storage || true
 /opt/cctv/bin/cctv-apply --no-restart
 systemctl enable -q cctv-go2rtc cctv-motion cctv-recorder cctv-web cctv-storage.timer cctv-upload.timer cctv-drive-clean.timer cctv-apply.path cctv-ssd-eject.path cctv-ssd-attach.path cctv-watchdog.timer cctv-merge.timer

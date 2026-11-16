@@ -3,10 +3,6 @@
 1-minute MP4 segments (no re-encoding, very little CPU), plus a small JPEG
 thumbnail for every finished segment.
 
-While a minute is being recorded the file is a "fragmented" MP4: nothing is lost
-if the power goes. Browsers start such files slowly, so each FINISHED minute is
-rewritten once as a normal MP4 with an index (a plain copy, no re-encoding).
-
 Reads  /etc/cctv/generated/recorder.json  (written by cctv-apply; reloaded on change)
 Writes /srv/cctv/rec/<cam>/<date>/HH-MM-SS.mp4 (+ .jpg)  and  /run/cctv/recorder.json
 """
@@ -21,7 +17,6 @@ from datetime import datetime
 sys.path.insert(0, "/opt/cctv/lib")
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
 import cctvrec  # noqa: E402
-import cctvconf  # noqa: E402
 
 GEN = os.environ.get("CCTV_GEN_DIR", "/etc/cctv/generated")
 RUN = os.environ.get("CCTV_RUN", "/run/cctv")
@@ -155,84 +150,12 @@ def make_thumbs(cam, limit=3, low=False):
             jpg = s["path"][:-4] + ".jpg"
             if os.path.exists(jpg):
                 return made                          # older ones are done already
-            # first keyframe, from the small 24h copy of the same minute when there is one
-            # (decoding 4 MP H.265 takes the board's whole CPU for a moment)
-            src = s["path"]
-            lowp = os.path.join(os.path.dirname(src), cctvrec.LOW, os.path.basename(src))
-            if not low and os.path.isfile(lowp) and os.path.getsize(lowp) > 20000:
-                src = lowp
-            subprocess.run(["nice", "-n", "19", "ffmpeg", "-nostdin", "-loglevel", "error", "-y", "-threads", "1",
-                            "-skip_frame", "nokey", "-i", src, "-frames:v", "1",
+            subprocess.run(["nice", "-n", "15", "ffmpeg", "-nostdin", "-loglevel", "error", "-y",
+                            "-ss", "1", "-i", s["path"], "-frames:v", "1",
                             "-vf", "scale=240:-2", "-q:v", "7", jpg],
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
             if not os.path.exists(jpg):
                 open(jpg, "wb").close()              # unreadable segment: don't retry forever
-            made += 1
-            if made >= limit:
-                return made
-    return made
-
-
-_final_seen = set()
-
-
-def is_fragmented(path):
-    try:
-        with open(path, "rb") as f:
-            return b"mvex" in f.read(4096)
-    except OSError:
-        return False
-
-
-def finalize(cam, low=False, limit=1):
-    """Rewrite finished fragmented segments as indexed MP4 (newest first): they then start
-    in a second or two instead of many, also when jumping into the middle."""
-    try:
-        g = cctvconf.load()[0]
-        keep = float(g.get("motion_only_keep_minutes", "10")) * 60
-        ssd = open(os.path.join(RUN, "mode")).read().strip() == "ssd"
-        hd = cctvconf.yes(g.get("fast_start_hd", "no"))
-    except (OSError, ValueError, KeyError):
-        keep, ssd, hd = 600, False, False
-    if not low and not hd:
-        # full-quality files are big (~12 MB a minute for 4 MP): rewriting them keeps the disk
-        # busy all the time, which a USB disk powered by the board may not cope with
-        return 0
-    # on the SD card a full-quality minute may still be deleted (no motion): don't write it twice
-    wait = 0 if (low or ssd) else keep + 180
-    now, made = time.time(), 0
-    if len(_final_seen) > 60000:
-        _final_seen.clear()
-    for date in cctvrec.dates_of(REC, cam)[:2]:
-        d = os.path.join(cctvrec.cam_dir(REC, cam), date)
-        for s in reversed(cctvrec.segments(d, date, low=low)):
-            p = s["path"]
-            if now - s["mtime"] > wait + 6 * 3600:
-                break                               # only the last hours: no long catch-up work after a restart
-            if p in _final_seen or not s["done"] or s["merged"] or now - s["mtime"] < max(wait, 8):
-                continue
-            if not is_fragmented(p):
-                _final_seen.add(p)
-                continue
-            tmp = os.path.join(os.path.dirname(p), ".merging-fin.mp4")
-            try:
-                codec = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
-                                        "stream=codec_name", "-of", "csv=p=0", p],
-                                       capture_output=True, text=True, timeout=30).stdout.strip()
-                r = subprocess.run(["nice", "-n", "19", "ionice", "-c", "3", "ffmpeg", "-nostdin", "-loglevel", "error", "-y", "-i", p,
-                                    "-map", "0", "-c", "copy", *(["-tag:v", "hvc1"] if codec == "hevc" else []), tmp],
-                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=120)
-                if r.returncode == 0 and os.path.getsize(tmp) > 0.9 * s["size"] and os.path.exists(p):
-                    os.utime(tmp, (s["mtime"], s["mtime"]))      # the end time of a clip is its mtime
-                    os.replace(tmp, p)
-            except (OSError, subprocess.TimeoutExpired):
-                pass
-            finally:
-                try:
-                    os.remove(tmp)
-                except OSError:
-                    pass
-            _final_seen.add(p)                      # also when it failed: don't retry forever
             made += 1
             if made >= limit:
                 return made
@@ -279,7 +202,6 @@ def main():
             for c in cams.values():
                 try:
                     make_thumbs(c.id, low=c.low)
-                    finalize(c.id, low=c.low)
                 except Exception as e:  # noqa: BLE001
                     log(f"{c.id}: thumbnail error {e}")
         try:

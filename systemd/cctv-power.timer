@@ -1,9 +1,0 @@
-[Unit]
-Description=CCTV: re-apply the CPU speed limit (other tools may reset it)
-
-[Timer]
-OnBootSec=2min
-OnUnitActiveSec=15min
-
-[Install]
-WantedBy=timers.target
