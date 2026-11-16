@@ -251,7 +251,8 @@
       <div class="pbar">
         <span><b id="pvTime">--:--:--</b> <span class="muted" id="pvInfo"></span></span>
         <span><button id="pvPrev">⏮ <span data-t="prevMin"></span></button><button id="pvNext"><span data-t="nextMin"></span> ⏭</button>
-          <a id="pvDl" download data-t="download"></a></span>
+          <a id="pvDl" download data-t="download"></a>
+          <button type="button" class="linkbtn" id="pvDel" style="display:none;color:var(--bad)" data-t="delRec"></button></span>
       </div>
     </div>
     <div class="tlctl">
@@ -415,6 +416,13 @@
         <div class="checks" style="margin-top:12px">
           <label><input type="checkbox" id="uRecs" checked> <span data-t="canRecs"></span></label>
           <label><input type="checkbox" id="uPtz"> <span data-t="canPtz"></span></label>
+        </div>
+        <label class="f" data-t="extraAccess"></label>
+        <div class="checks">
+          <label><input type="checkbox" id="uP_status"> <span data-t="canStatus"></span></label>
+          <label><input type="checkbox" id="uP_camset"> <span data-t="canCamset"></span></label>
+          <label><input type="checkbox" id="uP_download"> <span data-t="canDownload"></span></label>
+          <label><input type="checkbox" id="uP_delete"> <span data-t="canDelete"></span></label>
         </div>
       </div>
       <div class="btnrow">
@@ -744,6 +752,18 @@ const I18N = {
   mainUrl: "Main stream URL (full quality)",
   subUrl: "Sub stream URL (low quality, optional)",
   camHelp: "Can't find your camera's settings? See the camera guide",
+  extraAccess: "Extra access (every viewer can already watch live and recordings at any speed)",
+  canStatus: "See storage, Drive and CPU status",
+  canCamset: "Change picture and motion sensitivity",
+  canDownload: "Download recordings",
+  canDelete: "Delete recordings",
+  permRecs: "recordings",
+  perm_status: "status",
+  perm_camset: "camera settings",
+  perm_download: "download",
+  perm_delete: "delete",
+  delRec: "🗑 Delete",
+  delRecQ: "Delete this recording ({0})? It can't be undone.",
 };
 /* wording when running in Docker on a PC / NAS (no SD card, no SSD switching) */
 const I18N_DOCKER = {
@@ -943,7 +963,7 @@ function makeTile(c) {
   };
   T.sync = sync; sync();
   video.addEventListener("resize", sync);
-  if (ME && ME.role === "admin") {
+  if (ME && (ME.role === "admin" || ME.camset)) {
     const pc = el.querySelector(".pic"); pc.style.display = ""; pc.title = t("picture");
     pc.onclick = e => { e.stopPropagation(); openPicture(c); };
     const sb = el.querySelector(".sens"); sb.style.display = ""; sb.title = t("sensitivity");
@@ -1028,6 +1048,8 @@ function setPill(id, cls, text) { const p = $(id); p.firstChild.className = "dot
 async function refreshStatus() {
   try {
     const s = await api("/api/status"), st = s.storage || {};
+    $(".statusbar").style.display = s.limited ? "none" : "";
+    if (s.limited) return;
     if (st.mode === "ssd") setPill("#stStorage", st.total && st.avail / st.total > .1 ? "ok" : "warn", `💾 SSD · ${gb(st.avail)} ${t("free")}`);
     else if (st.mode) setPill("#stStorage", "warn", st.ejected && st.ssd_present ? t("ssdEjectedPill")
       : `${DOCKER ? "📁" : "💳"} ${t("sdCard")} · ${gb(Math.max(0, st.sd_buffer_cap - st.sd_buffer_bytes))} ${t("free")}`);
@@ -1181,6 +1203,8 @@ function playAt(ts, autoplay) {
 function playSeg(s, offset, autoplay = true) {
   cur = s; selHour = Math.floor(relSec(s.start) / 3600);
   pv.src = s.url; $("#pvDl").href = s.url;
+  $("#pvDl").style.display = ME && (ME.role === "admin" || ME.download) ? "" : "none";
+  $("#pvDel").style.display = ME && (ME.role === "admin" || ME.delete) ? "" : "none";
   pv.onloadedmetadata = () => {
     pv.playbackRate = pv.defaultPlaybackRate = RATE;
     const at = offset + (s.start - fileStart(s));
@@ -1205,6 +1229,15 @@ function goNext() {                                  // continue with the next m
   if (n && n.start - cur.end < 15) playSeg(n, 0);
   else if (!cur.done) loadTimeline(TL.date, true).then(() => { const m = TL.segments.find(x => x.start > cur.start); if (m) playSeg(m, 0); });
 }
+$("#pvDel").onclick = async () => {
+  if (!cur) return;
+  const hm = x => new Date(x * 1000).toTimeString().slice(0, 5);
+  const fs = fileStart(cur), fe = cur.low ? Math.max(cur.end, fs + 60) : cur.end;
+  if (!confirm(t("delRecQ", `${hm(fs)}–${hm(fe)}`))) return;
+  const name = cur.url.split("/" + TL.date + "/")[1];
+  try { await api("/api/recordings/delete", { cam: TL.cam, date: TL.date, name }); cur = null; pv.removeAttribute("src"); pv.load(); loadTimeline(TL.date, true); }
+  catch (err) { alert(err.message); }
+};
 $("#pvPrev").onclick = () => nextSeg(-1);
 $("#pvNext").onclick = () => nextSeg(1);
 (() => {
@@ -1567,9 +1600,9 @@ $("#atBtn").onclick = () => ssdAction("attach");
 let SENS = null;
 async function openSens(c) {
   $("#sensMsg").textContent = ""; $("#sensCam").textContent = c.name;
-  try { if (!CAMCFG.cameras.length) await loadCamCfg(); } catch {}
-  const cfg = CAMCFG.cameras.find(x => x.id === c.id);
-  SENS = { id: c.id, thr: cfg ? cfg.threshold : 250 };
+  if (ME.role === "admin") try { if (!CAMCFG.cameras.length) await loadCamCfg(); } catch {}
+  const cfg = CAMCFG.cameras.find(x => x.id === c.id) || c;
+  SENS = { id: c.id, thr: cfg.threshold || 250 };
   $("#sensLvl").value = thrToLvl(SENS.thr); $("#sensTxt").textContent = sensText(+$("#sensLvl").value);
   $("#sensDlg").showModal();
 }
@@ -1581,6 +1614,7 @@ $("#sensForm").onsubmit = async e => {
     const r = await api("/api/admin/cameras/motion", { id: SENS.id, threshold: thr });
     m.style.color = "var(--accent)"; m.textContent = t("sensSaved");
     const cfg = CAMCFG.cameras.find(x => x.id === SENS.id); if (cfg) cfg.threshold = String(thr);
+    const pc = CAMS.find(x => x.id === SENS.id); if (pc) pc.threshold = String(thr);
     waitApply(r.requested); setTimeout(() => $("#sensDlg").close(), 1200);
   } catch (err) { m.textContent = err.message; }
 };
@@ -1710,6 +1744,7 @@ function setRole(r) {
   $("#uViewerOpts").style.display = r === "admin" ? "none" : "block";
 }
 $("#uRole").querySelectorAll("button").forEach(b => b.onclick = () => setRole(b.dataset.r));
+const EXTRA = ["status", "camset", "download", "delete"];      /* extra access a viewer can be given */
 function resetUserForm(u) {
   if (!ME || ME.role !== "admin") return;
   editing = u ? u.name : null;
@@ -1717,6 +1752,7 @@ function resetUserForm(u) {
   $("#uName").value = u ? u.name : ""; $("#uName").disabled = !!u;
   $("#uPass").value = ""; $("#uPassLbl").textContent = u ? t("newPassOpt") : t("password");
   $("#uRecs").checked = u ? u.recordings : true; $("#uPtz").checked = u ? !!u.ptz : false;
+  for (const k of EXTRA) $("#uP_" + k).checked = u ? !!u[k] : false;
   const box = $("#uCams"); box.innerHTML = "";
   for (const c of CAMS) {
     const l = document.createElement("label"), ok = !u || u.cameras === "*" || u.cameras.includes(c.id);
@@ -1734,7 +1770,7 @@ async function loadUsers() {
       <div style="display:flex;gap:6px"><button class="btn ghost">Edit</button><button class="btn danger">${t("delete")}</button></div>`;
     row.querySelector("b").textContent = u.name;
     row.querySelector("small").textContent = u.role === "admin" ? t("adminDesc")
-      : `${camsTxt} · recordings: ${u.recordings ? t("yes") : t("no")} · PTZ: ${u.ptz ? t("yes") : t("no")}`;
+      : [camsTxt, u.recordings ? t("permRecs") : "", u.ptz ? "PTZ" : "", ...EXTRA.filter(k => u[k]).map(k => t("perm_" + k))].filter(Boolean).join(" · ");
     const [eb, db] = row.querySelectorAll("button");
     eb.onclick = () => { resetUserForm(u); $("#uForm").scrollIntoView({ behavior: "smooth" }); };
     db.onclick = async () => { if (!confirm(t("delUserQ", u.name))) return; try { await api("/api/users/delete", { name: u.name }); loadUsers(); } catch (err) { alert(err.message); } };
@@ -1746,6 +1782,7 @@ $("#uForm").onsubmit = async e => {
   e.preventDefault(); $("#uErr").textContent = "";
   const cams = [...$("#uCams").querySelectorAll("input:checked")].map(i => i.value);
   const body = { name: editing || $("#uName").value.trim(), role: formRole, recordings: $("#uRecs").checked, ptz: $("#uPtz").checked,
+    ...Object.fromEntries(EXTRA.map(k => [k, $("#uP_" + k).checked])),
     cameras: formRole === "admin" || cams.length === CAMS.length ? "*" : cams };
   if ($("#uPass").value) body.password = $("#uPass").value;
   try {

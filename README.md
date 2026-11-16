@@ -193,8 +193,11 @@ change. (In a fork, set `app_url` in `cctv.conf` to your own release link.)
 
 ## Users
 
-**⚙️ Settings → Users**: admins can change everything; viewers see only the cameras you tick, and
-you decide whether they can open recordings and move PTZ cameras. *Share access* copies the
+**⚙️ Settings → Users**: admins can change everything. A viewer only watches live view and
+recordings (at any playback speed) of the cameras you tick; no system status, storage, Drive or
+camera settings. Extra access can be ticked per viewer: move PTZ cameras, see storage/Drive/CPU
+status, change picture and motion sensitivity, download recordings, delete recordings. Everything
+is enforced on the server, not only hidden in the page. *Share access* copies the
 addresses and username for WhatsApp/SMS (never the password).
 
 From the command line (Docker: prefix with `docker compose exec cctv`):

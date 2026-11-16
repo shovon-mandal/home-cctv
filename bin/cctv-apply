@@ -313,7 +313,8 @@ def main():
     write(os.path.join(OUT, "motion.conf"), motion_conf)
     rec_ids = gen_recorders(cams, OUT)
     # Public camera list for the web UI: names only, never URLs or passwords.
-    public = [{"id": c["id"], "name": c["name"], "mode": c["mode"], "ptz": c["ptz"]} for c in cams if c["enabled"]]
+    public = [{"id": c["id"], "name": c["name"], "mode": c["mode"], "ptz": c["ptz"], "threshold": c["threshold"]}
+              for c in cams if c["enabled"]]
     write(os.path.join(OUT, "cameras.json"), json.dumps(public, ensure_ascii=False, indent=1), 0o644)
 
     try:

@@ -192,6 +192,18 @@ window.I18N_BN = {
   mainUrl: "Main stream URL (full quality)",
   subUrl: "Sub stream URL (low quality, না দিলেও চলে)",
   camHelp: "Camera-র setting খুঁজে পাচ্ছেন না? Camera guide দেখুন",
+  extraAccess: "বাড়তি অনুমতি (live আর recording যেকোনো speed-এ সব viewer এমনিতেই দেখতে পারে)",
+  canStatus: "Storage, Drive আর CPU-র অবস্থা দেখতে পারবে",
+  canCamset: "Picture আর motion sensitivity বদলাতে পারবে",
+  canDownload: "Recording download করতে পারবে",
+  canDelete: "Recording মুছতে পারবে",
+  permRecs: "recording",
+  perm_status: "status",
+  perm_camset: "camera setting",
+  perm_download: "download",
+  perm_delete: "মুছতে পারে",
+  delRec: "🗑 মুছুন",
+  delRecQ: "এই recording ({0}) মুছবেন? আর ফেরত আনা যাবে না।",
 };
 
 window.I18N_BN_LABEL = "বাং";
@@ -209,6 +221,7 @@ window.I18N_BN_DOCKER = {
 window.I18N_BN_MSGS = {
   "Please log in": "Login করুন",
   "Admins only": "শুধু admin পারবে",
+  "No permission for recordings": "Recording দেখার অনুমতি নেই",
   "Wrong username or password": "Username বা password ভুল",
   "Too many attempts, try again in 10 minutes": "অনেকবার ভুল হয়েছে, ১০ মিনিট পর চেষ্টা করুন",
   "Current password is wrong": "পুরোনো password ভুল",

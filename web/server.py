@@ -453,8 +453,10 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/timeline":
                 return self.timeline(q, user)
             if p == "/api/status":
-                return self.status()
+                return self.status(user)
             if p == "/api/storage":
+                if not cctvusers.has_perm(user, "status"):
+                    return self.send_error_json(403, "No permission")
                 return self.send_json({"storage": read_json(os.path.join(RUN, "storage.json"), {}),
                                        "eject": read_json(os.path.join(RUN, "eject.json"), {})})
             if p == "/api/recordings":
@@ -480,8 +482,9 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_error_json(403, "Admins only")
                 return self.send_json(share_info(self.headers.get("Host", "")))
             if p == "/api/admin/picture":
-                if user["role"] != "admin":
-                    return self.send_error_json(403, "Admins only")
+                cam = (q.get("cam") or [""])[0]
+                if not (cctvusers.has_perm(user, "camset") and cctvusers.can_see(user, cam)):
+                    return self.send_error_json(403, "No permission")
                 return self.picture(q, None)
             if p == "/api/admin/limits":
                 if user["role"] != "admin":
@@ -547,6 +550,19 @@ class Handler(BaseHTTPRequestHandler):
                 if not who:
                     return
                 return self.ptz(body, who[1])
+            if p in ("/api/admin/picture", "/api/admin/cameras/motion", "/api/recordings/delete"):
+                who = self.require()                    # viewers may have been given these
+                if not who:
+                    return
+                key = "delete" if p.endswith("/delete") else "camset"
+                cam = str(body.get("cam") or body.get("id") or "")
+                if not (cctvusers.has_perm(who[1], key) and cctvusers.can_see(who[1], cam)):
+                    return self.send_error_json(403, "No permission")
+                if p == "/api/admin/picture":
+                    return self.picture(None, body)
+                if p == "/api/admin/cameras/motion":
+                    return self.cam_motion(body)
+                return self.delete_recording(body)
             who = self.require(admin=True)
             if not who:
                 return
@@ -558,7 +574,8 @@ class Handler(BaseHTTPRequestHandler):
                     valid = {c["id"] for c in cameras()}
                     cams = [c for c in cams if c in valid]
                 cctvusers.set_user(data, name, body.get("password") or None, body.get("role", "viewer"),
-                                   cams, bool(body.get("recordings", True)), bool(body.get("ptz", False)))
+                                   cams, bool(body.get("recordings", True)), bool(body.get("ptz", False)),
+                                   {k: bool(body.get(k)) for k in cctvusers.EXTRA_PERMS})
                 cctvusers.save(data)
                 return self.send_json({"ok": True})
             if p == "/api/users/delete":
@@ -680,13 +697,23 @@ class Handler(BaseHTTPRequestHandler):
 
     def delete_recording(self, body):
         cam, date, fname = (str(body.get(k, "")) for k in ("cam", "date", "name"))
-        if not (SAFE_NAME.match(cam) and DATE_RE.match(date) and SAFE_NAME.match(fname)):
+        sub, _, base = fname.rpartition("/")
+        if not (SAFE_NAME.match(cam) and DATE_RE.match(date) and SAFE_NAME.match(base) and sub in ("", cctvrec.LOW)):
             return self.send_error_json(400, "bad path")
         root = self.rec_root()
-        fp = os.path.realpath(os.path.join(cctvrec.cam_dir(root, cam), date, fname))
+        folder = os.path.join(cctvrec.cam_dir(root, cam), date, *([sub] if sub else []))
+        fp = os.path.realpath(os.path.join(folder, base))
         if not fp.startswith(root + os.sep) or not os.path.isfile(fp):
             return self.send_error_json(404, "not found")
         os.remove(fp)
+        if base.endswith(".mp4"):
+            try:
+                os.remove(fp[:-4] + ".jpg")
+            except OSError:
+                pass
+            idx = cctvrec.merged_index(folder)
+            if idx.pop(base, None) is not None:
+                cctvrec.save_merged_index(folder, idx)
         self.send_json({"ok": True})
 
 
@@ -933,7 +960,9 @@ class Handler(BaseHTTPRequestHandler):
         self.close_connection = True
 
     # ---------- status ----------
-    def status(self):
+    def status(self, user):
+        if not cctvusers.has_perm(user, "status"):         # plain viewers: no system details
+            return self.send_json({"docker": DOCKER, "time": int(time.time()), "limited": True})
         storage = read_json(os.path.join(RUN, "storage.json"), {})
         upload = read_json(os.path.join(RUN, "upload.json"), {})
         upload["usage"] = read_json(os.path.join(RUN, "drive-usage.json"), None)

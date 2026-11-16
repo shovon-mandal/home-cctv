@@ -64,7 +64,20 @@ def save(data):
         _cache["mtime"] = None
 
 
-def set_user(data, name, password=None, role="viewer", cameras="*", recordings=True, ptz=None):
+# Extra permissions a viewer can be given (admins have all of them). A plain viewer only
+# watches live view and recordings (any playback speed) of the cameras allowed to them.
+EXTRA_PERMS = ("status", "camset", "download", "delete")
+#   status   - see storage (SSD/SD), Google Drive and CPU status (read only)
+#   camset   - change picture settings and motion sensitivity of their cameras
+#   download - download recordings
+#   delete   - delete recordings of their cameras
+
+
+def has_perm(u, key):
+    return u.get("role") == "admin" or bool(u.get(key, False))
+
+
+def set_user(data, name, password=None, role="viewer", cameras="*", recordings=True, ptz=None, extra=None):
     if not NAME_RE.match(name):
         raise ValueError("Username: 2-32 characters, only a-z 0-9 _ . -")
     if role not in ("admin", "viewer"):
@@ -79,6 +92,7 @@ def set_user(data, name, password=None, role="viewer", cameras="*", recordings=T
             raise ValueError("Password must be at least 8 characters")
         u["hash"] = hash_password(password)
         u["ver"] = u.get("ver", 0) + 1          # logs out old sessions
+    prev_role = u.get("role")
     u["role"] = role
     u["cameras"] = "*" if role == "admin" or cameras in ("*", None) else sorted(set(cameras))
     u["recordings"] = True if role == "admin" else bool(recordings)
@@ -86,6 +100,13 @@ def set_user(data, name, password=None, role="viewer", cameras="*", recordings=T
         u["ptz"] = True if role == "admin" else bool(ptz)
     if role == "admin":
         u["ptz"] = True
+    for k in EXTRA_PERMS:                       # extra=None keeps what the user already had
+        if role == "admin":
+            u[k] = True
+        elif extra is not None:
+            u[k] = bool(extra.get(k, False))
+        elif prev_role == "admin" or k not in u:     # admin made viewer: start from none
+            u[k] = False
     data["users"][name] = u
     if not any(x["role"] == "admin" for x in data["users"].values()):
         raise ValueError("There must be at least one admin")
@@ -105,7 +126,8 @@ def delete_user(data, name):
 def public_view(name, u):
     return {"name": name, "role": u["role"], "cameras": u.get("cameras", "*"),
             "recordings": u.get("recordings", True),
-            "ptz": u["role"] == "admin" or u.get("ptz", False), "lang": u.get("lang", "en")}
+            "ptz": u["role"] == "admin" or u.get("ptz", False), "lang": u.get("lang", "en"),
+            **{k: has_perm(u, k) for k in EXTRA_PERMS}}
 
 
 def set_lang(data, name, lang):
