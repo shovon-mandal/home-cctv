@@ -35,7 +35,7 @@ DEFAULTS = {
     "max_clip_minutes": "3",
     "motion_only_keep_minutes": "10",
     "merge_minutes": "15",          # join finished 1-minute files into files this long (0 = off)
-    "merge_ssd_only": "yes",        # only on the SSD (no: also on the SD card / Docker folder)
+    "merge_ssd_only": "no",         # yes: join only on the SSD, keep 1-minute files on the SD card
 }
 
 # Ready-made RTSP settings per brand (shown in the dashboard's brand list, in this order).

@@ -150,8 +150,9 @@ def make_thumbs(cam, limit=3, low=False):
             jpg = s["path"][:-4] + ".jpg"
             if os.path.exists(jpg):
                 return made                          # older ones are done already
+            # first keyframe: no seeking in the fragmented file, fast even for H.265
             subprocess.run(["nice", "-n", "15", "ffmpeg", "-nostdin", "-loglevel", "error", "-y",
-                            "-ss", "1", "-i", s["path"], "-frames:v", "1",
+                            "-skip_frame", "nokey", "-i", s["path"], "-frames:v", "1",
                             "-vf", "scale=240:-2", "-q:v", "7", jpg],
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
             if not os.path.exists(jpg):

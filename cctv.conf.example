@@ -28,8 +28,8 @@ ssd_min_free_percent = 5
 # Recording is cut into 1-minute files (safe if the power goes). Once a quarter hour is
 # finished, its minutes are joined into ONE file of this many minutes (0 = keep 1-minute files).
 merge_minutes = 15
-# Join only on the SSD (no = also on the SD card / in Docker)
-merge_ssd_only = yes
+# yes = join only on the SSD (keep 1-minute files on the SD card)
+merge_ssd_only = no
 
 # --- Google Drive (optional; connect it in Settings -> Google Drive) ----
 drive_enabled = yes

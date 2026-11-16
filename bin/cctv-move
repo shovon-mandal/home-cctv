@@ -40,6 +40,21 @@ def merge_events(src, dst):
     os.replace(tmp, dst)
 
 
+def merge_index(src, dst):
+    """Lengths of joined (15-minute) files: keep the entries of both folders."""
+    idx = {}
+    for p in (dst, src):
+        try:
+            with open(p, encoding="utf-8") as f:
+                idx.update(json.load(f))
+        except (OSError, ValueError):
+            pass
+    tmp = dst + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(idx, f)
+    os.replace(tmp, dst)
+
+
 def main():
     if len(sys.argv) != 3:
         print(__doc__)
@@ -57,6 +72,11 @@ def main():
                     continue
                 os.makedirs(dst_dir, exist_ok=True)
                 d = os.path.join(dst_dir, name)
+                if name.startswith(".merg"):          # .merged.json index / temp files of cctv-merge
+                    if name == ".merged.json":
+                        merge_index(s, d)
+                    os.remove(s)
+                    continue
                 if name == "events.jsonl":
                     if now - os.path.getmtime(s) < BUSY_SECONDS:
                         continue                   # Motion may still append to it

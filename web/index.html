@@ -245,6 +245,7 @@
 
   <section id="recs">
     <div class="row">
+      <select id="recSrc" style="display:none"></select>
       <select id="recCam"></select>
       <button class="navbtn" id="dPrev">◀</button>
       <select id="recDate"></select>
@@ -769,6 +770,11 @@ const I18N = {
   delRec: "🗑 Delete",
   delRecQ: "Delete this recording ({0})? It can't be undone.",
   rotate: "Landscape / portrait",
+  src_ssd: "💾 SSD",
+  src_sd: "💳 SD card",
+  src_folder: "📁 This computer",
+  src_rec: "📁 Recordings",
+  src_drive: "☁️ Google Drive",
 };
 /* wording when running in Docker on a PC / NAS (no SD card, no SSD switching) */
 const I18N_DOCKER = {
@@ -1052,7 +1058,11 @@ function setFocus(id, fromHistory) {
   if (id && !was) history.pushState({ focus: id }, "");                // phone Back button = back to all cameras
   else if (!id && was && history.state && history.state.focus) history.back();
 }
-window.addEventListener("popstate", () => { if (focused) setFocus(null, true); });
+window.addEventListener("popstate", e => {
+  const st = e.state || {};
+  if (focused && !st.focus) setFocus(null, true);
+  if ((st.tab || "live") !== curTab) showTab(st.tab || "live", true);
+});
 /* one camera on a phone held upright: ⟳ shows it sideways (landscape) */
 function applyRot() {
   const portrait = innerHeight > innerWidth;
@@ -1115,9 +1125,13 @@ const pv = $("#pv");
 async function loadTimeline(date, keepPos) {
   const cam = $("#recCam").value; if (!cam) return;
   let data;
-  try { data = await api(`/api/timeline?cam=${encodeURIComponent(cam)}&date=${encodeURIComponent(date || "")}`); }
+  const src = $("#recSrc").value || LS.get("cctv.recSrc", "");
+  try { data = await api(`/api/timeline?cam=${encodeURIComponent(cam)}&date=${encodeURIComponent(date || "")}&src=${encodeURIComponent(src)}`); }
   catch (e) { $("#evs").innerHTML = `<p class="muted">${esc(e.message)}</p>`; return; }
   TL = data;
+  const ss = $("#recSrc"); ss.innerHTML = "";
+  for (const id of data.sources) ss.add(new Option(t("src_" + (id === "sd" && DOCKER ? "folder" : id)), id));
+  ss.value = data.src; ss.style.display = data.sources.length > 1 ? "" : "none";
   const ds = $("#recDate"); ds.innerHTML = "";
   for (const d of data.dates.length ? data.dates : [data.date]) ds.add(new Option(d, d));
   ds.value = data.date;
@@ -1210,11 +1224,22 @@ function drawStrip() {
   }
   const strip = $("#strip"); strip.innerHTML = "";
   if (selHour === null) return;
+  // one picture per quarter hour (recordings play on without a break from one file to the next)
+  const blocks = new Map();
   for (const s of hourSegs(selHour)) {
+    const q = Math.floor(relSec(s.start) / 900);
+    if (!blocks.has(q)) blocks.set(q, []);
+    blocks.get(q).push(s);
+  }
+  const curQ = cur ? Math.floor(curRel() / 900) : -1;
+  for (const [q, segs] of blocks) {
+    const first = segs[0], pic = segs.find(x => x.thumb), live = segs.some(x => !x.done);
     const b = document.createElement("button");
-    b.className = "thumb" + (segHasMotion(s) ? " m" : "") + (cur && cur.url === s.url && cur.start === s.start ? " sel" : "");
-    b.innerHTML = (s.thumb ? `<img loading="lazy" src="${s.thumb}" alt="">` : `<div class="ph"></div>`) + `<span>${hms(relSec(s.start), false)}${s.done ? "" : " · " + t("live2")}</span>`;
-    b.onclick = () => playSeg(s, 0);
+    b.className = "thumb" + (segs.some(segHasMotion) ? " m" : "") + (q === curQ ? " sel" : "");
+    const a = Math.max(relSec(first.start), q * 900), z = Math.min(relSec(segs[segs.length - 1].end), (q + 1) * 900);
+    b.innerHTML = (pic ? `<img loading="lazy" src="${pic.thumb}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'ph'}))">`
+      : `<div class="ph"></div>`) + `<span>${hms(a, false)}–${hms(z, false)}${live ? " · " + t("live2") : ""}</span>`;
+    b.onclick = () => playAt(TL.day_start + a, true);
     strip.appendChild(b);
   }
   const sel = strip.querySelector(".sel"); if (sel) sel.scrollIntoView({ block: "nearest", inline: "center" });
@@ -1242,7 +1267,7 @@ function playSeg(s, offset, autoplay = true) {
   cur = s; selHour = Math.floor(relSec(s.start) / 3600);
   pv.src = s.url; $("#pvDl").href = s.url;
   $("#pvDl").style.display = ME && (ME.role === "admin" || ME.download) ? "" : "none";
-  $("#pvDel").style.display = ME && (ME.role === "admin" || ME.delete) ? "" : "none";
+  $("#pvDel").style.display = ME && (ME.role === "admin" || ME.delete) && TL.src !== "drive" ? "" : "none";
   pv.onloadedmetadata = () => {
     pv.playbackRate = pv.defaultPlaybackRate = RATE;
     const at = offset + (s.start - fileStart(s));
@@ -1273,7 +1298,7 @@ $("#pvDel").onclick = async () => {
   const fs = fileStart(cur), fe = cur.low ? Math.max(cur.end, fs + 60) : cur.end;
   if (!confirm(t("delRecQ", `${hm(fs)}–${hm(fe)}`))) return;
   const name = cur.url.split("/" + TL.date + "/")[1];
-  try { await api("/api/recordings/delete", { cam: TL.cam, date: TL.date, name }); cur = null; pv.removeAttribute("src"); pv.load(); loadTimeline(TL.date, true); }
+  try { await api("/api/recordings/delete", { cam: TL.cam, date: TL.date, name: name.split("?")[0], src: TL.src }); cur = null; pv.removeAttribute("src"); pv.load(); loadTimeline(TL.date, true); }
   catch (err) { alert(err.message); }
 };
 $("#pvPrev").onclick = () => nextSeg(-1);
@@ -1331,18 +1356,20 @@ function camSelect() {
 }
 $("#recCam").onchange = () => { LS.set("cctv.recCam", $("#recCam").value); loadTimeline(""); };
 $("#recDate").onchange = () => loadTimeline($("#recDate").value);
+$("#recSrc").onchange = () => { LS.set("cctv.recSrc", $("#recSrc").value); cur = null; loadTimeline(TL ? TL.date : ""); };
 $("#dPrev").onclick = () => { const o = $("#recDate"); if (o.selectedIndex < o.options.length - 1) { o.selectedIndex++; loadTimeline(o.value); } };
 $("#dNext").onclick = () => { const o = $("#recDate"); if (o.selectedIndex > 0) { o.selectedIndex--; loadTimeline(o.value); } };
 setInterval(() => { if (curTab === "recs" && TL && TL.now - TL.day_start < 86400 && !document.hidden) loadTimeline(TL.date, true); }, 30000);
 
 /* =============================== tabs =============================== */
-function showTab(name) {
+function showTab(name, fromHistory) {
+  if (!fromHistory && name !== curTab) history.pushState({ tab: name }, "");
   curTab = name; liveTab = name === "live";
   for (const [id, n] of [["#tabLive", "live"], ["#tabRecs", "recs"], ["#tabUsers", "users"]]) $(id).classList.toggle("on", n === name);
   $("#liveWrap").style.display = liveTab ? "contents" : "none";
   $("#recs").style.display = name === "recs" ? "block" : "none";
   $("#users").style.display = name === "users" ? "block" : "none";
-  if (!liveTab && focused) setFocus(null);
+  if (!liveTab && focused) setFocus(null, true);
   syncPlayers();
   if (name !== "recs") pv.pause();
   if (name === "recs") { camSelect(); loadTimeline(TL && TL.cam === $("#recCam").value ? TL.date : ""); }
