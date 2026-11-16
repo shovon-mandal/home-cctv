@@ -204,6 +204,7 @@ window.I18N_BN = {
   perm_delete: "মুছতে পারে",
   delRec: "🗑 মুছুন",
   delRecQ: "এই recording ({0}) মুছবেন? আর ফেরত আনা যাবে না।",
+  rotate: "আড়াআড়ি / খাড়া",
 };
 
 window.I18N_BN_LABEL = "বাং";

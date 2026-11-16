@@ -71,7 +71,11 @@
 
   .tile { position: relative; background: #000; border-radius: var(--r); overflow: hidden; min-height: 0; border: 1px solid var(--line); }
   .tile.moving { border-color: var(--motion); box-shadow: 0 0 0 1px var(--motion) inset; }
+  .tile .in { position: absolute; inset: 0; }
   .tile video { width: 100%; height: 100%; object-fit: contain; display: block; background: #000; }
+  .tile.rot { position: fixed; inset: 0; z-index: 60; border: 0; border-radius: 0; }
+  .tile.rot .in { inset: auto; top: 0; left: 0; width: 100vh; height: 100vw; width: 100dvh; height: 100dvw;
+    transform-origin: 0 0; transform: translateX(100vw) rotate(90deg); }
   .tile .label { position: absolute; left: 8px; top: 8px; display: flex; align-items: center; gap: 6px; max-width: calc(100% - 150px);
     padding: 3px 8px; border-radius: 8px; background: rgba(0,0,0,.55); font-size: 13px; backdrop-filter: blur(4px); }
   .tile .label .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -764,6 +768,7 @@ const I18N = {
   perm_delete: "delete",
   delRec: "🗑 Delete",
   delRecQ: "Delete this recording ({0})? It can't be undone.",
+  rotate: "Landscape / portrait",
 };
 /* wording when running in Docker on a PC / NAS (no SD card, no SSD switching) */
 const I18N_DOCKER = {
@@ -840,7 +845,7 @@ class LivePlayer {
   constructor(video, onState) { this.video = video; this.onState = onState; this.stopped = true; this.retry = 0; }
   play(src, audio) { this.stop(); this.src = src; this.audio = !!audio; this.stopped = false; this.connect(); }
   stop() {
-    this.stopped = true; clearTimeout(this.timer); clearInterval(this.watch);
+    this.stopped = true; clearTimeout(this.timer); clearTimeout(this.guard); clearInterval(this.watch);
     if (this.ws) { this.ws.onclose = null; try { this.ws.close(); } catch {} this.ws = null; }
     if (this.video.srcObject) this.video.srcObject = null;
     if (this.video.getAttribute("src")) { URL.revokeObjectURL(this.video.src); this.video.removeAttribute("src"); this.video.load(); }
@@ -855,7 +860,11 @@ class LivePlayer {
   connect() {
     if (!MSClass) { this.onState("bad", t("noMSE")); return; }
     this.onState("wait", t("connecting"));
-    this.queue = []; this.lastData = Date.now();
+    this.queue = []; this.lastData = Date.now(); this.playing = false;
+    // a hidden/detached <video> may never open its MediaSource, or get data but show nothing:
+    // if no picture after 20 s, start over (otherwise the tile stays on "Connecting…" forever)
+    clearTimeout(this.guard);
+    this.guard = setTimeout(() => { if (!this.playing) this.reconnect("streamStopped"); }, 20000);
     const ms = this.ms = new MSClass();
     if (window.ManagedMediaSource) this.video.disableRemotePlayback = true;
     ms.addEventListener("sourceopen", () => this.openWs(ms), { once: true });
@@ -912,7 +921,7 @@ class LivePlayer {
         sb.appendBuffer(data);
       }
       if (v.paused && b.length) v.play().catch(() => { if (!v.muted) { v.muted = true; v.play().catch(() => {}); } });
-      if (b.length) { this.retry = 0; this.onState("ok", ""); }
+      if (b.length) { this.retry = 0; this.playing = true; this.onState("ok", ""); }
     } catch (e) { if (e.name === "QuotaExceededError") this.queue = []; else this.reconnect("connLost"); }
   }
 }
@@ -939,17 +948,18 @@ function ptzSend(cam, body) { return api("/api/ptz", Object.assign({ cam }, body
 function makeTile(c) {
   const el = document.createElement("div");
   el.className = "tile";
-  el.innerHTML = `<video muted playsinline autoplay></video>
+  el.innerHTML = `<div class="in"><video muted playsinline autoplay></video>
     <div class="label"><span class="dot"></span><span class="nm"></span></div>
     <div class="mbadge"></div>
     <div class="tools"><button class="snd" title="">🔇</button><button class="pz" style="display:none">🎮</button>
-      <button class="sens" style="display:none">🎯</button><button class="pic" style="display:none">🎛️</button><button class="q">SD</button><button class="fs">⛶</button></div>
+      <button class="sens" style="display:none">🎯</button><button class="pic" style="display:none">🎛️</button><button class="q">SD</button>
+      <button class="rotb" style="display:none">⟳</button><button class="fs">⛶</button></div>
     <div class="msg"></div>
     <div class="ptz">
       <span class="c"></span><button data-x="0" data-y="1">▲</button><span class="c"></span>
       <button data-x="-1" data-y="0">◀</button><span class="c"></span><button data-x="1" data-y="0">▶</button>
       <span class="c"></span><button data-x="0" data-y="-1">▼</button><span class="c"></span>
-    </div>`;
+    </div></div>`;
   el.querySelector(".nm").textContent = c.name;
   const video = el.querySelector("video"), dot = el.querySelector(".label .dot"), msg = el.querySelector(".msg");
   const T = { el, cam: c, hd: LS.get("cctv.hd." + c.id, false), audio: false };
@@ -979,6 +989,8 @@ function makeTile(c) {
   };
   qBtn.onclick = e => { e.stopPropagation(); T.hd = !T.hd; LS.set("cctv.hd." + c.id, T.hd); sync(); T.start(); };
   sBtn.onclick = e => { e.stopPropagation(); T.audio = !T.audio; sync(); T.start(); };
+  const rb = el.querySelector(".rotb"); rb.title = t("rotate");
+  rb.onclick = e => { e.stopPropagation(); LS.set("cctv.landscape", !LS.get("cctv.landscape", true)); applyRot(); };
   el.querySelector(".fs").onclick = e => {
     e.stopPropagation();
     if (document.fullscreenElement) document.exitFullscreen(); else (el.requestFullscreen || el.webkitRequestFullscreen)?.call(el);
@@ -1004,7 +1016,7 @@ function makeTile(c) {
       b.addEventListener("click", e => e.stopPropagation());
     });
   }
-  el.onclick = () => { focused = focused === c.id ? null : c.id; layout(); };
+  el.onclick = () => setFocus(focused === c.id ? null : c.id);
   return T;
 }
 
@@ -1020,19 +1032,44 @@ function renderGrid() {
   }
   for (const c of visible) {
     let T = tiles.get(c.id);
-    if (!T) { T = makeTile(c); tiles.set(c.id, T); if (!document.hidden && liveTab) T.start(); }
+    if (!T) { T = makeTile(c); tiles.set(c.id, T); }
     grid.appendChild(T.el);
   }
   layout();
 }
+/* only tiles you can see play: hidden ones stop (saves data) and start fresh when shown again */
+function syncPlayers() {
+  for (const [id, T] of tiles) {
+    const want = !document.hidden && liveTab && (!focused || id === focused);
+    if (want && T.player.stopped) T.start();
+    else if (!want && !T.player.stopped) T.player.stop();
+  }
+}
+function setFocus(id, fromHistory) {
+  const was = focused; focused = id; layout();
+  if (fromHistory) return;
+  if (id && !was) history.pushState({ focus: id }, "");                // phone Back button = back to all cameras
+  else if (!id && was && history.state && history.state.focus) history.back();
+}
+window.addEventListener("popstate", () => { if (focused) setFocus(null, true); });
+/* one camera on a phone held upright: show it sideways (landscape) unless switched off with ⟳ */
+function applyRot() {
+  const portrait = innerHeight > innerWidth;
+  for (const T of tiles.values()) {
+    const big = T.el.classList.contains("big") || document.fullscreenElement === T.el;
+    T.el.classList.toggle("rot", big && portrait && LS.get("cctv.landscape", true));
+    T.el.querySelector(".rotb").style.display = big && portrait ? "" : "none";
+  }
+}
+addEventListener("resize", applyRot);
+document.addEventListener("fullscreenchange", () => { applyRot(); syncPlayers(); });
 function layout() {
   const grid = $("#grid"), n = CAMS.filter(c => enabled[c.id]).length;
   grid.className = "grid n" + Math.min(n, 4) + (focused ? " focus" : "");
   for (const [id, T] of tiles) T.el.classList.toggle("big", id === focused);
+  applyRot(); syncPlayers();
 }
-document.addEventListener("visibilitychange", () => {
-  for (const T of tiles.values()) (document.hidden || !liveTab) ? T.player.stop() : T.start();
-});
+document.addEventListener("visibilitychange", syncPlayers);
 
 async function pollMotion() {
   if (!ME || document.hidden || !liveTab) return;
@@ -1304,7 +1341,8 @@ function showTab(name) {
   $("#liveWrap").style.display = liveTab ? "contents" : "none";
   $("#recs").style.display = name === "recs" ? "block" : "none";
   $("#users").style.display = name === "users" ? "block" : "none";
-  for (const T of tiles.values()) liveTab && !document.hidden ? T.start() : T.player.stop();
+  if (!liveTab && focused) setFocus(null);
+  syncPlayers();
   if (name !== "recs") pv.pause();
   if (name === "recs") { camSelect(); loadTimeline(TL && TL.cam === $("#recCam").value ? TL.date : ""); }
   if (name === "users") { loadUsers(); loadSys(); loadDrive(false); loadLimits(); loadCamCfg().then(() => { if (!camEditing && !$("#cName").value) editCam(null); }); }
