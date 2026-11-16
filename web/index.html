@@ -990,7 +990,7 @@ function makeTile(c) {
   qBtn.onclick = e => { e.stopPropagation(); T.hd = !T.hd; LS.set("cctv.hd." + c.id, T.hd); sync(); T.start(); };
   sBtn.onclick = e => { e.stopPropagation(); T.audio = !T.audio; sync(); T.start(); };
   const rb = el.querySelector(".rotb"); rb.title = t("rotate");
-  rb.onclick = e => { e.stopPropagation(); LS.set("cctv.landscape", !LS.get("cctv.landscape", true)); applyRot(); };
+  rb.onclick = e => { e.stopPropagation(); ROT = !ROT; applyRot(); };
   el.querySelector(".fs").onclick = e => {
     e.stopPropagation();
     if (document.fullscreenElement) document.exitFullscreen(); else (el.requestFullscreen || el.webkitRequestFullscreen)?.call(el);
@@ -1045,19 +1045,20 @@ function syncPlayers() {
     else if (!want && !T.player.stopped) T.player.stop();
   }
 }
+let ROT = false;                                     // landscape only after tapping ⟳
 function setFocus(id, fromHistory) {
-  const was = focused; focused = id; layout();
+  const was = focused; focused = id; ROT = false; layout();
   if (fromHistory) return;
   if (id && !was) history.pushState({ focus: id }, "");                // phone Back button = back to all cameras
   else if (!id && was && history.state && history.state.focus) history.back();
 }
 window.addEventListener("popstate", () => { if (focused) setFocus(null, true); });
-/* one camera on a phone held upright: show it sideways (landscape) unless switched off with ⟳ */
+/* one camera on a phone held upright: ⟳ shows it sideways (landscape) */
 function applyRot() {
   const portrait = innerHeight > innerWidth;
   for (const T of tiles.values()) {
     const big = T.el.classList.contains("big") || document.fullscreenElement === T.el;
-    T.el.classList.toggle("rot", big && portrait && LS.get("cctv.landscape", true));
+    T.el.classList.toggle("rot", big && portrait && ROT);
     T.el.querySelector(".rotb").style.display = big && portrait ? "" : "none";
   }
 }
