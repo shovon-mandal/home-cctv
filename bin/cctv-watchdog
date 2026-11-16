@@ -1,89 +1,97 @@
 #!/usr/bin/env python3
 """
-cctv-watchdog – restart go2rtc if any enabled stream has been silent too long.
+cctv-watchdog - restart go2rtc when a camera stream is connected but frozen.
 
-Checks go2rtc's /api/streams endpoint. Each stream has a "producers" list; each
-producer has a "url" and optionally "recv" (bytes received). If a producer has been
-connected but recv hasn't changed for STALE_SECS, we restart go2rtc so it
-reconnects.
+Some cameras (seen on Imou/Dahua firmware) stop sending RTSP data without
+closing the TCP connection. go2rtc then waits forever and recordings stop.
 
-Run every 2 minutes via cctv-watchdog.timer.
+Every run (cctv-watchdog.timer, every 2 minutes) this reads go2rtc's
+/api/streams. For every producer that has a live connection it remembers
+`bytes_recv`. If the same connection has not received a single byte for
+STALE_SECS while something is consuming the stream, go2rtc is restarted.
+Producers without a connection (camera offline, nobody watching) are ignored,
+and restarts are rate limited so an unreachable camera can't cause a loop.
 """
-import json, subprocess, sys, time, urllib.request, urllib.error
-from pathlib import Path
+import json
+import os
+import subprocess
+import sys
+import time
+import urllib.request
 
-GO2RTC_API   = "http://127.0.0.1:1984"
-STATE_FILE   = Path("/run/cctv/watchdog-state.json")
-STALE_SECS   = 60   # restart if a stream had no new bytes for this long
-RESTART_WAIT = 10   # seconds between restarts (don't flap)
+API = os.environ.get("GO2RTC_API", "http://127.0.0.1:1984")
+STATE_FILE = os.environ.get("CCTV_WATCHDOG_STATE", "/run/cctv/watchdog.json")
+STALE_SECS = 60          # no new bytes for this long -> frozen
+MIN_GAP = 300            # at most one restart per 5 minutes
 
-def api_get(path):
+
+def streams():
+    with urllib.request.urlopen(API + "/api/streams", timeout=5) as r:
+        return json.loads(r.read() or b"{}") or {}
+
+
+def load():
     try:
-        with urllib.request.urlopen(GO2RTC_API + path, timeout=5) as r:
-            return json.loads(r.read())
-    except Exception:
-        return None
-
-def load_state():
-    try:
-        return json.loads(STATE_FILE.read_text())
+        with open(STATE_FILE) as f:
+            return json.load(f)
     except Exception:
         return {}
 
-def save_state(s):
-    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    STATE_FILE.write_text(json.dumps(s))
 
-def go2rtc_running():
-    r = subprocess.run(["systemctl", "is-active", "--quiet", "cctv-go2rtc"])
-    return r.returncode == 0
+def save(state):
+    os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
+    tmp = STATE_FILE + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(state, f)
+    os.replace(tmp, STATE_FILE)
 
-def restart_go2rtc(reason):
-    print(f"[watchdog] restarting go2rtc: {reason}", flush=True)
-    subprocess.run(["systemctl", "restart", "cctv-go2rtc"])
-    time.sleep(RESTART_WAIT)
+
+def restart(reason):
+    print(f"restarting go2rtc: {reason}", flush=True)
+    cmd = os.environ.get("CCTV_GO2RTC_RESTART")
+    if cmd:                       # e.g. inside the Docker supervisor
+        subprocess.call(cmd, shell=True)
+    else:
+        subprocess.call(["systemctl", "restart", "cctv-go2rtc"])
+
 
 def main():
-    if not go2rtc_running():
-        print("[watchdog] go2rtc not running, skipping", flush=True)
-        return
+    try:
+        data = streams()
+    except Exception as e:
+        print(f"go2rtc API not reachable ({e}); nothing to do", flush=True)
+        return 0
 
-    streams = api_get("/api/streams")
-    if streams is None:
-        print("[watchdog] could not reach go2rtc API", flush=True)
-        return
-
-    now    = time.time()
-    state  = load_state()
-    stale  = []
-
-    for name, info in streams.items():
-        producers = info.get("producers") or []
-        for p in producers:
-            recv = p.get("recv", 0)
-            key  = f"{name}|{p.get('url','')[:60]}"
-            prev = state.get(key)
-
-            if prev is None:
-                # first time we see this producer
-                state[key] = {"recv": recv, "t": now}
-            elif recv > prev["recv"]:
-                # bytes are flowing – update
-                state[key] = {"recv": recv, "t": now}
+    now = time.time()
+    old = load()
+    seen, stale = {}, []
+    for name, info in data.items():
+        info = info or {}
+        if not info.get("consumers"):
+            continue                      # nobody is reading: go2rtc closes it anyway
+        for p in info.get("producers") or []:
+            if not p.get("format_name"):  # no live connection (offline / connecting)
+                continue
+            key = f"{name}#{p.get('id', 0)}"
+            recv = int(p.get("bytes_recv", 0))
+            prev = old.get("conns", {}).get(key)
+            if prev and recv <= prev["recv"]:
+                seen[key] = prev          # keep the time of the last progress
+                if now - prev["t"] >= STALE_SECS:
+                    stale.append(f"{name} frozen {int(now - prev['t'])}s")
             else:
-                # recv has not changed since last check
-                silent = now - prev["t"]
-                if silent >= STALE_SECS:
-                    stale.append(f"{name} silent {int(silent)}s")
+                seen[key] = {"recv": recv, "t": now}
 
-    save_state(state)
-
-    if stale:
-        restart_go2rtc("; ".join(stale))
-        # clear state so we start fresh after restart
-        save_state({})
+    last = float(old.get("last_restart", 0))
+    if stale and now - last >= MIN_GAP:
+        restart(", ".join(stale))
+        save({"conns": {}, "last_restart": now})
     else:
-        print(f"[watchdog] ok – {len(streams)} streams, all active", flush=True)
+        if stale:
+            print("frozen but restarted recently, waiting: " + ", ".join(stale), flush=True)
+        save({"conns": seen, "last_restart": last})
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
