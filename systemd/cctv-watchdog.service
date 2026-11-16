@@ -1,0 +1,10 @@
+[Unit]
+Description=CCTV stream watchdog – restart go2rtc on frozen streams
+After=cctv-go2rtc.service
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/opt/cctv/bin/cctv-watchdog
+StandardOutput=journal
+StandardError=journal

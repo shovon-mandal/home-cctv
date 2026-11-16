@@ -85,7 +85,7 @@ install -m 644 "$HERE"/systemd/* /etc/systemd/system/
 systemctl daemon-reload
 /opt/cctv/bin/cctv-storage || true
 /opt/cctv/bin/cctv-apply --no-restart
-systemctl enable -q cctv-go2rtc cctv-motion cctv-recorder cctv-web cctv-storage.timer cctv-upload.timer cctv-drive-clean.timer cctv-apply.path cctv-ssd-eject.path cctv-ssd-attach.path
+systemctl enable -q cctv-go2rtc cctv-motion cctv-recorder cctv-web cctv-storage.timer cctv-upload.timer cctv-drive-clean.timer cctv-apply.path cctv-ssd-eject.path cctv-ssd-attach.path cctv-watchdog.timer
 systemctl restart cctv-ssd-eject.path cctv-ssd-attach.path
 if [ -d "$HERE/.git" ]; then
   [ "$HERE" = /opt/cctv-src ] || ln -sfn "$HERE" /opt/cctv-src
@@ -94,7 +94,7 @@ if [ -d "$HERE/.git" ]; then
   systemctl enable -q cctv-update.timer cctv-update.path
   systemctl restart cctv-update.timer cctv-update.path
 fi
-systemctl restart cctv-storage.timer cctv-upload.timer cctv-drive-clean.timer cctv-apply.path
+systemctl restart cctv-storage.timer cctv-upload.timer cctv-drive-clean.timer cctv-apply.path cctv-watchdog.timer
 # restarts go2rtc, web, motion and one recorder per camera
 /opt/cctv/bin/cctv-apply || true
 

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Quick health check.
 echo "== Services =="
-for s in cctv-go2rtc cctv-motion cctv-web cctv-storage.timer cctv-upload.timer cctv-drive-clean.timer cctv-apply.path cctv-update.timer; do
+for s in cctv-go2rtc cctv-motion cctv-web cctv-storage.timer cctv-upload.timer cctv-drive-clean.timer cctv-apply.path cctv-update.timer cctv-watchdog.timer; do
   printf '  %-24s %s\n' "$s" "$(systemctl is-active "$s")"
 done
 printf '  %-24s %s\n' cctv-recorder "$(systemctl is-active cctv-recorder)"

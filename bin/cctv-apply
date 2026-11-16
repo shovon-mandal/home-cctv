@@ -41,6 +41,7 @@ def gen_go2rtc(cams):
         "  listen: '127.0.0.1:1984'",
         "rtsp:",
         "  listen: '127.0.0.1:8554'",
+        "  read_timeout: 15s",   # reconnect if camera goes silent for 15 s (Imou freeze bug)
         "webrtc:",
         "  listen: '127.0.0.1:8555'",
         "log:",
