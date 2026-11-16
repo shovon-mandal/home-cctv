@@ -205,6 +205,11 @@ window.I18N_BN = {
   delRec: "🗑 মুছুন",
   delRecQ: "এই recording ({0}) মুছবেন? আর ফেরত আনা যাবে না।",
   rotate: "আড়াআড়ি / খাড়া",
+  src_ssd: "💾 SSD",
+  src_sd: "💳 SD",
+  src_folder: "📁 PC",
+  src_rec: "📁 Recording",
+  src_drive: "☁️ Drive",
 };
 
 window.I18N_BN_LABEL = "বাং";
@@ -222,6 +227,8 @@ window.I18N_BN_DOCKER = {
 window.I18N_BN_MSGS = {
   "Please log in": "Login করুন",
   "Admins only": "শুধু admin পারবে",
+  "Google Drive did not answer, try again": "Google Drive সাড়া দেয়নি, আবার চেষ্টা করুন",
+  "Could not get the clip from Google Drive": "Google Drive থেকে clip আনা যায়নি",
   "No permission for recordings": "Recording দেখার অনুমতি নেই",
   "Wrong username or password": "Username বা password ভুল",
   "Too many attempts, try again in 10 minutes": "অনেকবার ভুল হয়েছে, ১০ মিনিট পর চেষ্টা করুন",

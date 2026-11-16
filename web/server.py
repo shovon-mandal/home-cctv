@@ -65,6 +65,68 @@ def unmask_url(new, old):
     return new.replace("***@", (m.group(1) if m else "") + "@", 1)
 
 
+# ---------------- where recordings can be watched from ----------------
+SD_BUF = os.environ.get("CCTV_SD_BUFFER", "/srv/cctv/sd-buffer")
+SSD_DIR = os.environ.get("CCTV_SSD_DIR", "/mnt/cctv-ssd/CCTV")
+DRIVE_CACHE = os.environ.get("CCTV_DRIVE_CACHE", "/srv/cctv/drive-cache")
+DRIVE_CACHE_MAX = 2 * 1024 ** 3          # clips played from Drive are kept here (oldest removed)
+_drive_ls, _drive_lock = {}, threading.Lock()
+
+
+def local_sources():
+    """[(id, folder)]: the SSD if mounted, the SD card buffer (Docker: the recordings folder)."""
+    out = []
+    if os.path.isdir(SSD_DIR) and os.path.ismount(os.path.dirname(SSD_DIR)):
+        out.append(("ssd", os.path.realpath(SSD_DIR)))
+    if os.path.isdir(SD_BUF):
+        out.append(("sd", os.path.realpath(SD_BUF)))
+    cur = os.path.realpath(REC)
+    if not any(r == cur for _, r in out):
+        out.append(("sd" if not any(i == "sd" for i, _ in out) else "rec", cur))
+    return out
+
+
+def default_source():
+    """Where recording goes now (SSD when plugged in, else the SD card)."""
+    cur = os.path.realpath(REC)
+    srcs = local_sources()
+    return next((i for i, r in srcs if r == cur), srcs[0][0])
+
+
+def source_root(src):
+    return dict(local_sources()).get(src)
+
+
+def drive_ready():
+    try:
+        return "token" in open(RCLONE_CONF).read()
+    except OSError:
+        return False
+
+
+def drive_path(cam, date=None, name=None):
+    remote = cctvconf.load()[0].get("drive_remote", "gdrive:CCTV").rstrip("/")
+    return "/".join([remote, cctvrec.folder_names().get(cam, cam)] + [x for x in (date, name) if x])
+
+
+def drive_ls(path, dirs=False):
+    """rclone listing of a Drive folder, cached for a minute."""
+    key = (path, dirs)
+    hit = _drive_ls.get(key)
+    if hit and time.time() - hit[0] < 60:
+        return hit[1]
+    r = subprocess.run(["rclone", "--config", RCLONE_CONF, "lsjson", path, "--dirs-only" if dirs else "--files-only",
+                        "--no-mimetype"], capture_output=True, text=True, timeout=45)
+    if r.returncode != 0 and "not found" not in (r.stderr or "").lower():
+        raise ValueError("Google Drive did not answer, try again")
+    try:
+        items = json.loads(r.stdout or "[]") if r.returncode == 0 else []
+    except ValueError:
+        items = []
+    _drive_ls[key] = (time.time(), items)
+    return items
+
+
 _fails_lock = threading.Lock()
 
 
@@ -462,7 +524,9 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/recordings":
                 return self.recordings(q, user)
             if p.startswith("/rec/"):
-                return self.serve_recording(unquote(p[5:]), user)
+                return self.serve_recording(unquote(p[5:]), user, (q.get("src") or [None])[0])
+            if p.startswith("/drive/"):
+                return self.serve_drive(unquote(p[7:]), user)
             if p == "/api/admin/cameras":
                 if user["role"] != "admin":
                     return self.send_error_json(403, "Admins only")
@@ -700,7 +764,9 @@ class Handler(BaseHTTPRequestHandler):
         sub, _, base = fname.rpartition("/")
         if not (SAFE_NAME.match(cam) and DATE_RE.match(date) and SAFE_NAME.match(base) and sub in ("", cctvrec.LOW)):
             return self.send_error_json(400, "bad path")
-        root = self.rec_root()
+        if body.get("src") == "drive":
+            return self.send_error_json(400, "Clips on Google Drive are removed by the Drive clean-up")
+        root = self.rec_root(body.get("src") or None)
         folder = os.path.join(cctvrec.cam_dir(root, cam), date, *([sub] if sub else []))
         fp = os.path.realpath(os.path.join(folder, base))
         if not fp.startswith(root + os.sep) or not os.path.isfile(fp):
@@ -910,22 +976,44 @@ class Handler(BaseHTTPRequestHandler):
         date = (q.get("date") or [""])[0]
         if not cctvusers.can_see(user, cam) or cam not in {c["id"] for c in cameras()}:
             return self.send_error_json(403, "No permission")
-        root = self.rec_root()
-        days = cctvrec.dates_of(root, cam)
+        sources = [i for i, _ in local_sources()] + (["drive"] if drive_ready() else [])
+        src = (q.get("src") or [""])[0]
+        if src not in sources:
+            src = default_source()
+        now = time.time()
+        local = self.rec_root(None if src == "drive" else src)
+        if src == "drive":
+            days = sorted((x["Name"] for x in drive_ls(drive_path(cam), dirs=True) if DATE_RE.match(x.get("Name", ""))),
+                          reverse=True)
+        else:
+            days = cctvrec.dates_of(local, cam)
         if not DATE_RE.match(date):
             date = days[0] if days else time.strftime("%Y-%m-%d")
-        d = os.path.join(cctvrec.cam_dir(root, cam), date)
-        now = time.time()
-        base = f"/rec/{cam}/{date}/"
+        d = os.path.join(cctvrec.cam_dir(local, cam), date)
+        base, qs = f"/rec/{cam}/{date}/", f"?src={src}"
         segs = []
-        for s in cctvrec.merged_segments(d, date, now):
-            jpg = s["rel"][:-4] + ".jpg"
-            has = os.path.exists(os.path.join(d, jpg)) and os.path.getsize(os.path.join(d, jpg)) > 0
-            segs.append({"start": s["start"], "end": s["end"], "fstart": s["fstart"], "size": s["size"],
-                         "done": s["done"], "low": s["low"], "url": base + s["rel"], "thumb": base + jpg if has else None})
-        evs = [{"start": a, "end": b, "live": b is None, "pic": base + pic if pic else None}
+        if src == "drive":
+            items = [x for x in drive_ls(drive_path(cam, date)) if cctvrec.SEG_RE.match(x.get("Name", ""))]
+            items.sort(key=lambda x: x["Name"])
+            starts = [cctvrec.seg_epoch(date, x["Name"]) for x in items]
+            for i, (x, st) in enumerate(zip(items, starts)):
+                end = min(starts[i + 1], st + 60) if i + 1 < len(starts) else st + 60
+                jpg = os.path.join(d, x["Name"][:-4] + ".jpg")       # picture of that minute, if still here
+                has = os.path.exists(jpg) and os.path.getsize(jpg) > 0
+                segs.append({"start": st, "end": end, "fstart": st, "size": x.get("Size", 0), "done": True, "low": False,
+                             "url": f"/drive/{cam}/{date}/{x['Name']}",
+                             "thumb": base + x["Name"][:-4] + ".jpg?src=" + default_source() if has else None})
+        else:
+            for s_ in cctvrec.merged_segments(d, date, now):
+                jpg = s_["rel"][:-4] + ".jpg"
+                has = os.path.exists(os.path.join(d, jpg)) and os.path.getsize(os.path.join(d, jpg)) > 0
+                segs.append({"start": s_["start"], "end": s_["end"], "fstart": s_["fstart"], "size": s_["size"],
+                             "done": s_["done"], "low": s_["low"], "url": base + s_["rel"] + qs,
+                             "thumb": base + jpg + qs if has else None})
+        pq = qs if src != "drive" else f"?src={default_source()}"
+        evs = [{"start": a, "end": b, "live": b is None, "pic": base + pic + pq if pic else None}
                for a, b, pic in cctvrec.read_events(d, now)]
-        self.send_json({"cam": cam, "date": date, "day_start": cctvrec.midnight(date),
+        self.send_json({"cam": cam, "date": date, "day_start": cctvrec.midnight(date), "src": src, "sources": sources,
                         "dates": days, "segments": segs, "events": evs, "now": now})
 
     # ---------- live view: websocket proxy to go2rtc ----------
@@ -981,8 +1069,8 @@ class Handler(BaseHTTPRequestHandler):
         })
 
     # ---------- recordings ----------
-    def rec_root(self):
-        return os.path.realpath(REC)
+    def rec_root(self, src=None):
+        return (source_root(src) if src else None) or os.path.realpath(REC)
 
     def recordings(self, q, user):
         if not user.get("recordings"):
@@ -1013,7 +1101,50 @@ class Handler(BaseHTTPRequestHandler):
         files.sort(key=lambda f: f["name"], reverse=True)
         self.send_json(files)
 
-    def serve_recording(self, rel, user):
+    def serve_drive(self, rel, user):
+        """Play a clip that is only on Google Drive: fetched once into a local cache, then served."""
+        parts = rel.split("/")
+        if len(parts) != 3 or not all(SAFE_NAME.match(x) for x in parts) or not DATE_RE.match(parts[1]):
+            return self.send_error_json(400, "bad path")
+        if not user.get("recordings") or not cctvusers.can_see(user, parts[0]):
+            return self.send_error_json(403, "No permission")
+        if not cctvrec.SEG_RE.match(parts[2]) or not drive_ready():
+            return self.send_error_json(404, "not found")
+        fp = os.path.join(DRIVE_CACHE, *parts)
+        with _drive_lock:
+            if not os.path.isfile(fp):
+                os.makedirs(os.path.dirname(fp), exist_ok=True)
+                tmp = fp + ".part"
+                r = subprocess.run(["rclone", "--config", RCLONE_CONF, "copyto", drive_path(*parts), tmp],
+                                   capture_output=True, text=True, timeout=300)
+                if r.returncode != 0 or not os.path.isfile(tmp):
+                    return self.send_error_json(502, "Could not get the clip from Google Drive")
+                os.replace(tmp, fp)
+                self._prune_drive_cache()
+        self.serve_file(fp, "video/mp4", ranged=True)
+
+    @staticmethod
+    def _prune_drive_cache():
+        files = []
+        for dp, _, fs in os.walk(DRIVE_CACHE):
+            for n in fs:
+                p = os.path.join(dp, n)
+                try:
+                    st = os.stat(p)
+                    files.append((st.st_mtime, st.st_size, p))
+                except OSError:
+                    pass
+        total = sum(f[1] for f in files)
+        for _, size, p in sorted(files):
+            if total <= DRIVE_CACHE_MAX:
+                break
+            try:
+                os.remove(p)
+                total -= size
+            except OSError:
+                pass
+
+    def serve_recording(self, rel, user, src=None):
         parts = rel.split("/")
         if len(parts) == 4 and parts[2] == cctvrec.LOW:      # cam/date/low/file
             pass
@@ -1023,7 +1154,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_error_json(400, "bad path")
         if not user.get("recordings") or not cctvusers.can_see(user, parts[0]):
             return self.send_error_json(403, "No permission")
-        root = self.rec_root()
+        root = self.rec_root(src)
         fp = os.path.realpath(os.path.join(cctvrec.cam_dir(root, parts[0]), *parts[1:]))
         if not fp.startswith(root + os.sep) or not os.path.isfile(fp):
             return self.send_error_json(404, "not found")

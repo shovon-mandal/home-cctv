@@ -106,7 +106,7 @@
   /* ---- recordings / timeline ---- */
   #recs { flex: 1; overflow: auto; padding: 0 12px 24px; display: none; }
   .row { display: flex; gap: 6px; align-items: center; margin: 4px 0 10px; }
-  .row select { min-width: 0; flex: 1 1 auto; } .row #recCam { flex: 2 1 0; }
+  .row select { min-width: 0; flex: 1 1 auto; } .row #recCam { flex: 2 1 0; min-width: 7em; } .row #recSrc, .row #recDate { flex: 0 0 auto; }
   select { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
   .navbtn { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 8px 11px; }
   .player { position: relative; background: #000; border-radius: var(--r); overflow: hidden; border: 1px solid var(--line); }
@@ -245,6 +245,7 @@
 
   <section id="recs">
     <div class="row">
+      <select id="recSrc" style="display:none"></select>
       <select id="recCam"></select>
       <button class="navbtn" id="dPrev">◀</button>
       <select id="recDate"></select>
@@ -769,6 +770,11 @@ const I18N = {
   delRec: "🗑 Delete",
   delRecQ: "Delete this recording ({0})? It can't be undone.",
   rotate: "Landscape / portrait",
+  src_ssd: "💾 SSD",
+  src_sd: "💳 SD",
+  src_folder: "📁 PC",
+  src_rec: "📁 Recordings",
+  src_drive: "☁️ Drive",
 };
 /* wording when running in Docker on a PC / NAS (no SD card, no SSD switching) */
 const I18N_DOCKER = {
@@ -1115,9 +1121,13 @@ const pv = $("#pv");
 async function loadTimeline(date, keepPos) {
   const cam = $("#recCam").value; if (!cam) return;
   let data;
-  try { data = await api(`/api/timeline?cam=${encodeURIComponent(cam)}&date=${encodeURIComponent(date || "")}`); }
+  const src = $("#recSrc").value || LS.get("cctv.recSrc", "");
+  try { data = await api(`/api/timeline?cam=${encodeURIComponent(cam)}&date=${encodeURIComponent(date || "")}&src=${encodeURIComponent(src)}`); }
   catch (e) { $("#evs").innerHTML = `<p class="muted">${esc(e.message)}</p>`; return; }
   TL = data;
+  const ss = $("#recSrc"); ss.innerHTML = "";
+  for (const id of data.sources) ss.add(new Option(t("src_" + (id === "sd" && DOCKER ? "folder" : id)), id));
+  ss.value = data.src; ss.style.display = data.sources.length > 1 ? "" : "none";
   const ds = $("#recDate"); ds.innerHTML = "";
   for (const d of data.dates.length ? data.dates : [data.date]) ds.add(new Option(d, d));
   ds.value = data.date;
@@ -1242,7 +1252,7 @@ function playSeg(s, offset, autoplay = true) {
   cur = s; selHour = Math.floor(relSec(s.start) / 3600);
   pv.src = s.url; $("#pvDl").href = s.url;
   $("#pvDl").style.display = ME && (ME.role === "admin" || ME.download) ? "" : "none";
-  $("#pvDel").style.display = ME && (ME.role === "admin" || ME.delete) ? "" : "none";
+  $("#pvDel").style.display = ME && (ME.role === "admin" || ME.delete) && TL.src !== "drive" ? "" : "none";
   pv.onloadedmetadata = () => {
     pv.playbackRate = pv.defaultPlaybackRate = RATE;
     const at = offset + (s.start - fileStart(s));
@@ -1273,7 +1283,7 @@ $("#pvDel").onclick = async () => {
   const fs = fileStart(cur), fe = cur.low ? Math.max(cur.end, fs + 60) : cur.end;
   if (!confirm(t("delRecQ", `${hm(fs)}–${hm(fe)}`))) return;
   const name = cur.url.split("/" + TL.date + "/")[1];
-  try { await api("/api/recordings/delete", { cam: TL.cam, date: TL.date, name }); cur = null; pv.removeAttribute("src"); pv.load(); loadTimeline(TL.date, true); }
+  try { await api("/api/recordings/delete", { cam: TL.cam, date: TL.date, name: name.split("?")[0], src: TL.src }); cur = null; pv.removeAttribute("src"); pv.load(); loadTimeline(TL.date, true); }
   catch (err) { alert(err.message); }
 };
 $("#pvPrev").onclick = () => nextSeg(-1);
@@ -1331,6 +1341,7 @@ function camSelect() {
 }
 $("#recCam").onchange = () => { LS.set("cctv.recCam", $("#recCam").value); loadTimeline(""); };
 $("#recDate").onchange = () => loadTimeline($("#recDate").value);
+$("#recSrc").onchange = () => { LS.set("cctv.recSrc", $("#recSrc").value); cur = null; loadTimeline(TL ? TL.date : ""); };
 $("#dPrev").onclick = () => { const o = $("#recDate"); if (o.selectedIndex < o.options.length - 1) { o.selectedIndex++; loadTimeline(o.value); } };
 $("#dNext").onclick = () => { const o = $("#recDate"); if (o.selectedIndex > 0) { o.selectedIndex--; loadTimeline(o.value); } };
 setInterval(() => { if (curTab === "recs" && TL && TL.now - TL.day_start < 86400 && !document.hidden) loadTimeline(TL.date, true); }, 30000);
