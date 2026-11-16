@@ -258,3 +258,8 @@ Drive login and recordings only live on your computer.
 
 Contributions are welcome: brand presets live in `lib/cctvconf.py` (`PRESETS`), and a new
 dashboard language is one file in `web/lang/`.
+
+## License
+
+[MIT](LICENSE) © 2026 Shovon Mandal. The tools it runs (go2rtc, FFmpeg, Motion, rclone) are
+downloaded separately at install time and keep their own licenses.
