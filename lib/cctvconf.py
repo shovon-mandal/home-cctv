@@ -34,7 +34,8 @@ DEFAULTS = {
     "post_capture_sec": "5",
     "max_clip_minutes": "3",
     "motion_only_keep_minutes": "10",
-    "merge_minutes": "15",          # join finished 1-minute files into files this long (0 = off)
+    "merge_minutes": "0",           # join finished 1-minute files into files this long (0 = off)
+    "auto_update": "yes",           # install new versions from GitHub by itself (no: only check)
     "merge_ssd_only": "no",         # yes: join only on the SSD, keep 1-minute files on the SD card
 }
 

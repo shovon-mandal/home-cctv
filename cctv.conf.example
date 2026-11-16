@@ -10,6 +10,10 @@ site_name = Home CCTV
 # Dashboard: http://<this-computer-IP>:8085
 web_port = 8085
 
+# Install new versions from GitHub by itself every 10 minutes (no = only check;
+# update from Settings -> System or with: sudo cctv-update)
+auto_update = yes
+
 # --- Storage -----------------------------------------------------------
 # Recordings folder size limit when no SSD is used (on a single-board computer this is
 # the SD card; in Docker it is the recordings folder)
@@ -27,7 +31,7 @@ ssd_min_free_percent = 5
 
 # Recording is cut into 1-minute files (safe if the power goes). Once a quarter hour is
 # finished, its minutes are joined into ONE file of this many minutes (0 = keep 1-minute files).
-merge_minutes = 15
+merge_minutes = 0
 # yes = join only on the SSD (keep 1-minute files on the SD card)
 merge_ssd_only = no
 

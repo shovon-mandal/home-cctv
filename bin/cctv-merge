@@ -146,7 +146,7 @@ def merge_folder(daydir, date, low, block, settle, pending, now):
 
 def main():
     g, cams = cctvconf.load()
-    minutes = int(float(g.get("merge_minutes", "15") or 0))
+    minutes = int(float(g.get("merge_minutes", "0") or 0))
     if minutes < 2:
         return 0
     try:

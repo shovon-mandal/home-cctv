@@ -13,12 +13,13 @@ import re
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.error
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 sys.path.insert(0, "/opt/cctv/lib")
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
@@ -70,7 +71,8 @@ SD_BUF = os.environ.get("CCTV_SD_BUFFER", "/srv/cctv/sd-buffer")
 SSD_DIR = os.environ.get("CCTV_SSD_DIR", "/mnt/cctv-ssd/CCTV")
 DRIVE_CACHE = os.environ.get("CCTV_DRIVE_CACHE", "/srv/cctv/drive-cache")
 DRIVE_CACHE_MAX = 2 * 1024 ** 3          # clips played from Drive are kept here (oldest removed)
-THUMB_SEM = threading.Semaphore(2)       # at most 2 thumbnails made at the same time
+THUMB_SEM = threading.Semaphore(2)
+EXPORT_SEM = threading.Semaphore(1)      # one range download at a time (the board's disk is slow)       # at most 2 thumbnails made at the same time
 _drive_ls, _drive_lock = {}, threading.Lock()
 
 
@@ -126,15 +128,19 @@ def drive_ls(path, dirs=False):
     return items
 
 
-def make_thumb(mp4, jpg):
-    """First keyframe of the clip as a small JPEG (fast even for H.265 on a small board)."""
+def make_thumb(mp4, jpg, at=0.0, width=240):
+    """A keyframe of the clip (at `at` seconds) as a small JPEG; fast even for H.265 on a small board."""
     if not THUMB_SEM.acquire(timeout=30):
         return False
     try:
         tmp = jpg + ".tmp.jpg"
-        subprocess.run(["nice", "-n", "10", "ffmpeg", "-nostdin", "-loglevel", "error", "-y", "-skip_frame", "nokey",
-                        "-i", mp4, "-frames:v", "1", "-vf", "scale=240:-2", "-q:v", "7", tmp],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=40)
+        seek = ["-ss", f"{at:.1f}"] if at > 0.5 else []
+        for extra in ([seek, []] if seek else [[]]):       # seeking can fail in a growing file: then frame 1
+            subprocess.run(["nice", "-n", "10", "ffmpeg", "-nostdin", "-loglevel", "error", "-y", "-skip_frame", "nokey",
+                            *extra, "-i", mp4, "-frames:v", "1", "-vf", f"scale={width}:-2", "-q:v", "7", tmp],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=40)
+            if os.path.exists(tmp) and os.path.getsize(tmp) > 0:
+                break
         if os.path.exists(tmp) and os.path.getsize(tmp) > 0:
             os.replace(tmp, jpg)
             return True
@@ -549,6 +555,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.serve_recording(unquote(p[5:]), user, (q.get("src") or [None])[0])
             if p.startswith("/drive/"):
                 return self.serve_drive(unquote(p[7:]), user)
+            if p == "/api/export":
+                return self.export_range(q, user)
             if p == "/api/admin/cameras":
                 if user["role"] != "admin":
                     return self.send_error_json(403, "Admins only")
@@ -558,6 +566,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_error_json(403, "Admins only")
                 d = read_json(os.path.join(RUN, "update.json"), {})
                 d["public_url"] = _public_url()
+                d["auto_update"] = cctvconf.yes(cctvconf.load()[0].get("auto_update", "yes"))
                 return self.send_json(d)
             if p == "/api/admin/drive":
                 if user["role"] != "admin":
@@ -702,6 +711,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.cam_onvif(body)
             if p == "/api/admin/cameras/scan":
                 return self.send_json(cctvscan.scan(str(body.get("subnet") or "") or None))
+            if p == "/api/admin/autoupdate":
+                on = bool(body.get("on"))
+                cctvconf.set_general({"auto_update": "yes" if on else "no"})
+                return self.send_json({"ok": True, "auto_update": on})
             if p == "/api/admin/site":
                 name = re.sub(r"\s+", " ", str(body.get("site_name", ""))).strip()[:40]
                 if not name:
@@ -1032,8 +1045,12 @@ class Handler(BaseHTTPRequestHandler):
                              "done": s_["done"], "low": s_["low"], "url": base + s_["rel"] + qs,
                              # finished clips always get a picture: made on first request if missing
                              "thumb": base + jpg + qs if (has or s_["done"]) else None})
-        evs = [{"start": a, "end": b, "live": b is None, "pic": base + pic + qs if pic and src != "drive" else None}
-               for a, b, pic in cctvrec.read_events(d, now)]
+        evs = []
+        for a, b, pic in cctvrec.read_events(d, now):
+            if not (pic and os.path.isfile(os.path.join(d, pic))):
+                pic = "m-" + time.strftime("%H-%M-%S", time.localtime(a + 1)) + ".jpg"   # made from the video
+            evs.append({"start": a, "end": b, "live": b is None,
+                        "pic": base + pic + (qs if src != "drive" else f"?src={default_source()}")})
         self.send_json({"cam": cam, "date": date, "day_start": cctvrec.midnight(date), "src": src, "sources": sources,
                         "dates": days, "segments": segs, "events": evs, "now": now})
 
@@ -1121,6 +1138,113 @@ class Handler(BaseHTTPRequestHandler):
         files.sort(key=lambda f: f["name"], reverse=True)
         self.send_json(files)
 
+    @staticmethod
+    def make_missing_jpg(fp, parts):
+        """Thumbnail of a clip, or the picture of a motion event (m-HH-MM-SS.jpg) taken from the recording."""
+        name = os.path.basename(fp)
+        m = re.match(r"^m-(\d{2})-(\d{2})-(\d{2})", name)
+        if not m:
+            mp4 = fp[:-4] + ".mp4"
+            return os.path.isfile(mp4) and make_thumb(mp4, fp)
+        date = parts[1]
+        if not DATE_RE.match(date):
+            return False
+        t = cctvrec.midnight(date) + int(m.group(1)) * 3600 + int(m.group(2)) * 60 + int(m.group(3))
+        day = os.path.dirname(fp)
+        segs = [x for x in cctvrec.merged_segments(day, date) if x["start"] - 1 <= t < x["end"]]
+        if not segs:
+            return False
+        s_ = segs[0]
+        return make_thumb(os.path.join(day, s_["rel"]), fp, t - s_["fstart"], 480)
+
+    def export_range(self, q, user):
+        """One video for a time range: the 1-minute files joined on the fly (no re-encoding)."""
+        if not user.get("recordings") or not cctvusers.has_perm(user, "download"):
+            return self.send_error_json(403, "No permission to download")
+        cam, date = (q.get("cam") or [""])[0], (q.get("date") or [""])[0]
+        if not cctvusers.can_see(user, cam) or cam not in {c["id"] for c in cameras()} or not DATE_RE.match(date):
+            return self.send_error_json(403, "No permission")
+        def hm(v):
+            mm = re.match(r"^(\d{1,2}):(\d{2})(?::(\d{2}))?$", v or "")
+            if not mm:
+                raise ValueError("Pick a start and end time")
+            return int(mm.group(1)) * 3600 + int(mm.group(2)) * 60 + int(mm.group(3) or 0)
+        day0 = cctvrec.midnight(date)
+        a, b = day0 + hm((q.get("from") or [""])[0]), day0 + hm((q.get("to") or [""])[0])
+        if b <= a:
+            b += 86400 if b < a else 0
+        if b <= a:
+            raise ValueError("The end time must be after the start time")
+        src = (q.get("src") or [""])[0]
+        root = self.rec_root(None if src == "drive" else src or None)
+        d = os.path.join(cctvrec.cam_dir(root, cam), date)
+        now = time.time()
+
+        def pick(low):
+            out = []
+            for s_ in cctvrec.segments(d, date, now, low=low):
+                if s_["end"] > a and s_["start"] < b:
+                    out.append(s_)
+            cov = sum(min(x["end"], b) - max(x["start"], a) for x in out)
+            return out, cov
+        hd, hd_cov = pick(False)
+        lo, lo_cov = pick(True)
+        want = (q.get("q") or ["auto"])[0]
+        if want == "low" and lo:
+            segs = lo
+        elif want == "hd" and hd:
+            segs = hd
+        else:                                    # full quality when it covers the range, else the 24h copy
+            segs = hd if hd and (hd_cov >= 0.97 * (b - a) or hd_cov >= lo_cov) else lo
+        if not segs:
+            return self.send_error_json(404, "No recording in this time range")
+        if not EXPORT_SEM.acquire(blocking=False):
+            return self.send_error_json(429, "Another download is being prepared, try again in a minute")
+        lst = None
+        try:
+            fd, lst = tempfile.mkstemp(prefix="cctv-export-", suffix=".txt")
+            with os.fdopen(fd, "w") as f:
+                for s_ in segs:
+                    f.write("file '%s'\n" % s_["path"].replace("'", "'\\''"))
+                    if a > s_["start"] + 0.5:
+                        f.write(f"inpoint {a - s_['start']:.2f}\n")
+                    if b < s_["end"] - 0.5:
+                        f.write(f"outpoint {b - s_['start']:.2f}\n")
+            codec = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=codec_name",
+                                    "-of", "csv=p=0", segs[0]["path"]], capture_output=True, text=True, timeout=20).stdout.strip()
+            cmd = ["nice", "-n", "5", "ffmpeg", "-nostdin", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", lst,
+                   "-map", "0:v:0", "-map", "0:a?", "-c", "copy", *(["-tag:v", "hvc1"] if codec == "hevc" else []),
+                   "-movflags", "frag_keyframe+empty_moov+default_base_moof", "-f", "mp4", "pipe:1"]
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+            cname = next((c["name"] for c in cameras() if c["id"] == cam), cam)
+            fname = f"{cname} {date} {time.strftime('%H-%M', time.localtime(a))} to {time.strftime('%H-%M', time.localtime(b))}.mp4"
+            ascii_name = re.sub(r"[^A-Za-z0-9 ._-]", "_", fname)
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "video/mp4")
+            self.send_header("Content-Disposition", f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(fname)}")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Connection", "close")           # length is not known in advance
+            self.end_headers()
+            self.close_connection = True
+            try:
+                while True:
+                    chunk = proc.stdout.read(262144)
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            finally:
+                proc.kill()
+                proc.wait()
+        finally:
+            EXPORT_SEM.release()
+            if lst:
+                try:
+                    os.remove(lst)
+                except OSError:
+                    pass
+
     def serve_drive(self, rel, user):
         """Play a clip that is only on Google Drive: fetched once into a local cache, then served."""
         parts = rel.split("/")
@@ -1179,8 +1303,7 @@ class Handler(BaseHTTPRequestHandler):
         if not fp.startswith(root + os.sep):
             return self.send_error_json(404, "not found")
         if fp.endswith(".jpg") and (not os.path.isfile(fp) or os.path.getsize(fp) == 0):
-            mp4 = fp[:-4] + ".mp4"                       # thumbnail missing: make it now
-            if not (os.path.isfile(mp4) and make_thumb(mp4, fp)):
+            if not self.make_missing_jpg(fp, parts):
                 return self.send_error_json(404, "not found")
         if not os.path.isfile(fp):
             return self.send_error_json(404, "not found")

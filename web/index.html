@@ -106,7 +106,7 @@
   /* ---- recordings / timeline ---- */
   #recs { flex: 1; overflow: auto; padding: 0 12px 24px; display: none; }
   .row { display: flex; gap: 6px; align-items: center; margin: 4px 0 10px; }
-  .row select { min-width: 0; flex: 1 1 auto; } .row #recCam { flex: 2 1 0; }
+  .row select { min-width: 0; flex: 1 1 auto; } .row #recCam { flex: 2 1 0; min-width: 7em; } .row #recSrc { flex: 0 0 auto; } .row #recDate { flex: 0 0 auto; }
   select { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
   .navbtn { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 8px 11px; }
   .player { position: relative; background: #000; border-radius: var(--r); overflow: hidden; border: 1px solid var(--line); }
@@ -150,6 +150,10 @@
   .hourpick button.on { background: var(--blue); color: #001; border-color: var(--blue); }
   .evs { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
   .evc { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; overflow: hidden; padding: 0; text-align: left; }
+  .xbox { margin: 10px 0 4px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r); }
+  .xbox summary { cursor: pointer; font-weight: 600; }
+  .xrow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0 4px; }
+  .xrow input[type=time] { padding: 6px; }
   .evc img, .evc .ph { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; display: block; background: #222a33; }
   .evc div { padding: 6px 8px; font-size: 12.5px; } .evc b { color: var(--motion); font-variant-numeric: tabular-nums; }
   .sect { font-size: 12.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); margin: 18px 2px 8px; }
@@ -282,6 +286,16 @@
       <span><i style="background:#4f7fb8"></i><span data-t="lgHq"></span></span>
       <span><i style="background:var(--motion)"></i><span data-t="lgMotion"></span></span>
       <span><i style="background:var(--blue)"></i><span data-t="lgNow"></span></span></div>
+    <details class="xbox" id="xBox" style="display:none">
+      <summary>⬇ <span data-t="xTitle"></span></summary>
+      <div class="xrow">
+        <label><span data-t="xFrom"></span> <input type="time" id="xFrom" step="60"></label>
+        <label><span data-t="xTo"></span> <input type="time" id="xTo" step="60"></label>
+        <select id="xQ"><option value="auto" data-t="xAuto"></option><option value="hd" data-t="xHd"></option><option value="low" data-t="xLow"></option></select>
+        <button class="btn" type="button" id="xGo" data-t="download"></button>
+      </div>
+      <small class="muted" id="xMsg"></small>
+    </details>
     <div class="hourpick" id="hourpick"></div>
     <div class="strip" id="strip"></div>
     <div class="sect"><span data-t="motionEvents"></span> <span id="evCount" class="muted"></span></div>
@@ -402,6 +416,8 @@
       <button class="btn ghost" type="submit" data-t="save"></button><small id="siteMsg" style="width:100%"></small></form>
     <div class="urow"><div><b data-t="version"></b><small id="sysVer">…</small></div>
       <button class="btn ghost" id="sysUpd" data-t="checkUpdate"></button></div>
+    <label class="urow" style="margin-top:8px;cursor:pointer" id="autoUpdRow"><span><b data-t="autoUpd"></b><br><small data-t="autoUpdHint"></small></span>
+      <input type="checkbox" id="autoUpd" style="width:22px;height:22px"></label>
     <div class="urow" style="margin-top:8px"><small id="sysPub" style="font-size:13.5px;word-break:break-all">…</small></div>
 
     <div class="sect">👤 <span data-t="users"></span></div>
@@ -780,10 +796,20 @@ const I18N = {
   delRecQ: "Delete this recording ({0})? It can't be undone.",
   rotate: "Landscape / portrait",
   src_ssd: "💾 SSD",
-  src_sd: "💳 SD card",
-  src_folder: "📁 This computer",
+  src_sd: "💳 SD",
+  src_folder: "📁 PC",
   src_rec: "📁 Recordings",
-  src_drive: "☁️ Google Drive",
+  src_drive: "☁️ Drive",
+  xTitle: "Download a time range as one video",
+  xFrom: "From",
+  xTo: "To",
+  xAuto: "Best available",
+  xHd: "Full quality only",
+  xLow: "Low quality (all day)",
+  xPick: "Pick a start and end time",
+  xStarted: "Download started ({0} min). A long range can take a while to begin.",
+  autoUpd: "Auto update",
+  autoUpdHint: "Install new versions from GitHub by itself (checked every 10 minutes). Off: only shows that an update is available.",
 };
 /* wording when running in Docker on a PC / NAS (no SD card, no SSD switching) */
 const I18N_DOCKER = {
@@ -1245,22 +1271,12 @@ function drawStrip() {
   }
   const strip = $("#strip"); strip.innerHTML = "";
   if (selHour === null) return;
-  // one picture per quarter hour (recordings play on without a break from one file to the next)
-  const blocks = new Map();
   for (const s of hourSegs(selHour)) {
-    const q = Math.floor(relSec(s.start) / 900);
-    if (!blocks.has(q)) blocks.set(q, []);
-    blocks.get(q).push(s);
-  }
-  const curQ = cur ? Math.floor(curRel() / 900) : -1;
-  for (const [q, segs] of blocks) {
-    const first = segs[0], pic = segs.find(x => x.thumb), live = segs.some(x => !x.done);
     const b = document.createElement("button");
-    b.className = "thumb" + (segs.some(segHasMotion) ? " m" : "") + (q === curQ ? " sel" : "");
-    const a = Math.max(relSec(first.start), q * 900), z = Math.min(relSec(segs[segs.length - 1].end), (q + 1) * 900);
-    b.innerHTML = (pic ? `<img loading="lazy" src="${pic.thumb}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'ph'}))">`
-      : `<div class="ph"></div>`) + `<span>${hms(a, false)}–${hms(z, false)}${live ? " · " + t("live2") : ""}</span>`;
-    b.onclick = () => playAt(TL.day_start + a, true);
+    b.className = "thumb" + (segHasMotion(s) ? " m" : "") + (cur && segKey(cur) === segKey(s) ? " sel" : "");
+    b.innerHTML = (s.thumb ? `<img loading="lazy" src="${s.thumb}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'ph'}))">` : `<div class="ph"></div>`) +
+      `<span>${hms(relSec(s.start), false)}${s.done ? "" : " · " + t("live2")}</span>`;
+    b.onclick = () => playSeg(s, 0);
     strip.appendChild(b);
   }
   const sel = strip.querySelector(".sel"); if (sel) sel.scrollIntoView({ block: "nearest", inline: "center" });
@@ -1272,7 +1288,7 @@ function drawEvents() {
   for (const e of [...TL.events].reverse()) {
     const dur = Math.round((e.end ?? TL.now) - e.start);
     const b = document.createElement("button"); b.className = "evc";
-    b.innerHTML = (e.pic ? `<img loading="lazy" src="${e.pic}" alt="">` : `<div class="ph"></div>`) +
+    b.innerHTML = (e.pic ? `<img loading="lazy" src="${e.pic}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'ph'}))">` : `<div class="ph"></div>`) +
       `<div><b>${hms(relSec(e.start))}</b> · ${e.live ? t("ongoing") : dur < 90 ? dur + " " + t("secs") : Math.round(dur / 60) + " " + t("mins")}</div>`;
     b.onclick = () => { playAt(e.start - 3, true); $("#recs").scrollTo({ top: 0, behavior: "smooth" }); };
     box.appendChild(b);
@@ -1288,6 +1304,7 @@ function segUI(s) {
   cur = s; selHour = Math.floor(relSec(s.start) / 3600);
   $("#pvDl").href = s.url;
   $("#pvDl").style.display = ME && (ME.role === "admin" || ME.download) ? "" : "none";
+  $("#xBox").style.display = $("#pvDl").style.display;
   $("#pvDel").style.display = ME && (ME.role === "admin" || ME.delete) && TL.src !== "drive" ? "" : "none";
   $("#pvInfo").textContent = `${CAMS.find(c => c.id === TL.cam)?.name || ""} · ${TL.date}${segHasMotion(s) ? " · ⚠ motion" : ""}`;
   drawStrip(); drawCursor();
@@ -1365,6 +1382,25 @@ $("#pvDel").onclick = async () => {
   const name = cur.url.split("/" + TL.date + "/")[1];
   try { await api("/api/recordings/delete", { cam: TL.cam, date: TL.date, name: name.split("?")[0], src: TL.src }); cur = null; pv.removeAttribute("src"); pv.load(); loadTimeline(TL.date, true); }
   catch (err) { alert(err.message); }
+};
+/* ---- download a time range as one video ---- */
+const hhmm = sec => hms(Math.max(0, Math.min(86340, sec)), false);
+$("#xBox").addEventListener("toggle", () => {          // start: 5 min before what is playing, end: 5 min after
+  if (!$("#xBox").open || !TL) return;
+  const r = curRel() ?? (TL.segments.length ? relSec(TL.segments[TL.segments.length - 1].start) : 0);
+  if (!$("#xFrom").value) $("#xFrom").value = hhmm(r - 300);
+  if (!$("#xTo").value) $("#xTo").value = hhmm(r + 300);
+});
+$("#xGo").onclick = () => {
+  if (!TL) return;
+  const a = $("#xFrom").value, z = $("#xTo").value;
+  if (!a || !z) { $("#xMsg").textContent = t("xPick"); return; }
+  const toS = v => { const [h, m] = v.split(":").map(Number); return h * 3600 + m * 60; };
+  let len = toS(z) - toS(a); if (len <= 0) len += 86400;
+  const qs = new URLSearchParams({ cam: TL.cam, date: TL.date, from: a, to: z, q: $("#xQ").value, src: TL.src === "drive" ? "" : TL.src });
+  const link = document.createElement("a"); link.href = "/api/export?" + qs; link.download = "";
+  document.body.appendChild(link); link.click(); link.remove();
+  $("#xMsg").textContent = t("xStarted", Math.round(len / 60));
 };
 $("#pvPrev").onclick = () => nextSeg(-1);
 $("#pvNext").onclick = () => nextSeg(1);
@@ -1845,6 +1881,8 @@ async function loadSys() {
   let u = {}; try { u = await api("/api/admin/update"); } catch {}
   $("#sysPub").innerHTML = u.public_url ? `${t("pubOn")}<a href="${esc(u.public_url)}" style="color:var(--blue)">${esc(u.public_url)}</a>` : t("pubOff");
   const when = u.time ? new Date(u.time * 1000).toLocaleString() : "";
+  $("#autoUpdRow").style.display = u.version ? "" : "none";
+  if (u.version) $("#autoUpd").checked = u.auto_update !== false;
   $("#sysVer").textContent = u.version ? `${u.version} · ${tr(u.message || "")}${when ? ` · ${t("checked")}: ${when}` : ""}` : t("noAutoUpd");
   return u;
 }
@@ -1865,6 +1903,10 @@ async function runUpdate(b, label) {
   loadSys();
 }
 $("#sysUpd").onclick = () => runUpdate($("#sysUpd"), "checkUpdate");
+$("#autoUpd").onchange = async () => {
+  try { await api("/api/admin/autoupdate", { on: $("#autoUpd").checked }); }
+  catch (err) { alert(err.message); $("#autoUpd").checked = !$("#autoUpd").checked; }
+};
 $("#mUpd").onclick = e => { e.stopPropagation(); $("#menu").style.display = "none"; runUpdate($("#mUpd"), "updateNow"); };
 
 /* =========================== users (admin) =========================== */
