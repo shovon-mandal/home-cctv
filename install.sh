@@ -83,6 +83,7 @@ fi
 chown cctv:cctv /etc/cctv/cameras.conf
 [ -f /etc/cctv/rclone.conf ] || install -o cctv -g cctv -m 600 /dev/null /etc/cctv/rclone.conf
 
+sync   # write the new program files to the card now: a power cut must not leave them empty
 echo "==> Services"
 install -m 644 "$HERE"/systemd/* /etc/systemd/system/
 # if the system ever freezes, restart it by itself (hardware watchdog; kernel crash -> reboot)

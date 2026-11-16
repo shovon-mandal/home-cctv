@@ -40,6 +40,11 @@ fi
 LOCAL=$(git rev-parse HEAD)
 REMOTE=$(git rev-parse "origin/$BRANCH")
 if [ "$LOCAL" = "$REMOTE" ]; then
+  # files left empty by a power cut during an earlier update: put them back
+  if [ -n "$(find /opt/cctv -type f -size 0 ! -name '*.jpg' 2>/dev/null | head -1)" ] && [ "${MODE:-}" != "--check" ]; then
+    git reset -q --hard "$REMOTE"; sync
+    "$SRC/install.sh" --update > "$RUN/update.log" 2>&1 && status ok "Repaired" && echo "Repaired empty files." && exit 0
+  fi
   status ok "Up to date"
   echo "Up to date ($(git log -1 --format=%h))"
   exit 0
@@ -54,6 +59,7 @@ status updating "Updating…"
 echo "Updating $(git log -1 --format=%h) -> $(git log -1 --format=%h "$REMOTE")"
 git log --oneline "$LOCAL..$REMOTE"
 git reset -q --hard "$REMOTE"
+sync
 if "$SRC/install.sh" --update > "$RUN/update.log" 2>&1; then
   status ok "Updated"
   echo "Done."
