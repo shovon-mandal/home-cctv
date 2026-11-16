@@ -1,5 +1,6 @@
 #!/bin/bash
-# CCTV system installer for Asus Tinker Board (Armbian / Debian).
+# Home CCTV installer for Linux (Debian, Ubuntu, Raspberry Pi OS, Armbian; x86-64 or ARM).
+# For Windows and macOS use Docker instead (see README).
 #   First time:  sudo git clone https://github.com/<you>/home-cctv /opt/cctv-src
 #                sudo /opt/cctv-src/install.sh
 #   Updates:     automatic (cctv-update.timer), or: sudo cctv-update
@@ -55,7 +56,9 @@ systemd-tmpfiles --create /etc/tmpfiles.d/cctv.conf
 echo "==> Files"
 install -m 755 "$HERE"/bin/cctv-* /opt/cctv/bin/
 install -m 644 "$HERE"/lib/*.py /opt/cctv/lib/
-install -m 644 "$HERE"/web/* /opt/cctv/web/
+install -d -m 755 /opt/cctv/web/lang
+install -m 644 "$HERE"/web/*.* /opt/cctv/web/
+install -m 644 "$HERE"/web/lang/* /opt/cctv/web/lang/
 for f in /opt/cctv/bin/cctv-*; do ln -sf "$f" /usr/local/bin/; done
 
 if [ ! -x /opt/cctv/bin/go2rtc ]; then

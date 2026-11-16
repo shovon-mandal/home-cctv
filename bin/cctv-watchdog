@@ -19,6 +19,10 @@ import sys
 import time
 import urllib.request
 
+sys.path.insert(0, "/opt/cctv/lib")
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+import cctvsvc  # noqa: E402
+
 API = os.environ.get("GO2RTC_API", "http://127.0.0.1:1984")
 STATE_FILE = os.environ.get("CCTV_WATCHDOG_STATE", "/run/cctv/watchdog.json")
 STALE_SECS = 60          # no new bytes for this long -> frozen
@@ -48,11 +52,11 @@ def save(state):
 
 def restart(reason):
     print(f"restarting go2rtc: {reason}", flush=True)
-    cmd = os.environ.get("CCTV_GO2RTC_RESTART")
-    if cmd:                       # e.g. inside the Docker supervisor
+    cmd = os.environ.get("CCTV_GO2RTC_RESTART")    # used by the tests
+    if cmd:
         subprocess.call(cmd, shell=True)
     else:
-        subprocess.call(["systemctl", "restart", "cctv-go2rtc"])
+        cctvsvc.control("restart", "cctv-go2rtc")
 
 
 def main():

@@ -28,10 +28,10 @@ LOG = os.path.join(os.path.dirname(STATE), "upload-log.json")   # recent uploads
 INFO = {}                                                         # extra fields for the dashboard
 
 
-def status(state, en, bn):
+def status(state, message):
     fd, tmp = tempfile.mkstemp(prefix=".upload.", dir=RUN)   # fresh file: never blocked by an old one
     with os.fdopen(fd, "w", encoding="utf-8") as f:
-        json.dump({"state": state, "message": f"{en} || {bn}", "time": int(time.time()), **INFO}, f, ensure_ascii=False)
+        json.dump({"state": state, "message": message, "time": int(time.time()), **INFO}, f, ensure_ascii=False)
     os.chmod(tmp, 0o644)
     os.replace(tmp, os.path.join(RUN, "upload.json"))
 
@@ -71,13 +71,13 @@ def main():
         print(f"cctv-upload: removed {pruned} segment(s) without motion")
 
     if not cctvconf.yes(g["drive_enabled"]):
-        return status("off", "Drive upload is off", "Drive upload বন্ধ")
+        return status("off", "Drive upload is off")
     if not (os.path.exists(RCLONE_CONF) and os.path.getsize(RCLONE_CONF)):
-        return status("error", "Google Drive is not connected", "Google Drive connect করা হয়নি")
+        return status("error", "Google Drive is not connected")
     mpath = os.path.join(RUN, "mode")
     mode = open(mpath).read().strip() if os.path.exists(mpath) else "sd"
     if mode == "ssd" and not cctvconf.yes(g["drive_backup_when_ssd"]):
-        return status("idle", "SSD connected, Drive backup off", "SSD চালু, Drive backup বন্ধ")
+        return status("idle", "SSD connected, Drive backup off")
 
     done = set()
     if os.path.exists(STATE):
@@ -104,7 +104,7 @@ def main():
         top = set()
     for cid, n in names.items():
         if cid in top and n != cid:
-            status("busy", "Moving old Drive folders to camera names…", "Drive-এর পুরনো folder camera-র নামে সরানো হচ্ছে…")
+            status("busy", "Moving old Drive folders to camera names…")
             try:
                 rc("move", f"{remote}/{cid}", f"{remote}/{n}", "--delete-empty-src-dirs", t=1800)
                 rc("rmdir", f"{remote}/{cid}", t=120)
@@ -151,7 +151,7 @@ def main():
     save_state()
     if not todo:
         INFO.update(pending=0)
-        return status("ok", "Drive has every motion clip", "Drive-এ সব motion clip আছে")
+        return status("ok", "Drive has every motion clip")
 
     # 3. upload in batches of a few clips (+ snapshots); progress saved after each batch, and live
     #    speed/percent from rclone every few seconds, so the dashboard shows it is really moving
@@ -162,10 +162,9 @@ def main():
     batches[0] = batches[0] + extras
     STAT_RE = re.compile(r"([\d.]+ ?\w*B) / ([\d.]+ ?\w*B), (\d+)%, ([\d.]+ ?\w*B/s)(?:, ETA (\S+))?")
 
-    def live(extra_en="", extra_bn=""):
+    def live(extra=""):
         INFO.update(sent=sent, total=total, pending=total - sent)
-        status("busy", f"Uploading motion clips: {sent}/{total} done{extra_en}…",
-               f"Motion clip upload হচ্ছে: {total}টার মধ্যে {sent}টা হয়েছে{extra_bn}…")
+        status("busy", f"Uploading motion clips: {sent}/{total} done{extra}…")
 
     for batch in batches:
         live()
@@ -190,7 +189,7 @@ def main():
                     m = STAT_RE.search(line)
                     if m:
                         INFO.update(batch_pct=int(m.group(3)), speed=m.group(4), eta=m.group(5))
-                        live(f" · {m.group(4)}", f" · {m.group(4)}")
+                        live(f" · {m.group(4)}")
                     elif line.strip():
                         err_tail = (err_tail + [line.strip()])[-3:]
                     if time.time() - start > 1800:
@@ -205,8 +204,7 @@ def main():
         INFO.pop("batch_pct", None)
         if not ok:
             save_state()
-            return status("error", f"Upload stopped at {sent}/{total}: check internet / Drive (retries every minute)",
-                          f"{total}টার মধ্যে {sent}টা upload হয়ে থেমেছে: internet বা Drive দেখুন (প্রতি মিনিটে আবার চেষ্টা করবে)")
+            return status("error", f"Upload stopped at {sent}/{total}: check internet / Drive (retries every minute)")
         done |= set(batch)
         sent += sum(1 for p in batch if p.endswith(".mp4"))
         save_state()
@@ -223,7 +221,7 @@ def main():
         except OSError:
             pass
         INFO.update(sent=sent, total=total, pending=total - sent, recent=recent[:8])
-    status("ok", f"Uploaded {sent} motion clip(s)", f"{sent}টা motion clip upload হয়েছে")
+    status("ok", f"Uploaded {sent} motion clip(s)")
 
 if __name__ == "__main__":
     try:
@@ -231,7 +229,7 @@ if __name__ == "__main__":
     except Exception as e:  # noqa: BLE001
         print("cctv-upload:", e)
         try:
-            status("error", f"Upload error: {e}", f"Upload সমস্যা: {e}")
+            status("error", f"Upload error: {e}")
         except OSError as e2:
             print("cctv-upload: cannot write status:", e2)
         sys.exit(1)

@@ -1,0 +1,24 @@
+# Home CCTV - run with:  docker compose up -d   then open http://localhost:8085
+# Settings live in .env (copy .env.example to .env).
+services:
+  cctv:
+    build: .
+    image: home-cctv:latest
+    container_name: home-cctv
+    restart: unless-stopped
+    ports:
+      - "${CCTV_PORT:-8085}:8085"
+    environment:
+      TZ: ${TZ:-UTC}
+      CCTV_ADMIN_USER: ${CCTV_ADMIN_USER:-admin}
+      CCTV_ADMIN_PASSWORD: ${CCTV_ADMIN_PASSWORD:-}
+    volumes:
+      - ${CCTV_CONFIG_DIR:-./data/config}:/etc/cctv
+      - ${CCTV_RECORDINGS_DIR:-./data/recordings}:/srv/cctv/sd-buffer
+    # recordings are cut into 1-minute files; give FFmpeg a little room
+    shm_size: "64m"
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"

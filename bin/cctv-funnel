@@ -7,7 +7,7 @@
 #   sudo cctv-funnel off      turn it off
 #   sudo cctv-funnel status
 #
-# Uses port 8443 so it does not clash with other apps (e.g. TagTrail on 443).
+# Uses port 8443 so it does not clash with other apps (e.g. another web app on 443).
 set -u
 HTTPS_PORT=${CCTV_FUNNEL_PORT:-8443}
 eval "$(/opt/cctv/bin/cctv-config)"

@@ -21,36 +21,36 @@ status() {  # state, message
   chmod 644 "$RUN/update.json"
 }
 
-[ -d "$SRC/.git" ] || { status error "Source folder missing ($SRC) || Source folder নেই ($SRC)"; echo "No git checkout at $SRC"; exit 1; }
+[ -d "$SRC/.git" ] || { status error "Source folder missing ($SRC)"; echo "No git checkout at $SRC"; exit 1; }
 cd "$SRC"
 if ! git fetch -q origin "$BRANCH" 2>"$RUN/update.err"; then
-  status error "Could not reach GitHub || GitHub-এ পৌঁছানো যায়নি"; cat "$RUN/update.err"; exit 1
+  status error "Could not reach GitHub"; cat "$RUN/update.err"; exit 1
 fi
 LOCAL=$(git rev-parse HEAD)
 REMOTE=$(git rev-parse "origin/$BRANCH")
 if [ "$LOCAL" = "$REMOTE" ]; then
-  status ok "Up to date || সর্বশেষ version চলছে"
+  status ok "Up to date"
   echo "Up to date ($(git log -1 --format=%h))"
   exit 0
 fi
 if [ "${1:-}" = "--check" ]; then
-  status available "Update available || নতুন version আছে"
+  status available "Update available"
   git log --oneline "$LOCAL..$REMOTE"
   exit 0
 fi
 
-status updating "Updating… || Update হচ্ছে…"
+status updating "Updating…"
 echo "Updating $(git log -1 --format=%h) -> $(git log -1 --format=%h "$REMOTE")"
 git log --oneline "$LOCAL..$REMOTE"
 git reset -q --hard "$REMOTE"
 if "$SRC/install.sh" --update > "$RUN/update.log" 2>&1; then
-  status ok "Updated || Update হয়েছে"
+  status ok "Updated"
   echo "Done."
 else
   tail -20 "$RUN/update.log"
   # roll back to the version that worked
   git reset -q --hard "$LOCAL"
   "$SRC/install.sh" --update >> "$RUN/update.log" 2>&1
-  status error "Update failed, rolled back || Update ব্যর্থ, আগের version-এ ফেরত গেছে"
+  status error "Update failed, rolled back"
   exit 1
 fi

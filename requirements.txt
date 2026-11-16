@@ -1,0 +1,11 @@
+# Home CCTV needs NO Python packages from pip: it only uses the Python 3 standard library.
+#
+# What it does need (installed for you by Docker or by install.sh):
+#   Python   >= 3.9
+#   FFmpeg   (ffmpeg + ffprobe)   recording, thumbnails, camera test
+#   Motion   >= 4.4               motion detection          https://motion-project.github.io
+#   go2rtc   1.9.x                live view / restreaming   https://github.com/AlexxIT/go2rtc
+#   rclone                        Google Drive upload (optional)
+#
+# Easiest on Windows / macOS / Linux:  Docker Desktop (or Docker Engine) + Docker Compose
+# Native Linux (Debian/Ubuntu/Raspberry Pi OS):  sudo ./install.sh

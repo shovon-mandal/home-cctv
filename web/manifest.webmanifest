@@ -1,6 +1,6 @@
 {
-  "name": "Khulna CCTV",
-  "short_name": "Khulna CCTV",
+  "name": "Home CCTV",
+  "short_name": "Home CCTV",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0d1117",

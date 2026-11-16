@@ -1,0 +1,267 @@
+#!/usr/bin/env python3
+"""Run the whole CCTV system in one process tree (used by the Docker image).
+
+On a native Linux install systemd does this job (see systemd/). Here we:
+  - create default config files on first start,
+  - keep the long-running services alive (go2rtc, motion, recorder, web),
+  - run the periodic jobs (storage check, Drive upload/cleanup, stream watchdog),
+  - react to the request files the dashboard writes (apply, update, SSD eject),
+  - take start/stop/restart requests from <run>/ctl/ (see lib/cctvsvc.py).
+Every child's output goes to stdout with a [name] prefix, so `docker compose logs` shows it all.
+"""
+import json
+import os
+import shutil
+import signal
+import subprocess
+import sys
+import threading
+import time
+
+BIN = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(BIN)
+sys.path.insert(0, os.path.join(ROOT, "lib"))
+
+os.environ["CCTV_SUPERVISOR"] = "1"
+ETC = os.path.dirname(os.environ.get("CCTV_CONF", "/etc/cctv/cctv.conf"))
+GEN = os.environ.get("CCTV_GEN_DIR", os.path.join(ETC, "generated"))
+RUN = os.environ.get("CCTV_RUN", "/run/cctv")
+CTL = os.path.join(RUN, "ctl")
+GO2RTC_BIN = os.environ.get("GO2RTC_BIN", shutil.which("go2rtc") or "/opt/cctv/bin/go2rtc")
+
+SERVICES = {
+    "go2rtc":   lambda: [GO2RTC_BIN, "-config", os.path.join(GEN, "go2rtc.yaml")],
+    "motion":   lambda: ["motion", "-n", "-c", os.path.join(GEN, "motion.conf")],
+    "recorder": lambda: [sys.executable, os.path.join(BIN, "cctv-recorder")],
+    "web":      lambda: [sys.executable, os.path.join(ROOT, "web", "server.py")],
+}
+# name: (first run after N seconds, then every N seconds, command)
+JOBS = {
+    "storage":     (5, 60, [os.path.join(BIN, "cctv-storage")]),
+    "upload":      (120, 60, [sys.executable, os.path.join(BIN, "cctv-upload")]),
+    "drive-clean": (180, 900, [sys.executable, os.path.join(BIN, "cctv-drive-clean")]),
+    "watchdog":    (180, 120, [sys.executable, os.path.join(BIN, "cctv-watchdog")]),
+}
+# file the dashboard touches -> what to do
+REQUESTS = {
+    "apply-request": "apply",
+    "update-request": "update",
+    "eject-request": "eject",
+    "attach-request": "eject",
+}
+
+_print_lock = threading.Lock()
+
+
+def log(name, line):
+    with _print_lock:
+        sys.stdout.write(f"[{name}] {line.rstrip()}\n")
+        sys.stdout.flush()
+
+
+def pump(name, stream):
+    for line in iter(stream.readline, ""):
+        log(name, line)
+    stream.close()
+
+
+def spawn(name, cmd):
+    try:
+        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                             errors="replace", start_new_session=True)
+    except OSError as e:
+        log(name, f"cannot start: {e}")
+        return None
+    threading.Thread(target=pump, args=(name, p.stdout), daemon=True).start()
+    return p
+
+
+def write_json(name, data):
+    path = os.path.join(RUN, name)
+    with open(path + ".tmp", "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False)
+    os.replace(path + ".tmp", path)
+
+
+# ---------------------------------------------------------------- first start
+def first_start():
+    for d in (ETC, GEN, os.path.join(ETC, "auth"), os.path.join(ETC, "state"), RUN, CTL):
+        os.makedirs(d, exist_ok=True)
+    conf = os.path.join(ETC, "cctv.conf")
+    if not os.path.exists(conf):
+        text = open(os.path.join(ROOT, "cctv.conf.example"), encoding="utf-8").read()
+        # in Docker the recordings folder is a mounted volume; there is no SSD to detect
+        text = text.replace("ssd_auto = yes", "ssd_auto = no")
+        with open(conf, "w", encoding="utf-8") as f:
+            f.write(text)
+        log("setup", f"created {conf}")
+    cams = os.path.join(ETC, "cameras.conf")
+    if not os.path.exists(cams):
+        with open(cams, "w", encoding="utf-8") as f:
+            f.write("# Cameras. Add them from the dashboard: Settings -> Cameras.\n")
+        for v in (3, 4, 5):                  # nothing to migrate on a fresh install
+            open(os.path.join(ETC, f".v{v}-migrated"), "w").close()
+    # optional: create the admin from environment variables (otherwise the dashboard asks)
+    user, pw = os.environ.get("CCTV_ADMIN_USER", "admin"), os.environ.get("CCTV_ADMIN_PASSWORD", "")
+    if pw:
+        import cctvusers
+        data = cctvusers.load()
+        if not any(u.get("role") == "admin" for u in data["users"].values()):
+            cctvusers.set_user(data, user, pw, "admin", "*", True, True)
+            cctvusers.save(data)
+            log("setup", f"created admin account '{user}'")
+
+
+# ---------------------------------------------------------------- supervisor
+class Supervisor:
+    def __init__(self):
+        self.want = {n: False for n in SERVICES}      # should it run?
+        self.procs = {}                              # name -> Popen
+        self.backoff = {}                            # name -> earliest restart time
+        self.jobs = {}                               # name -> Popen (periodic / one-off)
+        self.next_run = {n: time.time() + j[0] for n, j in JOBS.items()}
+        self.req_seen = {}
+        self.stopping = False
+        self.last_states = None
+
+    # services
+    def start(self, name):
+        self.want[name] = True
+        p = self.procs.get(name)
+        if p and p.poll() is None:
+            return
+        if name == "go2rtc" and not os.path.exists(os.path.join(GEN, "go2rtc.yaml")):
+            return
+        self.procs[name] = spawn(name, SERVICES[name]())
+
+    def stop(self, name):
+        self.want[name] = False
+        p = self.procs.pop(name, None)
+        if p and p.poll() is None:
+            try:
+                os.killpg(p.pid, signal.SIGTERM)
+                p.wait(timeout=15)
+            except (ProcessLookupError, subprocess.TimeoutExpired):
+                try:
+                    os.killpg(p.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+
+    def restart(self, name):
+        self.stop(name)
+        self.start(name)
+
+    def check_services(self):
+        now = time.time()
+        for name, want in self.want.items():
+            p = self.procs.get(name)
+            if not want or (p and p.poll() is None):
+                continue
+            if p is not None:
+                log(name, f"exited with code {p.returncode}, restarting in 5 s")
+                self.procs[name] = None
+                self.backoff[name] = now + 5
+            if now >= self.backoff.get(name, 0):
+                self.start(name)
+        states = {n: ("active" if (self.procs.get(n) and self.procs[n].poll() is None)
+                      else "inactive" if not self.want[n] else "failed") for n in SERVICES}
+        if states != self.last_states:
+            self.last_states = states
+            write_json("services.json", states)
+
+    # jobs
+    def run_job(self, name, cmd):
+        p = self.jobs.get(name)
+        if p and p.poll() is None:
+            return False
+        self.jobs[name] = spawn(name, cmd)
+        return True
+
+    def check_jobs(self):
+        now = time.time()
+        for name, (_, every, cmd) in JOBS.items():
+            p = self.jobs.get(name)
+            if p and p.poll() is None:
+                continue
+            if now >= self.next_run[name] and self.run_job(name, cmd):
+                self.next_run[name] = now + every
+
+    # control files and dashboard requests
+    def check_ctl(self):
+        try:
+            names = os.listdir(CTL)
+        except OSError:
+            return
+        for fn in sorted(names, key=lambda n: os.path.getmtime(os.path.join(CTL, n)) if os.path.exists(os.path.join(CTL, n)) else 0):
+            if fn.endswith(".tmp"):
+                continue
+            os.remove(os.path.join(CTL, fn))
+            name, _, action = fn.rpartition(".")
+            if name in SERVICES and action in ("start", "stop", "restart"):
+                log("supervisor", f"{action} {name}")
+                getattr(self, action)(name)
+
+    def check_requests(self):
+        for fn, what in REQUESTS.items():
+            try:
+                m = os.path.getmtime(os.path.join(RUN, fn))
+            except OSError:
+                continue
+            if self.req_seen.get(fn) == m:
+                continue
+            first = fn not in self.req_seen
+            self.req_seen[fn] = m
+            if first and m < self.started:
+                continue                     # left over from before this start
+            if what == "apply":
+                self.run_job("apply", [sys.executable, os.path.join(BIN, "cctv-apply"), "--auto"])
+            elif what == "update":
+                write_json("update.json", {
+                    "state": "error", "time": int(time.time()), "version": version(),
+                    "message": "Running in Docker: update on the host with "
+                               "'git pull && docker compose up -d --build'"})
+            elif what == "eject":
+                write_json("eject.json", {
+                    "state": "error", "time": int(time.time()),
+                    "message": "Not available in Docker: recordings go to the folder set in docker-compose.yml"})
+
+    # main loop
+    def run(self):
+        self.started = time.time()
+        signal.signal(signal.SIGTERM, self.on_signal)
+        signal.signal(signal.SIGINT, self.on_signal)
+        first_start()
+        write_json("update.json", {"state": "ok", "time": int(time.time()), "version": version(),
+                                   "message": "Docker: update with 'git pull && docker compose up -d --build'"})
+        subprocess.call([os.path.join(BIN, "cctv-storage")])         # makes the recordings link
+        rc = subprocess.call([sys.executable, os.path.join(BIN, "cctv-apply")])  # configs + start requests
+        if rc != 0:
+            log("supervisor", "config has errors: fix them in the dashboard (Settings -> Cameras)")
+        self.check_ctl()
+        self.start("web")                                            # always reachable
+        while not self.stopping:
+            self.check_ctl()
+            self.check_requests()
+            self.check_services()
+            self.check_jobs()
+            time.sleep(0.5)
+        for name in list(self.procs):
+            self.stop(name)
+        for p in self.jobs.values():
+            if p and p.poll() is None:
+                p.terminate()
+        return 0
+
+    def on_signal(self, *_):
+        self.stopping = True
+
+
+def version():
+    try:
+        return "docker · " + open(os.path.join(ROOT, "VERSION")).read().strip()
+    except OSError:
+        return "docker"
+
+
+if __name__ == "__main__":
+    sys.exit(Supervisor().run())

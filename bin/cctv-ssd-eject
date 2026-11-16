@@ -17,16 +17,16 @@ status() {  # state, "english || bangla"
 if [ "${1:-}" = "--attach" ]; then
   rm -f "$RUN/ejected"
   /opt/cctv/bin/cctv-storage
-  if mountpoint -q "$MNT"; then status ok "SSD is in use again || SSD আবার ব্যবহার হচ্ছে"
-  else status error "SSD not found, is it plugged in? || SSD পাওয়া যায়নি, লাগানো আছে তো?"; exit 1; fi
+  if mountpoint -q "$MNT"; then status ok "SSD is in use again"
+  else status error "SSD not found, is it plugged in?"; exit 1; fi
   exit 0
 fi
 
 if ! mountpoint -q "$MNT"; then
-  status ok "No SSD is mounted, safe to unplug || কোনো SSD mount করা নেই, খুলতে পারেন"
+  status ok "No SSD is mounted, safe to unplug"
   exit 0
 fi
-status working "Ejecting… || Eject হচ্ছে…"
+status working "Ejecting…"
 touch "$RUN/ejected"
 /opt/cctv/bin/cctv-storage >/dev/null       # recording target -> SD card
 # close files that are open on the SSD
@@ -36,11 +36,11 @@ sync
 for i in 1 2 3 4 5; do
   if umount "$MNT" 2>/dev/null; then
     sync
-    status ok "SSD ejected. You can unplug it now. || SSD eject হয়েছে, এখন খুলে নিতে পারেন।"
+    status ok "SSD ejected. You can unplug it now."
     exit 0
   fi
   sleep 2
 done
-status error "SSD is busy, could not eject. Try again in a minute. || SSD ব্যস্ত, eject হয়নি। এক মিনিট পর আবার চেষ্টা করুন।"
+status error "SSD is busy, could not eject. Try again in a minute."
 fuser -vm "$MNT" 2>&1 | head
 exit 1

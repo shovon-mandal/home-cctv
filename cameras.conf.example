@@ -1,29 +1,26 @@
-# Cameras. Dashboard-এর ⚙️ Settings → Cameras থেকে বদলানো যায়।
-# হাতে বদলালে পরে চালান: sudo cctv-apply
+# Cameras. Easiest: add them in the dashboard (Settings -> Cameras).
+# After editing this file by hand run: sudo cctv-apply   (Docker: restart the container)
+#
+# Each camera is a section [cam1] ... [cam99]:
+#   type        brand preset (onvif, hikvision, ezviz, dahua, imou, reolink, tapo, vigi, uniview,
+#               axis, foscam, eufy, meari, v380, yoosee, xmeye, vstarcam, wansview, url, custom)
+#   host/port   camera IP and RTSP port
+#   user/password
+#   main_path   full-quality stream path; sub_path = low-quality stream (empty = main)
+#   main / sub  complete stream URLs instead of host + path (type = url)
+#   mode        smart (24/7 low quality + full quality around motion) | continuous | motion | off
+#   threshold   motion sensitivity: changed pixels needed (lower = more sensitive)
+# Stream paths for many brands: docs/CAMERAS.md
 
 [cam1]
-name = Imou Ranger 2 Pro
-type = imou
-host = 192.168.0.100
+name = Front door
+type = hikvision
+host = 192.168.1.100
 port = 554
 user = admin
 password =
-main_path = /cam/realmonitor?channel=1&subtype=0
-sub_path = /cam/realmonitor?channel=1&subtype=1
-mode = smart
-record_stream = main
-threshold = 250
-enabled = no
-
-[cam2]
-name = Meari S1 Plus
-type = meari
-host = 192.168.0.101
-port = 554
-user = admin
-password =
-main_path =
-sub_path =
+main_path = /Streaming/Channels/101
+sub_path = /Streaming/Channels/102
 mode = smart
 record_stream = main
 threshold = 250

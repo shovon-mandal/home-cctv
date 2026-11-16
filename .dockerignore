@@ -1,0 +1,9 @@
+.git
+.github
+android
+data
+recordings
+**/__pycache__
+*.pyc
+*.apk
+.env

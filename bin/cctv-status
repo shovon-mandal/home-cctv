@@ -1,10 +1,18 @@
 #!/bin/bash
-# Quick health check.
+# Quick health check.  Linux: sudo cctv-status    Docker: docker compose exec cctv cctv-status
+DOCKER=0; [ "${CCTV_SUPERVISOR:-0}" = 1 ] && DOCKER=1
+if [ "$DOCKER" = 0 ] && [ "$(id -u)" != 0 ] && [ ! -r /etc/cctv/cameras.conf ]; then
+  echo "(tip: run 'sudo cctv-status' to also check every camera)"
+fi
 echo "== Services =="
-for s in cctv-go2rtc cctv-motion cctv-web cctv-storage.timer cctv-upload.timer cctv-drive-clean.timer cctv-apply.path cctv-update.timer cctv-watchdog.timer; do
-  printf '  %-24s %s\n' "$s" "$(systemctl is-active "$s")"
-done
-printf '  %-24s %s\n' cctv-recorder "$(systemctl is-active cctv-recorder)"
+if [ "$DOCKER" = 1 ]; then
+  python3 -c 'import json; [print(f"  {k:<24} {v}") for k, v in json.load(open("/run/cctv/services.json")).items()]' 2>/dev/null \
+    || echo "  (supervisor not running yet)"
+else
+  for s in cctv-go2rtc cctv-motion cctv-web cctv-recorder cctv-storage.timer cctv-upload.timer cctv-drive-clean.timer cctv-watchdog.timer cctv-apply.path cctv-update.timer; do
+    printf '  %-24s %s\n' "$s" "$(systemctl is-active "$s")"
+  done
+fi
 echo "== Network =="
 dev=$(ip route show default 2>/dev/null | awk '{print $5; exit}')
 echo "  internet via: ${dev:-NONE}   $(ip route show default 2>/dev/null | awk '{print "gateway " $3; exit}')"
@@ -60,25 +68,33 @@ echo "== Storage =="
 cat /run/cctv/storage.json 2>/dev/null | python3 -c '
 import json,sys
 d=json.load(sys.stdin); gb=lambda b: f"{b/1024**3:.1f} GB"
-print("  mode:", "SSD" if d["mode"]=="ssd" else "SD card buffer")
+print("  mode:", "SSD" if d["mode"]=="ssd" else "local folder (no SSD)")
 print("  free:", gb(d["avail"]), "of", gb(d["total"]))
-print("  SD buffer:", gb(d["sd_buffer_bytes"]), "/", gb(d["sd_buffer_cap"]))' || echo "  (no status yet)"
-echo "  USB disks seen:"
-lsblk -o NAME,TRAN,FSTYPE,SIZE,MOUNTPOINT -e 7 | awk 'NR==1 || /usb/ || /^[^a-z]*sd/' | sed 's/^/    /'
-echo "  last storage messages:"
-journalctl -u cctv-storage -n 6 --no-pager -o cat 2>/dev/null | grep -v "^$" | sed 's/^/    /' | tail -6
+print("  local folder:", gb(d["sd_buffer_bytes"]), "/", gb(d["sd_buffer_cap"]))' || echo "  (no status yet)"
+if [ "$DOCKER" = 0 ]; then
+  echo "  USB disks seen:"
+  lsblk -o NAME,TRAN,FSTYPE,SIZE,MOUNTPOINT -e 7 | awk 'NR==1 || /usb/ || /^[^a-z]*sd/' | sed 's/^/    /'
+  echo "  last storage messages:"
+  journalctl -u cctv-storage -n 6 --no-pager -o cat 2>/dev/null | grep -v "^$" | sed 's/^/    /' | tail -6
+fi
 echo "== Version =="
 git -C /opt/cctv-src log -1 --format='  %h  %cd  %s' --date=format:'%Y-%m-%d %H:%M' 2>/dev/null | cut -c1-100
-cat /run/cctv/update.json 2>/dev/null | sed 's/^/  /'
+{ cat /run/cctv/update.json 2>/dev/null; echo; } | sed 's/^/  /'
 echo "== Drive =="
 cat /run/cctv/upload.json 2>/dev/null || echo "  (no upload yet)"
 echo
-echo "  last upload run:"
-journalctl -u cctv-upload -n 6 --no-pager -o cat 2>/dev/null | sed 's/^/    /'
+if [ "$DOCKER" = 0 ]; then
+  echo "  last upload run:"
+  journalctl -u cctv-upload -n 6 --no-pager -o cat 2>/dev/null | sed 's/^/    /'
+fi
 echo "  files: $(stat -c '%n %U:%G %a' /etc/cctv/cctv.conf /etc/cctv/cameras.conf /etc/cctv/rclone.conf 2>/dev/null | tr '\n' ';')"
 echo "== Load =="
 uptime
 t=$(cat /sys/class/thermal/thermal_zone*/temp 2>/dev/null | sort -n | tail -1); [ -n "$t" ] && echo "  CPU temperature: $((t/1000))°C"
 free -h | head -2
 echo
-echo "Logs: journalctl -u cctv-recorder -n 30   |   journalctl -u cctv-motion -n 30   |   journalctl -u cctv-go2rtc -n 30"
+if [ "$DOCKER" = 1 ]; then
+  echo "Logs (on the host): docker compose logs --tail 100 cctv"
+else
+  echo "Logs: journalctl -u cctv-recorder -n 30   |   journalctl -u cctv-motion -n 30   |   journalctl -u cctv-go2rtc -n 30"
+fi

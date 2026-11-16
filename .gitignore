@@ -16,3 +16,9 @@ android/app/build/
 android/local.properties
 *.apk
 .DS_Store
+
+# local Docker data
+/data/
+/recordings/
+.env
+VERSION

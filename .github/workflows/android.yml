@@ -36,8 +36,8 @@ jobs:
           tag_name: app-latest
           name: "Android app (latest)"
           body: |
-            Phone-এ **HomeCCTV.apk** download করে install করুন।
-            (প্রথমবার "Install unknown apps" অনুমতি দিতে হবে।)
+            Download **HomeCCTV.apk** on your Android phone and install it.
+            (The first time, allow "Install unknown apps" for your browser.)
             Build: ${{ github.run_number }} · ${{ github.sha }}
           files: HomeCCTV.apk
           make_latest: true

@@ -14,7 +14,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 
-DEFAULT_PORTS = [80, 8000, 8080, 8899, 2020, 5000, 6688, 10080]
+DEFAULT_PORTS = [80, 8000, 8080, 8899, 2020, 5000, 6688, 10080, 8081, 8999, 888, 85]
 
 NS = {
     "s": "http://www.w3.org/2003/05/soap-envelope",
@@ -84,14 +84,14 @@ def _media_url(host, port, user, password):
 
 def find_streams(host, user, password, ports=None):
     ports = [int(p) for p in (ports or DEFAULT_PORTS)]
-    last = "Camera not found (is ONVIF on?) || camera পাওয়া যায়নি (ONVIF চালু আছে তো?)"
+    last = "Camera not found (is ONVIF on?)"
     for port in ports:
         try:
             media = _media_url(host, port, user, password)
             root = _call(media, '<GetProfiles xmlns="http://www.onvif.org/ver10/media/wsdl"/>', user, password)
         except OnvifError as e:
             if str(e) == "auth":
-                last = "ONVIF found but username/password is wrong || ONVIF পাওয়া গেছে কিন্তু username/password ভুল"
+                last = "ONVIF found but username/password is wrong"
                 break
             last = f"port {port}: {e}"
             continue
@@ -122,7 +122,7 @@ def find_streams(host, user, password, ports=None):
         if streams:
             streams.sort(key=lambda s: s["width"] * s["height"], reverse=True)
             return {"onvif_port": port, "streams": streams}
-        last = f"ONVIF on port {port} returned no streams || port {port}-এ ONVIF আছে, কিন্তু কোনো stream দেয়নি"
+        last = f"ONVIF on port {port} returned no streams"
     raise OnvifError(last)
 
 
@@ -136,7 +136,7 @@ def _ptz_target(host, user, password, port=None):
     if key in _ptz_cache:
         return _ptz_cache[key]
     ports = [int(port)] if port else DEFAULT_PORTS
-    last = "PTZ not found || PTZ পাওয়া যায়নি"
+    last = "PTZ not found"
     for p in ports:
         dev = f"http://{host}:{p}/onvif/device_service"
         try:
@@ -144,14 +144,14 @@ def _ptz_target(host, user, password, port=None):
                               "<Category>All</Category></GetCapabilities>", user, password, timeout=3)
         except OnvifError as e:
             if str(e) == "auth":
-                raise OnvifError("ONVIF username/password wrong || ONVIF username/password ভুল") from None
+                raise OnvifError("ONVIF username/password wrong") from None
             continue
         except (OSError, ET.ParseError):
             continue
         ptz = root.find(".//tt:PTZ/tt:XAddr", NS)
         media = root.find(".//tt:Media/tt:XAddr", NS)
         if ptz is None or not ptz.text:
-            last = "This camera does not support PTZ over ONVIF || এই camera ONVIF দিয়ে ঘোরানো যায় না"
+            last = "This camera does not support PTZ over ONVIF"
             break
         fix = lambda u: f"http://{host}:{p}{urlparse(u.strip()).path}"
         media_url = fix(media.text) if media is not None and media.text else dev
@@ -209,7 +209,7 @@ def _services(host, user, password, port=None):
                               "<Category>All</Category></GetCapabilities>", user, password, timeout=3)
         except OnvifError as e:
             if str(e) == "auth":
-                raise OnvifError("ONVIF username/password wrong || ONVIF username/password ভুল") from None
+                raise OnvifError("ONVIF username/password wrong") from None
             continue
         except (OSError, ET.ParseError):
             continue
@@ -219,7 +219,7 @@ def _services(host, user, password, port=None):
         _svc_cache[key] = {"media": fix(m.text) if m is not None and m.text else dev,
                            "imaging": fix(i.text) if i is not None and i.text else None}
         return _svc_cache[key]
-    raise OnvifError("ONVIF not reachable (is ONVIF on in the camera app?) || ONVIF পাওয়া যায়নি (camera app-এ ONVIF চালু আছে?)")
+    raise OnvifError("ONVIF not reachable (is ONVIF on in the camera app?)")
 
 
 def _main_profile(media, user, password):
@@ -232,7 +232,7 @@ def _main_profile(media, user, password):
         if w * h > area:
             best, area = pr, w * h
     if best is None:
-        raise OnvifError("No video profile || কোনো video profile নেই")
+        raise OnvifError("No video profile")
     src = best.find(".//tt:VideoSourceConfiguration/tt:SourceToken", NS)
     enc = best.find(".//tt:VideoEncoderConfiguration", NS)
     return (src.text.strip() if src is not None and src.text else None), enc
@@ -302,7 +302,7 @@ def set_picture(host, user, password, port=None, ir=None, wdr=None, brightness=N
     src, enc = _main_profile(svc["media"], user, password)
     if any(v is not None for v in (ir, wdr, brightness, saturation)):
         if not (svc["imaging"] and src):
-            raise OnvifError("This camera has no ONVIF picture settings || এই camera-র ONVIF picture setting নেই")
+            raise OnvifError("This camera has no ONVIF picture settings")
         parts = []                                  # schema order matters
         if brightness is not None:
             parts.append(f'<Brightness xmlns="{TT}">{float(brightness):g}</Brightness>')
@@ -317,13 +317,13 @@ def set_picture(host, user, password, port=None, ir=None, wdr=None, brightness=N
               user, password, timeout=5)
     if width or bitrate:
         if enc is None:
-            raise OnvifError("No encoder settings || encoder setting নেই")
+            raise OnvifError("No encoder settings")
         tok = enc.get("token")
         g = _call(svc["media"], '<GetVideoEncoderConfiguration xmlns="http://www.onvif.org/ver10/media/wsdl">'
                   f"<ConfigurationToken>{_esc(tok)}</ConfigurationToken></GetVideoEncoderConfiguration>", user, password)
         cfg = g.find(".//trt:Configuration", NS)
         if cfg is None or (cfg.findtext("tt:Encoding", "", NS) or "").upper() != "H264":
-            raise OnvifError("Resolution of this camera can only be changed in its own app || এই camera-র resolution শুধু তার নিজের app-এ বদলানো যায়")
+            raise OnvifError("Resolution of this camera can only be changed in its own app")
         if width and height:
             cfg.find("tt:Resolution/tt:Width", NS).text = str(int(width))
             cfg.find("tt:Resolution/tt:Height", NS).text = str(int(height))

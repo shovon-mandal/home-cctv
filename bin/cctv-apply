@@ -8,13 +8,13 @@ Usage: sudo cctv-apply [--no-restart] [--auto]
 import json
 import os
 import time
-import subprocess
 import sys
 
 sys.path.insert(0, "/opt/cctv/lib")
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
 import cctvconf  # noqa: E402
 import cctvrec  # noqa: E402
+import cctvsvc  # noqa: E402
 
 OUT = os.environ.get("CCTV_GEN_DIR", "/etc/cctv/generated")
 RUN = os.environ.get("CCTV_RUN", "/run/cctv")
@@ -331,17 +331,13 @@ def main():
         print(f"  [{state}] {c['id']}: {c['name']}  (recording: {c['mode'] if c['enabled'] else '-'})")
 
     if restart:
-        units = ["cctv-go2rtc"] if auto else ["cctv-go2rtc", "cctv-web"]
-        subprocess.call(["systemctl", "restart", *units])
-        if has_rec:
-            subprocess.call(["systemctl", "restart", "cctv-motion"])
-        else:
-            subprocess.call(["systemctl", "stop", "cctv-motion"])
+        cctvsvc.control("restart", *(["cctv-go2rtc"] if auto else ["cctv-go2rtc", "cctv-web"]))
+        cctvsvc.control("restart" if has_rec else "stop", "cctv-motion")
         # it reloads recorder.json by itself; a renamed folder needs fresh ffmpeg paths
-        subprocess.call(["systemctl", "restart" if renamed else "start", "cctv-recorder"])
+        cctvsvc.control("restart" if renamed else "start", "cctv-recorder")
         print("Services restarted.")
     n = len([c for c in cams if c['enabled']])
-    report(True, f"{n} camera(s) active || {n}টা camera চালু")
+    report(True, f"{n} camera(s) active")
     return 0
 
 

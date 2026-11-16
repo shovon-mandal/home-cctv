@@ -24,9 +24,9 @@ public class SettingsActivity extends Activity {
     private TextView status;
     private boolean bn;
 
-    /** English / Bangla text, picked by the language switch. */
-    private String tx(String en, String bnText) {
-        return bn ? bnText : en;
+    /** English text, or its translation when the Bangla switch is on (see Bn.java). */
+    private String tx(String en) {
+        return bn ? Bn.t(en) : en;
     }
     private final Handler ui = new Handler(Looper.getMainLooper());
 
@@ -48,10 +48,10 @@ public class SettingsActivity extends Activity {
 
         LinearLayout top = new LinearLayout(this);
         top.setOrientation(LinearLayout.HORIZONTAL);
-        TextView title = text(tx("📹 Khulna CCTV", "📹 Khulna CCTV"), 24, "#e6edf3", true);
+        TextView title = text(tx("📹 Home CCTV"), 24, "#e6edf3", true);
         top.addView(title, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
         Button lang = new Button(this);
-        lang.setText(bn ? "EN" : "বাং");
+        lang.setText(bn ? "EN" : Bn.LABEL);
         lang.setAllCaps(false);
         lang.setTextColor(Color.parseColor("#e6edf3"));
         GradientDrawable lbg = new GradientDrawable();
@@ -66,19 +66,17 @@ public class SettingsActivity extends Activity {
         });
         top.addView(lang, new LinearLayout.LayoutParams(dp(64), dp(42)));
         col.addView(top);
-        col.addView(text(tx("Enter the Tinker Board address. Just the IP is enough (e.g. 192.168.0.10); port 8085 is added for you.",
-                "Tinker Board-এর ঠিকানা দিন। শুধু IP দিলেই হবে (যেমন 192.168.0.10), port 8085 নিজে বসে যাবে।"), 14, "#8b949e", false));
+        col.addView(text(tx("Enter the CCTV server address. Just the IP is enough (e.g. 192.168.0.10); port 8085 is added for you."), 14, "#8b949e", false));
 
-        col.addView(label(tx("🏠 Home Wi-Fi address", "🏠 বাসার Wi-Fi ঠিকানা")));
+        col.addView(label(tx("🏠 Home Wi-Fi address")));
         home = input("192.168.0.10", keepHome != null ? keepHome : p.getString(MainActivity.KEY_HOME, ""));
         col.addView(home);
 
-        col.addView(label(tx("🌍 From anywhere (https://….ts.net:8443 link)", "🌍 বাইরে থেকে (https://….ts.net:8443 link)")));
-        remote = input("https://tinkerboard.xxxx.ts.net:8443", keepRemote != null ? keepRemote : p.getString(MainActivity.KEY_REMOTE, ""));
+        col.addView(label(tx("🌍 From anywhere (https://….ts.net:8443 link)")));
+        remote = input("https://cctv.xxxx.ts.net:8443", keepRemote != null ? keepRemote : p.getString(MainActivity.KEY_REMOTE, ""));
         col.addView(remote);
 
-        TextView hint = text(tx("At home the app uses the first address (faster); outside it switches to the second one by itself. The link is shown in the dashboard under ⚙️ Settings → System. (A Tailscale IP also works.)",
-                "বাসায় থাকলে app প্রথম ঠিকানা দিয়ে খুলবে (দ্রুত), বাইরে থাকলে নিজে থেকে দ্বিতীয় ঠিকানায় যাবে। Link-টা dashboard-এর ⚙️ Settings → System-এ পাবেন। (Tailscale IP-ও দেওয়া যায়।)"), 13, "#8b949e", false);
+        TextView hint = text(tx("At home the app uses the first address (faster); outside it switches to the second one by itself. The link is shown in the dashboard under ⚙️ Settings → System. (A Tailscale IP also works.)"), 13, "#8b949e", false);
         hint.setPadding(0, dp(12), 0, 0);
         col.addView(hint);
 
@@ -111,7 +109,7 @@ public class SettingsActivity extends Activity {
         final String h = normalize(home.getText().toString());
         final String r = normalize(remote.getText().toString());
         if (h.isEmpty() && r.isEmpty()) {
-            status.setText(tx("Enter at least one address.", "অন্তত একটা ঠিকানা দিন।"));
+            status.setText(tx("Enter at least one address."));
             return;
         }
         getSharedPreferences(MainActivity.PREFS, MODE_PRIVATE).edit()
@@ -119,7 +117,7 @@ public class SettingsActivity extends Activity {
                 .putString(MainActivity.KEY_REMOTE, r)
                 .putBoolean(MainActivity.KEY_DIRTY, true)
                 .apply();
-        status.setText(tx("Checking…", "পরীক্ষা করছি…"));
+        status.setText(tx("Checking…"));
         new Thread(() -> {
             boolean hOk = !h.isEmpty() && MainActivity.reachable(h, 2000);
             boolean rOk = !r.isEmpty() && MainActivity.reachable(r, 4000);
@@ -127,8 +125,7 @@ public class SettingsActivity extends Activity {
                 if (hOk || rOk) {
                     finish();
                 } else {
-                    status.setText(tx("Saved, but the Tinker Board does not answer on either address right now. Is the IP right? Press back to open anyway.",
-                            "Save হয়েছে, কিন্তু এখন কোনো ঠিকানাতেই Tinker Board সাড়া দিচ্ছে না। IP ঠিক আছে তো? তবুও খুলতে back চাপুন।"));
+                    status.setText(tx("Saved, but the CCTV server does not answer on either address right now. Is the IP right? Press back to open anyway."));
                 }
             });
         }).start();

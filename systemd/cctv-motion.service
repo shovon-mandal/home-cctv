@@ -9,7 +9,7 @@ ExecStartPre=/bin/sleep 3
 ExecStart=/usr/bin/motion -n -c /etc/cctv/generated/motion.conf
 Restart=always
 RestartSec=5
-# Keep the Discord bot and other apps responsive
+# Keep other programs on this computer responsive
 Nice=10
 CPUQuota=250%
 MemoryMax=800M

@@ -16,7 +16,7 @@ import time
 
 USERS_PATH = os.environ.get("CCTV_USERS", "/etc/cctv/auth/users.json")
 SECRET_PATH = os.environ.get("CCTV_SECRET", "/etc/cctv/auth/secret")
-ITER = 60000          # pbkdf2 rounds: ~0.3 s on a Tinker Board
+ITER = 60000          # pbkdf2 rounds: ~0.3 s on a small ARM board
 SESSION_DAYS = 30
 NAME_RE = re.compile(r"^[A-Za-z0-9_.\-]{2,32}$")
 
@@ -66,17 +66,17 @@ def save(data):
 
 def set_user(data, name, password=None, role="viewer", cameras="*", recordings=True, ptz=None):
     if not NAME_RE.match(name):
-        raise ValueError("Username: 2-32 characters, only a-z 0-9 _ . - || username: 2-32 অক্ষর, শুধু a-z 0-9 _ . -")
+        raise ValueError("Username: 2-32 characters, only a-z 0-9 _ . -")
     if role not in ("admin", "viewer"):
         raise ValueError("role must be admin or viewer")
     u = data["users"].get(name)
     if u is None:
         if not password:
-            raise ValueError("A new user needs a password || নতুন user-এর password লাগবে")
+            raise ValueError("A new user needs a password")
         u = {"ver": 0}
     if password:
         if len(password) < 8:
-            raise ValueError("Password must be at least 8 characters || password কমপক্ষে ৮ অক্ষর")
+            raise ValueError("Password must be at least 8 characters")
         u["hash"] = hash_password(password)
         u["ver"] = u.get("ver", 0) + 1          # logs out old sessions
     u["role"] = role
@@ -88,16 +88,16 @@ def set_user(data, name, password=None, role="viewer", cameras="*", recordings=T
         u["ptz"] = True
     data["users"][name] = u
     if not any(x["role"] == "admin" for x in data["users"].values()):
-        raise ValueError("There must be at least one admin || কমপক্ষে একজন admin থাকতে হবে")
+        raise ValueError("There must be at least one admin")
     return data
 
 
 def delete_user(data, name):
     if name not in data["users"]:
-        raise ValueError("No such user || user নেই")
+        raise ValueError("No such user")
     rest = {k: v for k, v in data["users"].items() if k != name}
     if not any(x["role"] == "admin" for x in rest.values()):
-        raise ValueError("The last admin cannot be deleted || শেষ admin মোছা যাবে না")
+        raise ValueError("The last admin cannot be deleted")
     data["users"] = rest
     return data
 

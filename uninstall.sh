@@ -2,7 +2,7 @@
 # Remove the CCTV system. Recordings and /etc/cctv are kept unless --purge.
 set -u
 [ "$(id -u)" -eq 0 ] || { echo "Run with sudo"; exit 1; }
-for u in cctv-go2rtc cctv-motion cctv-web cctv-storage.timer cctv-upload.timer cctv-drive-clean.timer cctv-apply.path cctv-update.timer cctv-update.path cctv-ssd-eject.path cctv-ssd-attach.path; do
+for u in cctv-go2rtc cctv-motion cctv-web cctv-storage.timer cctv-upload.timer cctv-drive-clean.timer cctv-watchdog.timer cctv-apply.path cctv-update.timer cctv-update.path cctv-ssd-eject.path cctv-ssd-attach.path; do
   systemctl disable --now "$u" 2>/dev/null
 done
 systemctl disable --now cctv-recorder 2>/dev/null

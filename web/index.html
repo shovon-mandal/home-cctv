@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
-<title>Khulna CCTV</title>
+<title>Home CCTV</title>
 <style>
   :root {
     --bg: #0d1117; --panel: #161b22; --line: #2a313c; --text: #e6edf3; --muted: #8b949e;
@@ -220,7 +220,9 @@
     <input type="text" id="lu" autocomplete="username" autocapitalize="none" required>
     <label class="f" for="lp" data-t="password"></label>
     <input type="password" id="lp" autocomplete="current-password" required>
-    <button class="btn full" type="submit" data-t="login"></button>
+    <label class="f" for="lp2" id="lp2Lbl" style="display:none" data-t="passAgain"></label>
+    <input type="password" id="lp2" autocomplete="new-password" style="display:none">
+    <button class="btn full" type="submit" id="loginBtn"></button>
     <div class="err" id="loginErr"></div>
   </form>
 </div>
@@ -280,23 +282,40 @@
       <p data-t="camFormSub"></p>
       <label class="f" data-t="name"></label>
       <input type="text" id="cName" required>
+      <button type="button" class="linkbtn" id="cScan" data-t="scanNet"></button>
+      <div id="scanBox" style="display:none">
+        <label class="f" data-t="scanSubnet"></label>
+        <div style="display:flex;gap:8px"><input type="text" id="scanNet" inputmode="decimal" placeholder="192.168.1" style="flex:1">
+          <button type="button" class="btn ghost" id="scanGo" data-t="scanGo"></button></div>
+        <div class="pick" id="scanRes"></div>
+      </div>
       <label class="f" data-t="brand"></label>
       <select id="cType"></select>
       <div class="hint" id="cHint"></div>
-      <div class="grid2">
-        <div><label class="f" data-t="ip"></label><input type="text" id="cHost" inputmode="decimal" placeholder="192.168.0.100" required></div>
-        <div><label class="f" data-t="rtspPort"></label><input type="number" id="cPort" value="554"></div>
+      <a class="linkbtn" id="cHelp" href="https://github.com/shovon-mandal/home-cctv/blob/main/docs/CAMERAS.md" target="_blank" rel="noopener" data-t="camHelp"></a>
+      <input type="hidden" id="cOnvifPort">
+      <div id="cHostBox">
+        <div class="grid2">
+          <div><label class="f" data-t="ip"></label><input type="text" id="cHost" inputmode="decimal" placeholder="192.168.1.100" required></div>
+          <div><label class="f" data-t="rtspPort"></label><input type="number" id="cPort" value="554"></div>
+        </div>
+        <div class="grid2">
+          <div><label class="f" data-t="username"></label><input type="text" id="cUser" autocapitalize="none"></div>
+          <div><label class="f" data-t="password"></label><input type="password" id="cPass" autocomplete="new-password"></div>
+        </div>
+        <button type="button" class="linkbtn" id="cOnvif" data-t="findOnvif"></button>
+        <div class="pick" id="cPick"></div>
+        <label class="f" data-t="mainPath"></label>
+        <input type="text" id="cMain" placeholder="/...">
+        <label class="f" data-t="subPath"></label>
+        <input type="text" id="cSub" placeholder="/...">
       </div>
-      <div class="grid2">
-        <div><label class="f" data-t="username"></label><input type="text" id="cUser" autocapitalize="none"></div>
-        <div><label class="f" data-t="password"></label><input type="password" id="cPass" autocomplete="new-password"></div>
+      <div id="cUrlBox" style="display:none">
+        <label class="f" data-t="mainUrl"></label>
+        <input type="text" id="cMainUrl" placeholder="rtsp://user:password@192.168.1.20:554/..." autocapitalize="none">
+        <label class="f" data-t="subUrl"></label>
+        <input type="text" id="cSubUrl" placeholder="rtsp://..." autocapitalize="none">
       </div>
-      <button type="button" class="linkbtn" id="cOnvif" data-t="findOnvif"></button>
-      <div class="pick" id="cPick"></div>
-      <label class="f" data-t="mainPath"></label>
-      <input type="text" id="cMain" placeholder="/...">
-      <label class="f" data-t="subPath"></label>
-      <input type="text" id="cSub" placeholder="/...">
       <div class="grid2">
         <div><label class="f" data-t="recording"></label>
           <select id="cMode"><option value="smart" data-t="modeSmart"></option><option value="continuous" data-t="mode247"></option><option value="motion" data-t="modeMotion"></option><option value="off" data-t="modeOff"></option></select></div>
@@ -363,6 +382,9 @@
     </form>
 
     <div class="sect">🔄 <span data-t="system"></span></div>
+    <form class="urow" id="siteForm" style="margin-bottom:8px;gap:8px;flex-wrap:wrap;max-width:540px">
+      <div style="flex:1;min-width:200px"><label class="f" data-t="siteName" style="margin-top:0"></label><input type="text" id="siteName" maxlength="40" style="width:100%"></div>
+      <button class="btn ghost" type="submit" data-t="save"></button><small id="siteMsg" style="width:100%"></small></form>
     <div class="urow"><div><b data-t="version"></b><small id="sysVer">…</small></div>
       <button class="btn ghost" id="sysUpd" data-t="checkUpdate"></button></div>
     <div class="urow" style="margin-top:8px"><small id="sysPub" style="font-size:13.5px;word-break:break-all">…</small></div>
@@ -483,6 +505,7 @@
   </form>
 </dialog>
 
+<script src="lang/bn.js"></script>
 <script>
 "use strict";
 const $ = s => document.querySelector(s);
@@ -494,165 +517,273 @@ const esc = t => String(t ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "
 
 /* =============================== i18n =============================== */
 const I18N = {
-  title: ["Khulna CCTV", "Khulna CCTV"], live: ["Live", "Live"], recordings: ["Recordings", "Recordings"],
-  settings: ["⚙️ Settings", "⚙️ Settings"], username: ["Username", "Username"], password: ["Password", "Password"],
-  login: ["Log in", "Login"], logout: ["↩ Log out", "↩ Logout"], changePass: ["🔑 Change password", "🔑 Password বদলান"],
-  appServer: ["📱 Server address (app)", "📱 Server ঠিকানা (app)"], loginHint: ["Please log in", "Login করুন"],
-  noAccount: ["No account yet.<br>On the Tinker Board run: <code>sudo cctv-user add admin --admin</code>",
-              "এখনো কোনো account নেই।<br>Tinker Board-এ চালান: <code>sudo cctv-user add admin --admin</code>"],
-  curPass: ["Current password", "পুরোনো password"], newPass: ["New password (at least 8 characters)", "নতুন password (কমপক্ষে ৮ অক্ষর)"],
-  shareTitle: ["Share access", "Access পাঠান"],
-  shareSub: ["Pick a user: everything they need is copied with one tap. The password is never copied: tell it separately.",
-             "User বাছুন: যা যা লাগবে এক চাপে copy হবে। Password কখনো copy হয় না, সেটা আলাদা করে জানাবেন।"],
-  copyAll: ["📋 Copy", "📋 Copy করুন"], copied: ["✅ Copied. Paste it into WhatsApp / SMS.", "✅ Copy হয়েছে। WhatsApp / SMS-এ paste করুন।"],
-  copyFail: ["Could not copy: select the text and copy it by hand.", "Copy হয়নি: লেখাটা select করে নিজে copy করুন।"],
-  sharePassNote: ["🔑 Password for <b>{0}</b>: <code>{1}</code><br><small>Not included in the copy; tell it by phone or in a separate message. It is shown only now.</small>",
-                  "🔑 <b>{0}</b>-এর password: <code>{1}</code><br><small>Copy-তে যাবে না, phone-এ বা আলাদা message-এ জানান। এটা শুধু এখনই দেখা যাচ্ছে।</small>"],
-  shareBody: ["📹 Khulna CCTV\nUsername: {0}\nPassword: (I will tell you separately)\n", "📹 Khulna CCTV\nUsername: {0}\nPassword: (আলাদা করে জানাব)\n"],
-  shareHome: ["🏠 At home (Wi-Fi): {0}\n", "🏠 বাসার Wi-Fi থেকে: {0}\n"],
-  shareNet: ["🌍 From anywhere: {0}\n", "🌍 যেকোনো জায়গা থেকে: {0}\n"],
-  shareApp: ["📱 Android app: {0}\n", "📱 Android app: {0}\n"],
-  shareHow: ["In the app, enter the two addresses above, then log in with your username and password.", "App-এ উপরের দুটো ঠিকানা বসিয়ে username আর password দিয়ে login করুন।"],
-  shareCams: ["Cameras: {0}\n", "Camera: {0}\n"],
-  save: ["Save", "Save"], cancel: ["Cancel", "বাতিল"], delete: ["Delete", "Delete"], new: ["New", "নতুন"], test: ["Test", "Test"],
-  passChanged: ["Password changed", "Password বদলানো হয়েছে"],
-  // live
-  noH265: ["{0}: this browser can't play the camera's MAX (H.265) stream, showing SD. MAX works in the Android app / Chrome on phone; recordings are still full quality.", "{0}: এই browser camera-র MAX (H.265) stream চালাতে পারে না, তাই SD দেখানো হচ্ছে। Android app বা phone-এর Chrome-এ MAX চলে; recording full quality-তেই হচ্ছে।"],
-  connecting: ["Connecting…", "connect হচ্ছে…"], camLost: ["Camera not reachable", "Camera পাওয়া যাচ্ছে না"],
-  connLost: ["Connection lost", "connection কেটে গেছে"], streamStopped: ["Stream stopped", "stream থেমে গেছে"],
-  noMSE: ["Live view is not supported in this browser", "এই browser-এ live view চলে না"],
-  noCodec: ["Codec not supported (set H.264 on the camera)", "Codec support নেই (camera-য় H.264 দিন)"],
-  allOff: ["All cameras are hidden.<br>Turn one on above.", "সব camera বন্ধ করা আছে।<br>উপরের button থেকে চালু করুন।"],
-  noCams: ["No cameras yet.", "কোনো camera নেই।"], addCamsHint: ["Add them in ⚙️ Settings → Cameras.", "⚙️ Settings → Cameras থেকে যোগ করুন।"],
-  noCamPerm: ["You have not been given any camera.", "আপনাকে কোনো camera দেখার অনুমতি দেওয়া হয়নি।"],
-  motion: ["● Motion", "● Motion"], soundOn: ["Sound on", "শব্দ চালু"], ptzBtn: ["Pan / tilt", "Camera ঘোরান"],
-  // status
-  free: ["free", "খালি"], sdCard: ["SD card", "SD card"],
-  storage: ["Storage", "Storage"], recTo: ["Recording to: <b>{0}</b>", "Recording হচ্ছে: <b>{0}</b>"],
-  ssdLine: ["SSD: {0} free of {1}", "SSD: {1}-এর মধ্যে {0} খালি"], cctvFolder: ["CCTV folder: {0} (limit {1})", "CCTV folder: {0} (সীমা {1})"],
-  sdLine: ["SD card buffer: {0} of {1} used", "SD card buffer: {1}-এর মধ্যে {0} ব্যবহার হয়েছে"],
-  sdNote: ["Plug in an SSD and recordings move there automatically.", "SSD লাগালে recording নিজে থেকেই সেখানে চলে যাবে।"],
-  ejectedNote: ["The SSD is ejected and safe to unplug. Recording continues on the SD card.", "SSD eject করা আছে, এখন খুলে নিতে পারেন। Recording SD card-এ চলছে।"],
-  ejectSsd: ["Eject SSD", "SSD eject করুন"], useSsdAgain: ["Use SSD again", "আবার SSD ব্যবহার করুন"], close: ["Close", "বন্ধ করুন"],
-  ejectQ: ["Eject the SSD?\nRecording will continue on the SD card until you plug it back in.", "SSD eject করবেন?\nআবার না লাগানো পর্যন্ত recording SD card-এ চলবে।"],
-  ejecting: ["Ejecting… (a few seconds)", "Eject হচ্ছে… (কয়েক সেকেন্ড)"], ssdEjectedPill: ["⏏ SSD ejected · SD card", "⏏ SSD eject করা · SD card"],
-  updateNow: ["🔄 Update", "🔄 Update"], upToDate: ["Already the latest version.", "সর্বশেষ version চলছে।"],
-  updFailed: ["Update failed: ", "Update হয়নি: "], noStorage: ["No storage status", "Storage status নেই"],
-  noServer: ["Can't reach the server", "Server-এর সাথে যোগাযোগ নেই"], minAgo: ["min ago", "মি. আগে"], waiting: ["starting… (first check within 2 min)", "চালু হচ্ছে… (২ মিনিটের মধ্যে প্রথম check)"],
-  // recordings
-  speed: ["Speed", "Speed"], prevMotion: ["⏮ Motion", "⏮ Motion"], nextMotion: ["Motion ⏭", "Motion ⏭"],
-  noMoreMotion: ["No more motion that way", "ওদিকে আর কোনো motion নেই"],
-  prevMin: ["1 min", "১ মিনিট"], nextMin: ["1 min", "১ মিনিট"], download: ["Download", "Download"],
-  lgRec: ["Recorded", "Recording আছে"], lgHq: ["Full quality", "Full quality"], lgMotion: ["Motion", "Motion"], lgNow: ["Playing", "এখন চলছে"],
-  motionEvents: ["Motion events", "Motion event"], noRecs: ["No recordings for this day.", "এই দিনের কোনো recording নেই।"],
-  noEvents: ["No motion this day.", "এই দিনে কোনো motion নেই।"], gap: ["No recording at this time", "এই সময়ের recording নেই"],
-  ongoing: ["now", "চলছে"], secs: ["s", "সে."], mins: ["min", "মি."], live2: ["live", "live"],
-  noRecPerm: ["You are not allowed to open recordings.", "Recordings দেখার অনুমতি নেই।"],
-  // settings: cameras
-  cameras: ["Cameras", "Cameras"], newCam: ["New camera", "নতুন camera"], editCam: ["Edit: {0}", "Edit: {0}"],
-  camFormSub: ["To change the IP or password, edit it here and press Save.", "IP বা password বদলাতে এখানে বদলে Save দিন।"],
-  name: ["Name", "নাম"], brand: ["Camera brand", "Camera brand"], ip: ["IP address", "IP address"], rtspPort: ["RTSP port", "RTSP port"],
-  findOnvif: ["🔍 Find stream paths via ONVIF", "🔍 ONVIF থেকে stream path খুঁজুন"],
-  mainPath: ["Main stream path (full quality)", "Main stream path (full quality)"],
-  subPath: ["Sub stream path (low quality, empty = main)", "Sub stream path (low quality, ফাঁকা = main)"],
-  recording: ["Recording", "Recording"], mode247: ["24/7 full quality (uses more space)", "২৪ ঘণ্টা full quality (জায়গা বেশি লাগে)"],
-  modeSmart: ["Smart: 24/7 low quality + full quality at motion (recommended)", "Smart: ২৪ ঘণ্টা কম quality + motion-এ full quality (recommended)"],
-  modeMotion: ["Only when motion", "শুধু motion হলে"], modeOff: ["Off (live only)", "বন্ধ (শুধু live)"],
-  recQuality: ["Recording quality", "Recording quality"], qMain: ["Full (main)", "Full (main)"], qSub: ["Low (sub, less space)", "Low (sub, কম জায়গা)"],
-  sensitivity: ["Motion sensitivity", "Motion sensitivity"],
-  sensMax: ["Maximum (every tiny movement; more false alarms)", "সর্বোচ্চ (একদম সামান্য নড়াচড়াও; ভুল alarm বেশি)"],
-  sensHigh: ["Very high: people far away (recommended)", "খুব বেশি: দূরের মানুষও (recommended)"],
-  sensVHigh: ["High", "বেশি"], sensVVHigh: ["Very high (small movement too)", "অনেক বেশি (ছোট নড়াচড়াও)"],
-  sensLess: ["Less (only big movement)", "কম (শুধু বড় নড়াচড়া)"], sensMore: ["More (tiny movement)", "বেশি (সামান্য নড়াচড়াও)"],
-  sensHint: ["Too many false clips (leaves, insects, shadows)? Move left. Missing people or lights? Move right. Applies within a few seconds.", "পাতা, পোকা, ছায়ার জন্য বেশি ভুল clip হলে বামে সরান। মানুষ বা light জ্বলা ধরা না পড়লে ডানে সরান। কয়েক সেকেন্ডে চালু হবে।"],
-  sensSaved: ["✅ Saved", "✅ Save হয়েছে"],
-  sensMed: ["Medium", "মাঝারি"], sensLow: ["Low (only big movement)", "কম (শুধু বড় নড়াচড়া)"],
-  options: ["Options", "Options"], enabled: ["Enabled", "চালু"], sound: ["Sound", "শব্দ"], ptzCap: ["Pan/tilt (PTZ)", "ঘোরানো যায় (PTZ)"],
-  testing: ["Talking to the camera… (up to 15 s)", "Camera-র সাথে কথা বলছি… (১৫ সেকেন্ড পর্যন্ত)"],
-  hevcNote: [" (H.265: if live view stays black on a phone, set H.264 on the camera)", " (H.265: phone-এ live না চললে camera-য় H.264 দিন)"],
-  needIp: ["Enter the IP first", "আগে IP দিন"], onvifSearching: ["Searching ONVIF…", "ONVIF খুঁজছি…"],
-  onvifFound: ["Found {0} stream(s) on ONVIF port {1}. Largest = main, smallest = sub:", "ONVIF port {1}-এ {0}টা stream পাওয়া গেছে। বড়টা main, ছোটটা sub:"],
-  useAsSub: ["Tap to use as sub stream", "Sub stream বানাতে চাপুন"],
-  applying: ["⏳ Applying the new settings…", "⏳ নতুন setting চালু হচ্ছে…"], applied: ["✅ Done: ", "✅ হয়ে গেছে: "],
-  applySlow: ["⚠️ Not applied yet. On the Tinker Board run 'sudo cctv-apply'.", "⚠️ এখনো চালু হয়নি। Tinker Board-এ 'sudo cctv-apply' চালান।"],
-  delCamQ: ["Delete this camera? (its recordings stay)", "এই camera মুছে ফেলবেন? (পুরোনো recording থাকবে)"],
-  disabled: ["off", "বন্ধ"], recOk: ["● recording", "● recording"], recErr: ["⚠ not recording", "⚠ record হচ্ছে না"],
-  recStarting: ["◌ starting…", "◌ চালু হচ্ছে…"],
-  noCamsYet: ["No cameras yet. Add one with the form below.", "এখনো কোনো camera নেই। নিচের form দিয়ে যোগ করুন।"],
-  keepPass: ["leave empty to keep the old one", "আগেরটা রাখতে ফাঁকা রাখুন"],
-  modeShort: [{ smart: "smart (24/7 low + motion full)", continuous: "24/7 full", motion: "motion only", off: "live only" }, { smart: "smart (২৪ ঘণ্টা কম + motion-এ full)", continuous: "২৪ ঘণ্টা full", motion: "শুধু motion", off: "শুধু live" }],
-  // drive
-  drv1: ["Press the button below → log in to Google and press <b>Allow</b>", "নিচের button চাপুন → Google-এ login করে <b>Allow</b> দিন"],
-  drv2: ["A <b>\"can't be reached\"</b> page opens next. That is expected", "এরপর একটা <b>\"পাওয়া যাচ্ছে না\"</b> page আসবে। এটাই স্বাভাবিক"],
-  drv3: ["Copy the <b>whole link from the address bar</b> and paste it below", "ওই page-এর <b>address bar-এর পুরো link</b> copy করে নিচে paste করুন"],
-  drvLogin: ["Log in with Google", "Google দিয়ে login"], drvPaste: ["Link after Allow", "Allow-এর পরের link"],
-  drvFinish: ["Finish connecting", "Connect শেষ করুন"], drvConnecting: ["Connecting…", "Connect হচ্ছে…"],
-  drvConnect: ["Connect with Google", "Google দিয়ে connect"], drvOther: ["Connect another account", "অন্য account দিয়ে connect"],
-  drvNot: ["Not connected yet.", "এখনো connect করা হয়নি।"], disconnect: ["Disconnect", "Disconnect"],
-  drvOk: ["✅ Connected · folder: <b>{0}</b> · up to {1} GB", "✅ Connect করা আছে · folder: <b>{0}</b> · সর্বোচ্চ {1} GB"],
-  drvSpace: ["Google account: {0} / {1} GB used, {2} GB free", "Google account: {0} / {1} GB ব্যবহার হয়েছে, {2} GB খালি"],
-  drvOffQ: ["Disconnect Google Drive? (clips already on Drive stay)", "Google Drive disconnect করবেন? (Drive-এর clip মুছবে না)"],
-  drvTesting: ["Testing…", "Test করছি…"],
-  // drive dialog
-  clips: ["clips", "clip"], justNow: ["just now", "এইমাত্র"], hrAgo: ["h ago", "ঘণ্টা আগে"], checked: ["checked", "check করা হয়েছে"],
-  drvOnDrive: ["On Google Drive", "Google Drive-এ আছে"], drvRecent: ["Last uploaded", "শেষ upload হওয়া clip"],
-  drvOpen: ["Open Google Drive", "Google Drive খুলুন"], drvProg: ["{0} of {1} clips uploaded", "{1}টার মধ্যে {0}টা upload হয়েছে"],
-  drvUsage: ["{0} clips · {1} of {2} used · kept {3} days", "{0}টা clip · {2}-এর মধ্যে {1} ব্যবহার · {3} দিন রাখা হয়"],
-  drvUsageNone: ["Counting what is on Drive… (within 15 min)", "Drive-এ কী আছে গোনা হচ্ছে… (১৫ মিনিটের মধ্যে)"],
-  drvNow5: ["current batch {0}%", "এখনকার ভাগ {0}%"],
-  drvPending: ["Waiting to upload: {0} clips", "Upload বাকি: {0}টা clip"], drvNoRecent: ["Nothing uploaded yet.", "এখনো কিছু upload হয়নি।"],
-  // picture
-  picture: ["Picture quality", "ছবির quality"], picLoading: ["Asking the camera…", "Camera-র কাছ থেকে আনা হচ্ছে…"],
-  hdr: ["HDR / WDR (bright sky + dark areas)", "HDR / WDR (উজ্জ্বল আকাশ + অন্ধকার জায়গা)"], on: ["On", "চালু"], off: ["Off", "বন্ধ"],
-  brightness: ["Brightness", "উজ্জ্বলতা"], colorSat: ["Color", "রঙ"], mainStream: ["Main stream (MAX quality)", "Main stream (MAX quality)"], now: ["Now", "এখন"],
-  encHint: ["Highest this camera offers: {0}, up to {1} kbps. Higher bitrate = sharper picture, more SSD space.", "এই camera সর্বোচ্চ দিতে পারে: {0}, {1} kbps পর্যন্ত। Bitrate বেশি = ছবি বেশি পরিষ্কার, SSD-তে জায়গা বেশি লাগে।"],
-  encApp: ["This camera sends H.265: resolution/bitrate can only be changed in its own app (it is usually already at max).", "এই camera H.265 পাঠায়: resolution/bitrate শুধু তার নিজের app-এ বদলানো যায় (সাধারণত আগে থেকেই max-এ থাকে)।"],
-  noImaging: ["This camera does not offer HDR / brightness over ONVIF.", "এই camera ONVIF দিয়ে HDR / উজ্জ্বলতা বদলাতে দেয় না।"],
-  picSaved: ["✅ Saved on the camera.", "✅ Camera-য় save হয়েছে।"], saving: ["Saving…", "Save হচ্ছে…"],
-  qualityTip: ["SD = light, MAX = the camera's full resolution", "SD = হালকা, MAX = camera-র পুরো resolution"],
-  // storage limits
-  limits: ["Storage limits", "Storage-এর সীমা"],
-  limInfo: ["SD card: {0} GB total, {1} GB free. Recordings on the SD card now: {2} GB.", "SD card: মোট {0} GB, খালি {1} GB। এখন SD card-এ recording আছে {2} GB।"],
-  limSd: ["SD card space for recordings (when no SSD is plugged in)", "SD card-এ recording-এর জায়গা (SSD না থাকলে)"],
-  limSdHint: ["You can give up to {0} GB ({1} GB is always kept free for the system). About {2} of 24/7 recording per camera.", "সর্বোচ্চ {0} GB দেওয়া যায় (system-এর জন্য {1} GB সবসময় খালি থাকে)। Camera প্রতি ২৪ ঘণ্টা recording-এ প্রায় {2} চলবে।"],
-  limSsd: ["SSD: CCTV folder limit (GB)", "SSD: CCTV folder-এর সীমা (GB)"], limDrive: ["Google Drive limit (GB)", "Google Drive-এর সীমা (GB)"],
-  limDays: ["Keep clips on Drive for (days)", "Drive-এ clip কত দিন থাকবে (দিন)"], limSaved: ["✅ Saved. Applies within a minute.", "✅ Save হয়েছে, ১ মিনিটের মধ্যে চালু হবে।"],
-  hours: ["hours", "ঘণ্টা"],
-  // system
-  system: ["System", "System"], version: ["Version", "Version"], checkUpdate: ["Check for update", "Update দেখুন"],
-  checking: ["Checking…", "দেখছি…"], noAutoUpd: ["Auto-update is off (install from GitHub to turn it on)", "Auto-update চালু নেই (GitHub থেকে install করলে চালু হবে)"],
-  checked: ["checked", "চেক"], pubOn: ["🌍 From anywhere: ", "🌍 যেকোনো জায়গা থেকে: "],
-  pubOff: ["🌍 Internet link is off (on the Tinker Board: sudo cctv-funnel)", "🌍 বাইরে থেকে খোলার link চালু নেই (Tinker Board-এ: sudo cctv-funnel)"],
-  // users
-  users: ["Users", "Users"], newUser: ["New user", "নতুন user"], editUser: ["Edit: {0}", "Edit: {0}"],
-  userFormSub: ["Viewers only see the cameras you tick.", "Viewer শুধু টিক দেওয়া camera দেখতে পারবে।"],
-  newPassOpt: ["New password (leave empty to keep)", "নতুন password (বদলাতে না চাইলে ফাঁকা রাখুন)"],
-  role: ["Role", "Role"], whichCams: ["Cameras this user can see", "কোন camera দেখতে পারবে"],
-  canRecs: ["Can open recordings", "Recordings দেখতে পারবে"], canPtz: ["Can move cameras (PTZ)", "Camera ঘোরাতে পারবে"],
-  adminDesc: ["Can see and change everything", "সবকিছু দেখতে ও বদলাতে পারে"], allCams: ["all cameras", "সব camera"],
-  noneCams: ["no cameras", "কোনো camera নেই"], yes: ["yes", "হ্যাঁ"], no: ["no", "না"], delUserQ: ["Delete {0}?", "{0} মুছে ফেলবেন?"],
-  delClipQ: ["Delete this minute of recording?", "এই এক মিনিটের recording মুছে ফেলবেন?"],
+  live: "Live",
+  recordings: "Recordings",
+  settings: "⚙️ Settings",
+  username: "Username",
+  password: "Password",
+  login: "Log in",
+  logout: "↩ Log out",
+  changePass: "🔑 Change password",
+  appServer: "📱 Server address (app)",
+  loginHint: "Please log in",
+  curPass: "Current password",
+  newPass: "New password (at least 8 characters)",
+  shareTitle: "Share access",
+  shareSub: "Pick a user: everything they need is copied with one tap. The password is never copied: tell it separately.",
+  copyAll: "📋 Copy",
+  copied: "✅ Copied. Paste it into WhatsApp / SMS.",
+  copyFail: "Could not copy: select the text and copy it by hand.",
+  sharePassNote: "🔑 Password for <b>{0}</b>: <code>{1}</code><br><small>Not included in the copy; tell it by phone or in a separate message. It is shown only now.</small>",
+  shareBody: "📹 {1}\nUsername: {0}\nPassword: (I will tell you separately)\n",
+  shareHome: "🏠 At home (Wi-Fi): {0}\n",
+  shareNet: "🌍 From anywhere: {0}\n",
+  shareApp: "📱 Android app: {0}\n",
+  shareHow: "In the app, enter the two addresses above, then log in with your username and password.",
+  shareCams: "Cameras: {0}\n",
+  save: "Save",
+  cancel: "Cancel",
+  delete: "Delete",
+  new: "New",
+  test: "Test",
+  passChanged: "Password changed",
+  noH265: "{0}: this browser can't play the camera's MAX (H.265) stream, showing SD. MAX works in the Android app / Chrome on phone; recordings are still full quality.",
+  connecting: "Connecting…",
+  camLost: "Camera not reachable",
+  connLost: "Connection lost",
+  streamStopped: "Stream stopped",
+  noMSE: "Live view is not supported in this browser",
+  noCodec: "Codec not supported (set H.264 on the camera)",
+  allOff: "All cameras are hidden.<br>Turn one on above.",
+  noCams: "No cameras yet.",
+  addCamsHint: "Add them in ⚙️ Settings → Cameras.",
+  noCamPerm: "You have not been given any camera.",
+  motion: "● Motion",
+  soundOn: "Sound on",
+  ptzBtn: "Pan / tilt",
+  free: "free",
+  sdCard: "SD card",
+  storage: "Storage",
+  recTo: "Recording to: <b>{0}</b>",
+  ssdLine: "SSD: {0} free of {1}",
+  cctvFolder: "CCTV folder: {0} (limit {1})",
+  sdLine: "SD card buffer: {0} of {1} used",
+  sdNote: "Plug in an SSD and recordings move there automatically.",
+  ejectedNote: "The SSD is ejected and safe to unplug. Recording continues on the SD card.",
+  ejectSsd: "Eject SSD",
+  useSsdAgain: "Use SSD again",
+  close: "Close",
+  ejectQ: "Eject the SSD?\nRecording will continue on the SD card until you plug it back in.",
+  ejecting: "Ejecting… (a few seconds)",
+  ssdEjectedPill: "⏏ SSD ejected · SD card",
+  updateNow: "🔄 Update",
+  upToDate: "Already the latest version.",
+  updFailed: "Update failed: ",
+  noStorage: "No storage status",
+  noServer: "Can't reach the server",
+  minAgo: "min ago",
+  waiting: "starting… (first check within 2 min)",
+  speed: "Speed",
+  prevMotion: "⏮ Motion",
+  nextMotion: "Motion ⏭",
+  noMoreMotion: "No more motion that way",
+  prevMin: "1 min",
+  nextMin: "1 min",
+  download: "Download",
+  lgRec: "Recorded",
+  lgHq: "Full quality",
+  lgMotion: "Motion",
+  lgNow: "Playing",
+  motionEvents: "Motion events",
+  noRecs: "No recordings for this day.",
+  noEvents: "No motion this day.",
+  gap: "No recording at this time",
+  ongoing: "now",
+  secs: "s",
+  mins: "min",
+  live2: "live",
+  noRecPerm: "You are not allowed to open recordings.",
+  cameras: "Cameras",
+  newCam: "New camera",
+  editCam: "Edit: {0}",
+  camFormSub: "To change the IP or password, edit it here and press Save.",
+  name: "Name",
+  brand: "Camera brand",
+  ip: "IP address",
+  rtspPort: "RTSP port",
+  findOnvif: "🔍 Find stream paths via ONVIF",
+  mainPath: "Main stream path (full quality)",
+  subPath: "Sub stream path (low quality, empty = main)",
+  recording: "Recording",
+  mode247: "24/7 full quality (uses more space)",
+  modeSmart: "Smart: 24/7 low quality + full quality at motion (recommended)",
+  modeMotion: "Only when motion",
+  modeOff: "Off (live only)",
+  recQuality: "Recording quality",
+  qMain: "Full (main)",
+  qSub: "Low (sub, less space)",
+  sensitivity: "Motion sensitivity",
+  sensMax: "Maximum (every tiny movement; more false alarms)",
+  sensHigh: "Very high: people far away (recommended)",
+  sensVHigh: "High",
+  sensVVHigh: "Very high (small movement too)",
+  sensLess: "Less (only big movement)",
+  sensMore: "More (tiny movement)",
+  sensHint: "Too many false clips (leaves, insects, shadows)? Move left. Missing people or lights? Move right. Applies within a few seconds.",
+  sensSaved: "✅ Saved",
+  sensMed: "Medium",
+  sensLow: "Low (only big movement)",
+  options: "Options",
+  enabled: "Enabled",
+  sound: "Sound",
+  ptzCap: "Pan/tilt (PTZ)",
+  testing: "Talking to the camera… (up to 15 s)",
+  hevcNote: " (H.265: if live view stays black on a phone, set H.264 on the camera)",
+  needIp: "Enter the IP first",
+  onvifSearching: "Searching ONVIF…",
+  onvifFound: "Found {0} stream(s) on ONVIF port {1}. Largest = main, smallest = sub:",
+  useAsSub: "Tap to use as sub stream",
+  applying: "⏳ Applying the new settings…",
+  applied: "✅ Done: ",
+  applySlow: "⚠️ Not applied yet. Check the log (Docker: docker compose logs; Linux: journalctl -u cctv-apply) or run 'sudo cctv-apply'.",
+  delCamQ: "Delete this camera? (its recordings stay)",
+  disabled: "off",
+  recOk: "● recording",
+  recErr: "⚠ not recording",
+  recStarting: "◌ starting…",
+  noCamsYet: "No cameras yet. Add one with the form below.",
+  keepPass: "leave empty to keep the old one",
+  modeShort: {"smart":"smart (24/7 low + motion full)","continuous":"24/7 full","motion":"motion only","off":"live only"},
+  drv1: "Press the button below → log in to Google and press <b>Allow</b>",
+  drv2: "A <b>\"can't be reached\"</b> page opens next. That is expected",
+  drv3: "Copy the <b>whole link from the address bar</b> and paste it below",
+  drvLogin: "Log in with Google",
+  drvPaste: "Link after Allow",
+  drvFinish: "Finish connecting",
+  drvConnecting: "Connecting…",
+  drvConnect: "Connect with Google",
+  drvOther: "Connect another account",
+  drvNot: "Not connected yet.",
+  disconnect: "Disconnect",
+  drvOk: "✅ Connected · folder: <b>{0}</b> · up to {1} GB",
+  drvSpace: "Google account: {0} / {1} GB used, {2} GB free",
+  drvOffQ: "Disconnect Google Drive? (clips already on Drive stay)",
+  drvTesting: "Testing…",
+  clips: "clips",
+  justNow: "just now",
+  hrAgo: "h ago",
+  checked: "checked",
+  drvOnDrive: "On Google Drive",
+  drvRecent: "Last uploaded",
+  drvOpen: "Open Google Drive",
+  drvProg: "{0} of {1} clips uploaded",
+  drvUsage: "{0} clips · {1} of {2} used · kept {3} days",
+  drvUsageNone: "Counting what is on Drive… (within 15 min)",
+  drvNow5: "current batch {0}%",
+  drvPending: "Waiting to upload: {0} clips",
+  drvNoRecent: "Nothing uploaded yet.",
+  picture: "Picture quality",
+  picLoading: "Asking the camera…",
+  hdr: "HDR / WDR (bright sky + dark areas)",
+  on: "On",
+  off: "Off",
+  brightness: "Brightness",
+  colorSat: "Color",
+  mainStream: "Main stream (MAX quality)",
+  now: "Now",
+  encHint: "Highest this camera offers: {0}, up to {1} kbps. Higher bitrate = sharper picture, more SSD space.",
+  encApp: "This camera sends H.265: resolution/bitrate can only be changed in its own app (it is usually already at max).",
+  noImaging: "This camera does not offer HDR / brightness over ONVIF.",
+  picSaved: "✅ Saved on the camera.",
+  saving: "Saving…",
+  qualityTip: "SD = light, MAX = the camera's full resolution",
+  limits: "Storage limits",
+  limInfo: "SD card: {0} GB total, {1} GB free. Recordings on the SD card now: {2} GB.",
+  limSd: "SD card space for recordings (when no SSD is plugged in)",
+  limSdHint: "You can give up to {0} GB ({1} GB is always kept free for the system). About {2} of 24/7 recording per camera.",
+  limSsd: "SSD: CCTV folder limit (GB)",
+  limDrive: "Google Drive limit (GB)",
+  limDays: "Keep clips on Drive for (days)",
+  limSaved: "✅ Saved. Applies within a minute.",
+  hours: "hours",
+  system: "System",
+  version: "Version",
+  checkUpdate: "Check for update",
+  checking: "Checking…",
+  noAutoUpd: "Auto-update is off (install from GitHub to turn it on)",
+  pubOn: "🌍 From anywhere: ",
+  pubOff: "🌍 Access from outside your home is off (see README: Access from anywhere).",
+  users: "Users",
+  newUser: "New user",
+  editUser: "Edit: {0}",
+  userFormSub: "Viewers only see the cameras you tick.",
+  newPassOpt: "New password (leave empty to keep)",
+  role: "Role",
+  whichCams: "Cameras this user can see",
+  canRecs: "Can open recordings",
+  canPtz: "Can move cameras (PTZ)",
+  adminDesc: "Can see and change everything",
+  allCams: "all cameras",
+  noneCams: "no cameras",
+  yes: "yes",
+  no: "no",
+  delUserQ: "Delete {0}?",
+  delClipQ: "Delete this minute of recording?",
+  setupHint: "Welcome! Create the admin account for this system.",
+  setupBtn: "Create account",
+  passAgain: "Password again",
+  passMismatch: "The two passwords are different",
+  siteName: "System name (shown in the title)",
+  siteSaved: "✅ Saved",
+  scanNet: "🔎 Scan my network for cameras",
+  scanSubnet: "Network to scan (first three numbers of your router's IP, e.g. 192.168.1)",
+  scanning: "Scanning… (about 10 seconds)",
+  scanNone: "No cameras found on {0}.x. Check the network numbers, or that the camera is on the same Wi-Fi.",
+  scanFound: "Found {0} device(s). Tap one to use its IP:",
+  scanGo: "Scan",
+  mainUrl: "Main stream URL (full quality)",
+  subUrl: "Sub stream URL (low quality, optional)",
+  camHelp: "Can't find your camera's settings? See the camera guide",
 };
-let LANG = LS.get("cctv.lang", null) || (navigator.language || "").startsWith("bn") && "bn" || "en";
+/* wording when running in Docker on a PC / NAS (no SD card, no SSD switching) */
+const I18N_DOCKER = {
+  sdCard: "Recordings folder",
+  sdLine: "Recordings folder: {0} of {1} used",
+  sdNote: "Recordings are kept in the folder set in .env (CCTV_RECORDINGS_DIR).",
+  limInfo: "Disk: {0} GB total, {1} GB free. Recordings now: {2} GB.",
+  limSd: "Space for recordings",
+};
+let DOCKER = false;
+/* Other languages: web/lang/<code>.js sets window.I18N_<CODE> (same keys) and window.I18N_<CODE>_LABEL. */
+const LANGS = { en: { label: "EN", dict: {} } };
+if (window.I18N_BN) LANGS.bn = { label: window.I18N_BN_LABEL || "BN", dict: window.I18N_BN, msgs: window.I18N_BN_MSGS || {}, docker: window.I18N_BN_DOCKER };
+let SITE = LS.get("cctv.site", "Home CCTV");
+let LANG = LS.get("cctv.lang", null) || Object.keys(LANGS).find(l => l !== "en" && (navigator.language || "").startsWith(l)) || "en";
+if (!LANGS[LANG]) LANG = "en";
 function t(key, ...args) {
-  const v = I18N[key]; if (!v) return key;
-  let s = v[LANG === "bn" ? 1 : 0];
+  if (key === "title") return SITE;
+  const L = LANGS[LANG];
+  let s = (DOCKER && L.docker ? L.docker[key] : undefined) ?? L.dict[key] ?? (DOCKER ? I18N_DOCKER[key] : undefined) ?? I18N[key];
+  if (s === undefined) return key;
   if (typeof s === "string") args.forEach((a, i) => { s = s.replaceAll(`{${i}}`, a); });
   return s;
 }
-const tr = msg => { const p = String(msg ?? "").split(" || "); return p.length > 1 && LANG === "bn" ? p[1] : p[0]; };
+/* messages from the server are English; translate the ones the language file knows */
+const tr = msg => { msg = String(msg ?? "").split(" || ")[0]; return (LANGS[LANG].msgs || {})[msg] || msg; };
+const nextLang = () => { const k = Object.keys(LANGS); return k[(k.indexOf(LANG) + 1) % k.length]; };
 function applyLang() {
   document.documentElement.lang = LANG;
   document.querySelectorAll("[data-t]").forEach(el => { el.innerHTML = t(el.dataset.t); });
-  for (const b of [$("#langBtn"), $("#langBtn2")]) b.textContent = LANG === "bn" ? "EN" : "বাং";
+  for (const b of [$("#langBtn"), $("#langBtn2")]) { b.textContent = LANGS[nextLang()].label; b.style.display = Object.keys(LANGS).length > 1 ? "" : "none"; }
   document.title = t("title");
 }
+function setSite(name) { if (name && name !== SITE) { SITE = name; LS.set("cctv.site", name); applyLang(); } }
 function setLang(l) {
   LANG = l; LS.set("cctv.lang", l); applyLang();
   if ($("#login").style.display === "grid") showLogin();
   if (ME) { api("/api/prefs", { lang: l }).catch(() => {}); rerenderAll(); }
 }
-$("#langBtn").onclick = $("#langBtn2").onclick = () => setLang(LANG === "bn" ? "en" : "bn");
+$("#langBtn").onclick = $("#langBtn2").onclick = () => setLang(nextLang());
 
 /* =============================== api =============================== */
 async function api(path, body) {
@@ -664,7 +795,7 @@ async function api(path, body) {
   }
   const r = await fetch(path, opts);
   let data = null; try { data = await r.json(); } catch {}
-  if (r.status === 401 && path !== "/api/login" && path !== "/api/me") { showLogin(); throw new Error("login"); }
+  if (r.status === 401 && !["/api/login", "/api/me", "/api/setup"].includes(path)) { showLogin(); throw new Error("login"); }
   if (!r.ok) throw new Error(tr((data && data.error) || "Error " + r.status));
   return data;
 }
@@ -899,7 +1030,7 @@ async function refreshStatus() {
     const s = await api("/api/status"), st = s.storage || {};
     if (st.mode === "ssd") setPill("#stStorage", st.total && st.avail / st.total > .1 ? "ok" : "warn", `💾 SSD · ${gb(st.avail)} ${t("free")}`);
     else if (st.mode) setPill("#stStorage", "warn", st.ejected && st.ssd_present ? t("ssdEjectedPill")
-      : `💳 ${t("sdCard")} · ${gb(Math.max(0, st.sd_buffer_cap - st.sd_buffer_bytes))} ${t("free")}`);
+      : `${DOCKER ? "📁" : "💳"} ${t("sdCard")} · ${gb(Math.max(0, st.sd_buffer_cap - st.sd_buffer_bytes))} ${t("free")}`);
     else setPill("#stStorage", "bad", t("noStorage"));
     const up = s.upload || {}, ago = up.time ? Math.round((s.time - up.time) / 60) : null;
     LAST_UP = { up, now: s.time };
@@ -1147,12 +1278,19 @@ function showLogin(setup) {
   if (setup !== undefined) needsSetup = setup;
   for (const T of tiles.values()) T.player.stop();
   $("#login").style.display = "grid";
-  $("#loginHint").innerHTML = needsSetup ? t("noAccount") : t("loginHint");
-  setTimeout(() => $("#lu").focus(), 50);
+  $("#loginHint").innerHTML = needsSetup ? t("setupHint") : t("loginHint");
+  $("#loginBtn").textContent = needsSetup ? t("setupBtn") : t("login");
+  $("#lp").autocomplete = needsSetup ? "new-password" : "current-password";
+  $("#lp2").style.display = $("#lp2Lbl").style.display = needsSetup ? "" : "none";
+  $("#lp2").required = !!needsSetup;
+  if (needsSetup && !$("#lu").value) $("#lu").value = "admin";
+  setTimeout(() => (needsSetup ? $("#lp") : $("#lu")).focus(), 50);
 }
 $("#loginForm").onsubmit = async e => {
   e.preventDefault(); $("#loginErr").textContent = "";
-  try { await api("/api/login", { user: $("#lu").value.trim(), pass: $("#lp").value }); location.reload(); }
+  const body = { user: $("#lu").value.trim(), pass: $("#lp").value };
+  if (needsSetup && $("#lp").value !== $("#lp2").value) { $("#loginErr").textContent = t("passMismatch"); return; }
+  try { await api(needsSetup ? "/api/setup" : "/api/login", body); location.reload(); }
   catch (err) { $("#loginErr").textContent = err.message; }
 };
 $("#meBtn").onclick = e => { e.stopPropagation(); const m = $("#menu"); m.style.display = m.style.display === "block" ? "none" : "block"; };
@@ -1190,11 +1328,14 @@ async function loadCamCfg() {
   }
 }
 function applyPreset(type, keepPaths) {
-  const p = CAMCFG.presets[type] || {};
+  const p = CAMCFG.presets[type] || {}, isUrl = type === "url";
   $("#cHint").textContent = tr(p.hint || "");
+  $("#cHostBox").style.display = isUrl ? "none" : ""; $("#cUrlBox").style.display = isUrl ? "" : "none";
+  $("#cHost").required = !isUrl; $("#cMainUrl").required = isUrl;
   if (keepPaths) return;
   $("#cPort").value = p.port || "554"; $("#cUser").value = p.user ?? "admin";
   $("#cMain").value = p.main_path || ""; $("#cSub").value = p.sub_path || "";
+  $("#cOnvifPort").value = p.onvif_port || "";
   $("#cPtz").checked = p.ptz === "yes";
 }
 $("#cType").onchange = () => applyPreset($("#cType").value, false);
@@ -1203,15 +1344,17 @@ function editCam(c) {
   $("#cFormTitle").textContent = c ? t("editCam", c.name) : t("newCam");
   $("#cRes").innerHTML = ""; $("#cErr").textContent = ""; $("#cPick").innerHTML = "";
   $("#cDel").style.display = c ? "" : "none";
-  $("#cType").value = c ? c.type : "imou";
+  $("#cType").value = c && CAMCFG.presets[c.type] ? c.type : c ? "custom" : "onvif";
   applyPreset($("#cType").value, !!c);
   if (c) {
     $("#cName").value = c.name; $("#cHost").value = c.host; $("#cPort").value = c.port; $("#cUser").value = c.user;
     $("#cMain").value = c.main_path; $("#cSub").value = c.sub_path; $("#cMode").value = c.mode;
+    $("#cMainUrl").value = c.main || ""; $("#cSubUrl").value = c.sub || ""; $("#cOnvifPort").value = c.onvif_port || "";
     $("#cRec").value = c.record_stream; setThr(c.threshold); $("#cEn").checked = c.enabled;
     $("#cAud").checked = c.audio !== false && c.audio !== "no"; $("#cPtz").checked = !!c.ptz && c.ptz !== "no";
   } else {
     $("#cName").value = ""; $("#cHost").value = ""; $("#cMode").value = "smart"; $("#cRec").value = "main";
+    $("#cMainUrl").value = ""; $("#cSubUrl").value = "";
     setThr(250); $("#cEn").checked = true; $("#cAud").checked = true;
   }
   $("#cPass").value = ""; $("#cPass").placeholder = c && c.has_password ? t("keepPass") : "";
@@ -1231,6 +1374,7 @@ $("#cThrLvl").oninput = () => { const l = +$("#cThrLvl").value; $("#cThr").value
 const camForm = () => ({ id: camEditing, name: $("#cName").value.trim(), type: $("#cType").value, host: $("#cHost").value.trim(),
   port: $("#cPort").value.trim(), user: $("#cUser").value.trim(), password: $("#cPass").value,
   main_path: $("#cMain").value.trim(), sub_path: $("#cSub").value.trim(), mode: $("#cMode").value,
+  main: $("#cMainUrl").value.trim(), sub: $("#cSubUrl").value.trim(), onvif_port: $("#cOnvifPort").value.trim(),
   record_stream: $("#cRec").value, threshold: $("#cThr").value, enabled: $("#cEn").checked,
   audio: $("#cAud").checked, ptz: $("#cPtz").checked });
 $("#cNew").onclick = () => editCam(null);
@@ -1250,8 +1394,8 @@ $("#cOnvif").onclick = async () => {
   if (!f.host) { $("#cErr").textContent = t("needIp"); return; }
   box.innerHTML = `<span class="muted">${t("onvifSearching")}</span>`;
   try {
-    const r = await api("/api/admin/cameras/onvif", { id: camEditing, host: f.host, user: f.user, password: f.password });
-    const st = r.streams;
+    const r = await api("/api/admin/cameras/onvif", { id: camEditing, host: f.host, user: f.user, password: f.password, onvif_port: f.onvif_port });
+    const st = r.streams; $("#cOnvifPort").value = r.onvif_port || "";
     box.innerHTML = `<span class="muted">${t("onvifFound", st.length, r.onvif_port)}</span>`;
     $("#cMain").value = st[0].path; $("#cPort").value = st[0].port; $("#cSub").value = st.length > 1 ? st[st.length - 1].path : "";
     for (const x of st) {
@@ -1260,6 +1404,35 @@ $("#cOnvif").onclick = async () => {
       b.onclick = () => { $("#cSub").value = x.path; }; box.appendChild(b);
     }
   } catch (err) { box.innerHTML = ""; $("#cErr").textContent = err.message; }
+};
+$("#cScan").onclick = async () => {
+  const box = $("#scanBox"); box.style.display = box.style.display === "none" ? "" : "none";
+  if (box.style.display === "" && !$("#scanNet").value) {
+    try { const d = await api("/api/admin/scan-subnet"); $("#scanNet").value = d.subnet || ""; } catch {}
+    $("#scanNet").focus();
+  }
+};
+$("#scanGo").onclick = async () => {
+  const res = $("#scanRes"), b = $("#scanGo"); b.disabled = true;
+  res.innerHTML = `<span class="muted">${t("scanning")}</span>`;
+  try {
+    const r = await api("/api/admin/cameras/scan", { subnet: $("#scanNet").value.trim() });
+    $("#scanNet").value = r.subnet;
+    res.innerHTML = `<span class="muted">${r.cameras.length ? t("scanFound", r.cameras.length) : t("scanNone", esc(r.subnet))}</span>`;
+    for (const x of r.cameras) {
+      const btn = document.createElement("button"); btn.type = "button";
+      btn.textContent = [x.ip, x.name, x.onvif ? "ONVIF" : "", x.ports.length ? "RTSP " + x.ports.join("/") : ""].filter(Boolean).join(" · ");
+      btn.onclick = () => {
+        if ($("#cType").value === "url") { $("#cType").value = "onvif"; applyPreset("onvif", false); }
+        $("#cHost").value = x.ip; if (x.ports.length) $("#cPort").value = x.ports[0];
+        if (x.onvif_port) $("#cOnvifPort").value = x.onvif_port;
+        if (!$("#cName").value && x.name) $("#cName").value = x.name;
+        $("#scanBox").style.display = "none"; $("#cUser").focus();
+      };
+      res.appendChild(btn);
+    }
+  } catch (err) { res.innerHTML = ""; $("#cErr").textContent = err.message; }
+  b.disabled = false;
 };
 async function waitApply(since) {
   const ban = $("#applyBanner"); ban.style.display = "block"; ban.textContent = t("applying");
@@ -1326,7 +1499,7 @@ async function showStorage() {
   let d; try { d = await api("/api/storage"); } catch { return; }
   const st = d.storage || {}, admin = ME && ME.role === "admin";
   const barH = (used, total) => `<div class="bar"><i style="width:${total ? Math.min(100, 100 * used / total).toFixed(1) : 0}%"></i></div>`;
-  let h = t("recTo", st.mode === "ssd" ? "💾 SSD" : "💳 " + t("sdCard")) + "<br>";
+  let h = t("recTo", st.mode === "ssd" ? "💾 SSD" : (DOCKER ? "📁 " : "💳 ") + t("sdCard")) + "<br>";
   if (st.mode === "ssd") {
     h += t("ssdLine", gb(st.avail), gb(st.total)) + barH(st.used, st.total);
     h += t("cctvFolder", gb(st.rec_bytes || 0), st.ssd_cap ? gb(st.ssd_cap) : "–") + "<br>";
@@ -1489,7 +1662,13 @@ $("#limForm").onsubmit = async e => {
 };
 
 /* ============================== system ============================== */
+$("#siteForm").onsubmit = async e => {
+  e.preventDefault(); $("#siteMsg").textContent = "";
+  try { const r = await api("/api/admin/site", { site_name: $("#siteName").value }); setSite(r.site_name); $("#siteMsg").textContent = t("siteSaved"); }
+  catch (err) { $("#siteMsg").textContent = err.message; }
+};
 async function loadSys() {
+  if (document.activeElement !== $("#siteName")) $("#siteName").value = SITE;
   let u = {}; try { u = await api("/api/admin/update"); } catch {}
   $("#sysPub").innerHTML = u.public_url ? `${t("pubOn")}<a href="${esc(u.public_url)}" style="color:var(--blue)">${esc(u.public_url)}</a>` : t("pubOff");
   const when = u.time ? new Date(u.time * 1000).toLocaleString() : "";
@@ -1581,7 +1760,7 @@ function renderShare() {
   if (lastPass && !lastPass.shown && USERS.find(u => u.name === lastPass.name)) { sel.value = lastPass.name; lastPass.shown = true; }
   const u = USERS.find(x => x.name === sel.value); if (!u || !SHARE) { $("#shareText").textContent = ""; return; }
   const cams = u.cameras === "*" ? t("allCams") : u.cameras.map(id => (CAMS.find(c => c.id === id) || {}).name || id).join(", ");
-  let txt = t("shareBody", u.name) + t("shareCams", cams);
+  let txt = t("shareBody", u.name, SITE) + t("shareCams", cams);
   if (SHARE.lan_url) txt += t("shareHome", SHARE.lan_url);
   if (SHARE.public_url) txt += t("shareNet", SHARE.public_url);
   txt += t("shareApp", SHARE.app_url) + "\n" + t("shareHow");
@@ -1618,12 +1797,14 @@ applyLang();
 (async () => {
   const r = await fetch("/api/me", { cache: "no-store", headers: { "X-Lang": LANG } });
   const me = await r.json().catch(() => ({}));
+  setSite(me.site_name);
   if (r.status === 401) { showLogin(!!me.needs_setup); return; }
-  ME = me;
+  ME = me; DOCKER = !!me.docker; applyLang();
+  if (DOCKER) { $("#sysUpd").style.display = "none"; $("#limSsd").parentElement.style.display = "none"; }
   if (!LS.get("cctv.lang", null) && me.lang && me.lang !== LANG) { LANG = me.lang; applyLang(); }
   $("#meName").textContent = me.name; $("#meRole").textContent = me.role; $("#meRole").className = "role " + me.role;
   if (!me.recordings) $("#tabRecs").style.display = "none";
-  if (me.role === "admin") { $("#tabUsers").style.display = ""; $("#mUpd").style.display = ""; }
+  if (me.role === "admin") { $("#tabUsers").style.display = ""; if (!DOCKER) $("#mUpd").style.display = ""; }
   try { CAMS = await api("/api/cameras"); } catch { CAMS = []; }
   if (!enabled) enabled = {};
   for (const c of CAMS) if (!(c.id in enabled)) enabled[c.id] = true;

@@ -14,6 +14,7 @@ CONF_PATH = os.environ.get("CCTV_CONF", "/etc/cctv/cctv.conf")
 CAMS_PATH = os.environ.get("CCTV_CAMS", os.path.join(os.path.dirname(CONF_PATH), "cameras.conf"))
 
 DEFAULTS = {
+    "site_name": "Home CCTV",
     "web_port": "8085",
     "sd_buffer_gb": "7",
     "sd_min_free_gb": "2",
@@ -35,26 +36,87 @@ DEFAULTS = {
     "motion_only_keep_minutes": "10",
 }
 
-# Ready-made RTSP paths per brand. "meari" has no known fixed path: use the
-# dashboard's "ONVIF থেকে খুঁজুন" button (or Onvifer) to fill it in.
+# Ready-made RTSP settings per brand (shown in the dashboard's brand list, in this order).
+# A path may contain {user} and {password} for cameras that want them in the URL.
+# "onvif" = no fixed path: the dashboard's "Find stream paths via ONVIF" fills it in.
+# "url"   = paste complete stream URLs (rtsp://, rtsps://, rtmp://, http://, or a go2rtc source).
+# More details and "how to turn RTSP on" for each brand: docs/CAMERAS.md
 PRESETS = {
-    "imou":   {"label": "Imou / Dahua", "port": "554", "user": "admin",
-               "main_path": "/cam/realmonitor?channel=1&subtype=0",
-               "sub_path": "/cam/realmonitor?channel=1&subtype=1",
-               "hint": "Password = the Safety Code on the camera sticker || Password = camera-র নিচের sticker-এর Safety Code", "ptz": "yes"},
-    "meari":  {"label": "Meari / CloudEdge", "port": "554", "user": "admin",
-               "main_path": "", "sub_path": "",
-               "hint": "Enter IP and password, then press 'Find via ONVIF' || IP আর password দিয়ে 'ONVIF থেকে খুঁজুন' চাপুন, path নিজে বসে যাবে"},
-    "v380":   {"label": "V380", "port": "554", "user": "admin",
-               "main_path": "/live/ch00_0", "sub_path": "/live/ch00_1",
-               "hint": "Turn on ONVIF in the V380 app; password = device password || V380 app-এ ONVIF চালু করুন; password = device password"},
-    "tapo":   {"label": "TP-Link Tapo", "port": "554", "user": "",
-               "main_path": "/stream1", "sub_path": "/stream2",
-               "hint": "Tapo app → Advanced → Camera Account user/password || Tapo app → Advanced → Camera Account-এর user/password"},
-    "custom": {"label": "Other / Custom", "port": "554", "user": "admin",
-               "main_path": "", "sub_path": "",
-               "hint": "Enter the path you found with Onvifer or VLC || Onvifer বা VLC দিয়ে পাওয়া path বসান"},
+    "onvif":     {"label": "Any ONVIF camera (auto-detect)", "port": "554", "user": "admin",
+                  "main_path": "", "sub_path": "",
+                  "hint": "Enter IP, username and password, then press 'Find stream paths via ONVIF'. "
+                          "Works with most cameras that have ONVIF turned on."},
+    "hikvision": {"label": "Hikvision / HiWatch / Annke", "port": "554", "user": "admin",
+                  "main_path": "/Streaming/Channels/101", "sub_path": "/Streaming/Channels/102",
+                  "hint": "Password = the one set when the camera was activated."},
+    "ezviz":     {"label": "EZVIZ", "port": "554", "user": "admin",
+                  "main_path": "/h264/ch1/main/av_stream", "sub_path": "/h264/ch1/sub/av_stream",
+                  "hint": "Password = the 6-letter verification code on the camera sticker. In the EZVIZ app turn on "
+                          "RTSP (Settings > LAN Live View / Local Service Settings) and turn off Image Encryption. "
+                          "If Test fails, try /Streaming/Channels/101 or ONVIF."},
+    "dahua":     {"label": "Dahua / Amcrest / Lorex", "port": "554", "user": "admin",
+                  "main_path": "/cam/realmonitor?channel=1&subtype=0",
+                  "sub_path": "/cam/realmonitor?channel=1&subtype=1",
+                  "hint": "Username and password of the camera's web page / app."},
+    "imou":      {"label": "Imou", "port": "554", "user": "admin",
+                  "main_path": "/cam/realmonitor?channel=1&subtype=0",
+                  "sub_path": "/cam/realmonitor?channel=1&subtype=1",
+                  "hint": "Password = the Safety Code on the camera sticker. In the Imou app turn off "
+                          "Video Encryption (and turn on ONVIF/RTSP if the setting exists).", "ptz": "yes"},
+    "reolink":   {"label": "Reolink", "port": "554", "user": "admin",
+                  "main_path": "/h264Preview_01_main", "sub_path": "/h264Preview_01_sub",
+                  "hint": "Turn on RTSP in the Reolink app/client (Network > Advanced > Server/Port settings). "
+                          "H.265 models: /h265Preview_01_main. Battery cameras and the E1 have no RTSP."},
+    "tapo":      {"label": "TP-Link Tapo", "port": "554", "user": "", "onvif_port": "2020",
+                  "main_path": "/stream1", "sub_path": "/stream2",
+                  "hint": "Tapo app > camera > Settings > Advanced Settings > Camera Account: create a "
+                          "username/password and use them here (not your TP-Link login)."},
+    "vigi":      {"label": "TP-Link VIGI / Omada", "port": "554", "user": "admin",
+                  "main_path": "/stream1", "sub_path": "/stream2",
+                  "hint": "Username and password of the camera's web page."},
+    "uniview":   {"label": "Uniview (UNV)", "port": "554", "user": "admin",
+                  "main_path": "/media/video1", "sub_path": "/media/video2",
+                  "hint": "Username and password of the camera's web page."},
+    "axis":      {"label": "Axis", "port": "554", "user": "root",
+                  "main_path": "/axis-media/media.amp", "sub_path": "/axis-media/media.amp?resolution=640x360",
+                  "hint": "Username and password of the camera's web page."},
+    "foscam":    {"label": "Foscam", "port": "554", "user": "admin",
+                  "main_path": "/videoMain", "sub_path": "/videoSub",
+                  "hint": "Older models use RTSP port 88."},
+    "eufy":      {"label": "eufy (models with RTSP)", "port": "554", "user": "",
+                  "main_path": "/live0", "sub_path": "",
+                  "hint": "eufy app > camera Settings > Storage > NAS (RTSP): turn it on and set a username/password. "
+                          "Not every model has this."},
+    "meari":     {"label": "Meari / CloudEdge", "port": "8554", "user": "admin",
+                  "main_path": "/Streaming/Channels/101", "sub_path": "",
+                  "hint": "Turn on ONVIF in the app (Settings > Onvif Settings) and set its password. "
+                          "Then press 'Find stream paths via ONVIF' to fill in both streams."},
+    "v380":      {"label": "V380", "port": "554", "user": "admin",
+                  "main_path": "/live/ch00_0", "sub_path": "/live/ch00_1",
+                  "hint": "Turn on ONVIF in the V380 app; password = device password."},
+    "yoosee":    {"label": "Yoosee", "port": "554", "user": "admin", "onvif_port": "5000",
+                  "main_path": "/onvif1", "sub_path": "/onvif2",
+                  "hint": "Set the RTSP/NVR password in the Yoosee app. If Test fails, the camera may only "
+                          "stream over UDP: use 'Full stream URL' with ffmpeg:rtsp://..."},
+    "xmeye":     {"label": "ICSee / XMEye (Xiongmai)", "port": "554", "user": "admin", "onvif_port": "8899",
+                  "main_path": "/user={user}&password={password}&channel=1&stream=0.sdp?real_stream",
+                  "sub_path": "/user={user}&password={password}&channel=1&stream=1.sdp?real_stream",
+                  "hint": "Default user admin with an empty password (set one in the app)."},
+    "vstarcam":  {"label": "Vstarcam / Eye4", "port": "10554", "user": "admin",
+                  "main_path": "/tcp/av0_0", "sub_path": "/tcp/av0_1",
+                  "hint": "Password = device password set in the Eye4 app."},
+    "wansview":  {"label": "Wansview", "port": "554", "user": "admin",
+                  "main_path": "/live/ch0", "sub_path": "/live/ch1",
+                  "hint": "Turn on RTSP in the app and set its password."},
+    "url":       {"label": "Full stream URL (any camera, NVR, UniFi, ...)", "port": "", "user": "",
+                  "main_path": "", "sub_path": "",
+                  "hint": "Paste complete URLs, e.g. rtsp://user:pass@192.168.1.20:554/stream1 . "
+                          "Also rtsps://, rtmp://, http:// (MJPEG) and go2rtc sources like ffmpeg:rtsp://..."},
+    "custom":    {"label": "Other (enter the path yourself)", "port": "554", "user": "admin",
+                  "main_path": "", "sub_path": "",
+                  "hint": "Look up your model in docs/CAMERAS.md, or find the path with ONVIF Device Manager / Onvifer."},
 }
+URL_SCHEMES = ("rtsp://", "rtsps://", "rtspx://", "rtmp://", "rtmps://", "http://", "https://", "ffmpeg:")
 
 CAM_FIELDS = ["name", "type", "host", "port", "user", "password", "main_path", "sub_path",
               "onvif_port", "mode", "record_stream", "threshold", "audio", "ptz", "enabled"]
@@ -93,11 +155,15 @@ def rtsp_url(c, which):
     """Build the rtsp:// URL for 'main' or 'sub'."""
     if c.get(which):
         return c[which]
+    if c.get("type") == "url":
+        return c.get("main", "") if which == "sub" else ""
     path = c.get(f"{which}_path") or (c.get("main_path") if which == "sub" else "")
     if not c.get("host") or not path:
         return ""
     if not path.startswith("/"):
         path = "/" + path
+    path = path.replace("{user}", quote(c.get("user", ""), safe="")).replace(
+        "{password}", quote(c.get("password", ""), safe=""))
     auth = ""
     if c.get("user"):
         auth = quote(c["user"], safe="")
@@ -123,17 +189,21 @@ def normalize_cam(cid, raw):
     if c["record_stream"] not in ("main", "sub"):
         raise ValueError(f"[{cid}] record_stream must be main or sub")
     if c["host"] and not HOST_RE.match(c["host"]):
-        raise ValueError(f"[{cid}] Invalid IP/host || IP/host ঠিক নেই")
+        raise ValueError(f"[{cid}] Invalid IP/host")
     if c["port"] and not c["port"].isdigit():
-        raise ValueError(f"[{cid}] Port must be a number || port শুধু সংখ্যা হবে")
+        raise ValueError(f"[{cid}] Port must be a number")
     try:
         c["threshold"] = str(max(1, int(float(c["threshold"]))))
     except ValueError:
-        raise ValueError(f"[{cid}] Sensitivity must be a number || threshold সংখ্যা হবে") from None
+        raise ValueError(f"[{cid}] Sensitivity must be a number") from None
+    for which in ("main", "sub"):
+        if c.get(which) and not c[which].lower().startswith(URL_SCHEMES):
+            raise ValueError(f"[{cid}] Stream URL must start with rtsp://, rtsps://, rtmp://, http:// or ffmpeg:")
     c["main_url"] = rtsp_url(c, "main")
     c["sub_url"] = rtsp_url(c, "sub") or c["main_url"]
     if c["enabled"] and not c["main_url"]:
-        raise ValueError(f"[{cid}] IP and main stream path are required || IP আর main path দরকার")
+        raise ValueError(f"[{cid}] " + ("The main stream URL is required" if c["type"] == "url"
+                                        else "IP and main stream path are required"))
     return c
 
 

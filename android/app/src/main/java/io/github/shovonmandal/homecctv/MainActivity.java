@@ -92,7 +92,7 @@ public class MainActivity extends Activity {
 
             @Override
             public void onReceivedError(WebView view, WebResourceRequest req, WebResourceError err) {
-                if (req.isForMainFrame()) showError("Server-এর সাথে যোগাযোগ হচ্ছে না।");
+                if (req.isForMainFrame()) showError(tx("Can't connect to the server."));
             }
         });
 
@@ -123,9 +123,9 @@ public class MainActivity extends Activity {
                 r.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "CCTV-" + name);
                 r.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
                 ((DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE)).enqueue(r);
-                Toast.makeText(this, tx("Download started", "Download শুরু হয়েছে"), Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, tx("Download started"), Toast.LENGTH_SHORT).show();
             } catch (Exception e) {
-                Toast.makeText(this, tx("Download failed: ", "Download হয়নি: ") + e.getMessage(), Toast.LENGTH_LONG).show();
+                Toast.makeText(this, tx("Download failed: ") + e.getMessage(), Toast.LENGTH_LONG).show();
             }
         });
 
@@ -140,15 +140,16 @@ public class MainActivity extends Activity {
         return getSharedPreferences(PREFS, MODE_PRIVATE);
     }
 
-    String tx(String en, String bn) {
-        return "bn".equals(prefs().getString(SettingsActivity.KEY_LANG, "en")) ? bn : en;
+    /** English text, or its translation when the Bangla switch is on (see Bn.java). */
+    String tx(String en) {
+        return "bn".equals(prefs().getString(SettingsActivity.KEY_LANG, "en")) ? Bn.t(en) : en;
     }
 
     /** Pick the first address that answers, then load the dashboard. */
     void connect() {
         showingError = false;
         baseUrl = "";
-        web.loadDataWithBaseURL(null, page(tx("Connecting…", "সংযোগ হচ্ছে…"), "", false, this), "text/html", "utf-8", null);
+        web.loadDataWithBaseURL(null, page(tx("Connecting…"), "", false, this), "text/html", "utf-8", null);
         final String home = prefs().getString(KEY_HOME, "");
         final String remote = prefs().getString(KEY_REMOTE, "");
         new Thread(() -> {
@@ -158,7 +159,7 @@ public class MainActivity extends Activity {
             final String chosen = pick;
             ui.post(() -> {
                 if (chosen == null) {
-                    showError(tx("The Tinker Board can't be reached at the home or the outside address.", "বাসার বা বাইরের, কোনো ঠিকানাতেই Tinker Board পাওয়া যাচ্ছে না।"));
+                    showError(tx("The CCTV server can't be reached at the home or the outside address."));
                 } else {
                     baseUrl = chosen;
                     web.loadUrl(chosen + "/");
@@ -185,13 +186,13 @@ public class MainActivity extends Activity {
     void showError(String msg) {
         showingError = true;
         web.loadDataWithBaseURL(null, page("⚠️ " + msg,
-                tx("Is the Tinker Board on? Is there internet?", "Tinker Board চালু আছে তো? Internet আছে তো?"), true, this), "text/html", "utf-8", null);
+                tx("Is the CCTV server on? Is there internet?"), true, this), "text/html", "utf-8", null);
     }
 
     static String page(String title, String sub, boolean buttons, MainActivity a) {
         String b = buttons
-                ? "<button onclick='CCTVApp.retry()'>" + a.tx("Try again", "আবার চেষ্টা") + "</button><button class=g onclick='CCTVApp.openSettings()'>"
-                  + a.tx("Server address", "Server ঠিকানা") + "</button>"
+                ? "<button onclick='CCTVApp.retry()'>" + a.tx("Try again") + "</button><button class=g onclick='CCTVApp.openSettings()'>"
+                  + a.tx("Server address") + "</button>"
                 : "<div class=spin></div>";
         return "<html><head><meta name=viewport content='width=device-width,initial-scale=1'><style>"
                 + "body{margin:0;height:100vh;display:grid;place-items:center;background:#0d1117;color:#e6edf3;font-family:sans-serif;text-align:center;padding:24px;box-sizing:border-box}"
@@ -230,7 +231,7 @@ public class MainActivity extends Activity {
         } else if (showingError || baseUrl == null) {
             if (p.getString(KEY_HOME, "").isEmpty() && p.getString(KEY_REMOTE, "").isEmpty()) {
                 showingError = true;
-                web.loadDataWithBaseURL(null, page(tx("No server address yet", "Server ঠিকানা দেওয়া হয়নি"), "", true, this), "text/html", "utf-8", null);
+                web.loadDataWithBaseURL(null, page(tx("No server address yet"), "", true, this), "text/html", "utf-8", null);
             } else {
                 connect();
             }

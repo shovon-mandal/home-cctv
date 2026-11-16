@@ -1,46 +1,49 @@
 # =====================================================================
-#  CCTV system config  ->  /etc/cctv/cctv.conf
-#  এই file বদলানোর পর চালান:   sudo cctv-apply
+#  Home CCTV settings  ->  /etc/cctv/cctv.conf   (Docker: data/config/cctv.conf)
+#  Most of these can be changed in the dashboard. After editing by hand run:
+#  sudo cctv-apply   (Docker: docker compose restart)
 # =====================================================================
 
 [general]
-# Dashboard: http://<tinker-board-IP>:8085
+# Name shown in the dashboard title (also editable in Settings -> System)
+site_name = Home CCTV
+# Dashboard: http://<this-computer-IP>:8085
 web_port = 8085
-# Login account (admin/viewer) বানাতে:  sudo cctv-user add NAME --admin
 
-# SSD না থাকলে Tinker Board-এর SD card-এ সর্বোচ্চ কত GB recording রাখবে
+# --- Storage -----------------------------------------------------------
+# Recordings folder size limit when no SSD is used (on a single-board computer this is
+# the SD card; in Docker it is the recordings folder)
 sd_buffer_gb = 7
-# SD card-এ সবসময় অন্তত এতটুকু খালি থাকবে (Discord bot ইত্যাদির জন্য)
+# Always keep at least this much free space on that disk for other programs
 sd_min_free_gb = 2
 
-# SSD: USB-তে লাগালেই নিজে থেকে mount হয়, recording যায় SSD-র "CCTV" folder-এ।
-# আপনার অন্য file কখনো মোছা হয় না। খোলার আগে: sudo cctv-ssd-eject
+# Linux only: a USB SSD/disk plugged in is mounted automatically and recordings go to
+# its "CCTV" folder. Your other files are never touched. Unplug only after: sudo cctv-ssd-eject
 ssd_auto = yes
-# এই folder সর্বোচ্চ কত GB নেবে (ভরে গেলে সবচেয়ে পুরোনো clip মুছবে)
+# Size limit of the CCTV folder on the SSD (oldest clips are deleted first)
 ssd_max_gb = 200
-# SSD-তে সবসময় অন্তত এত % খালি রাখবে (শুধু CCTV clip মুছে)
+# Keep at least this % of the SSD free (only CCTV clips are deleted for it)
 ssd_min_free_percent = 5
 
-# Google Drive (rclone remote:folder)
+# --- Google Drive (optional; connect it in Settings -> Google Drive) ----
 drive_enabled = yes
 drive_remote = gdrive:CCTV
-# SSD লাগানো থাকলেও Drive-এ backup দেবে? (yes/no)
+# Also upload when an SSD is connected? (yes/no)
 drive_backup_when_ssd = yes
-# Drive-এ কত দিনের clip থাকবে, আর সর্বোচ্চ কত GB (free = 15 GB)
+# How long clips stay on Drive, and the maximum size (a free account has 15 GB)
 drive_keep_days = 5
 drive_max_gb = 12
-# Upload speed limit, যেমন 1M = 1 MB/s  (0 = limit নেই)
+# Upload speed limit, e.g. 1M = 1 MB/s  (0 = no limit)
 drive_bwlimit = 0
 
-# Motion detection (sub stream-এ চলে, CPU কম লাগে)
+# --- Motion detection (runs on the low-quality stream, little CPU) ----
 motion_width = 640
 motion_height = 360
-# motion থামার পর কত সেকেন্ড পর্যন্ত একই clip চলবে
+# seconds without motion before an event ends
 event_gap = 20
 pre_capture_sec = 3
 post_capture_sec = 5
-# লম্বা motion এত মিনিটের টুকরোয় ভাগ হয়; প্রতিটা টুকরো শেষ হলেই Drive-এ যায়
+# long motion is uploaded in pieces of this many minutes
 max_clip_minutes = 3
 
-
-# Camera যোগ/বদল: dashboard → ⚙️ Settings → Cameras   (বা /etc/cctv/cameras.conf)
+# Cameras: dashboard -> Settings -> Cameras  (or cameras.conf)
