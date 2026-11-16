@@ -28,6 +28,9 @@ LOG = os.path.join(os.path.dirname(STATE), "upload-log.json")   # recent uploads
 INFO = {}                                                         # extra fields for the dashboard
 
 
+LEN_PREFIX = re.compile(r"/\[\d+s\] ")         # clip length in front of the name on Drive
+
+
 def status(state, message):
     fd, tmp = tempfile.mkstemp(prefix=".upload.", dir=RUN)   # fresh file: never blocked by an old one
     with os.fdopen(fd, "w", encoding="utf-8") as f:
@@ -44,7 +47,7 @@ def main():
     days = [(datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d") for i in (1, 0)]
     root = os.path.realpath(REC)
 
-    to_upload, pruned = [], 0
+    to_upload, pruned, secs = [], 0, {}
     for c in cams:
         if not c["enabled"] or c["mode"] == "off":
             continue
@@ -56,7 +59,9 @@ def main():
                 if not s["done"] or s["merged"]:        # joined 15-min files never go to Drive
                     continue
                 if cctvrec.overlaps(s["start"], s["end"], ivs):
-                    to_upload.append(os.path.relpath(s["path"], root))
+                    rel = os.path.relpath(s["path"], root)
+                    to_upload.append(rel)
+                    secs[rel] = max(1, int(round(min(s["end"] - s["start"], 3600))))
                 elif c["mode"] in ("motion", "smart") and now - s["end"] > keep:
                     for p in (s["path"], s["path"][:-4] + ".jpg"):
                         try:
@@ -131,6 +136,7 @@ def main():
         for ln in out.splitlines():
             if "|" in ln:
                 rel, size = ln.rsplit("|", 1)
+                rel = LEN_PREFIX.sub("/", "/" + rel)[1:]          # "[60s] 10-02-00.mp4" -> "10-02-00.mp4"
                 have[rel] = int(size) if size.isdigit() else -2
         for p in todo:
             if p.split("/")[0] == folder and have.get(p.split("/", 1)[1]) == local_size.get(p):
@@ -205,13 +211,24 @@ def main():
         if not ok:
             save_state()
             return status("error", f"Upload stopped at {sent}/{total}: check internet / Drive (retries every minute)")
+        # name on Drive starts with the clip's length: "[60s] 10-02-00.mp4"
+        for p in batch:
+            if p.endswith(".mp4") and p in secs:
+                cam, _, rest = p.partition("/")
+                day, _, fname = rest.rpartition("/")
+                base = f"{remote}/{folder_of(cam)}/{day}/"
+                try:
+                    rc("moveto", base + fname, base + f"[{secs[p]}s] {fname}", t=120)
+                except subprocess.TimeoutExpired:
+                    pass
         done |= set(batch)
         sent += sum(1 for p in batch if p.endswith(".mp4"))
         save_state()
         for p in batch:
             if p.endswith(".mp4"):
                 cam, day, f = (p.split("/") + ["", ""])[:3]
-                recent.insert(0, {"cam": folder_of(cam), "day": day, "file": f, "size": max(0, local_size.get(p, 0)),
+                recent.insert(0, {"cam": folder_of(cam), "day": day,
+                                  "file": f"[{secs[p]}s] {f}" if p in secs else f, "size": max(0, local_size.get(p, 0)),
                                   "t": int(time.time())})
         recent = recent[:20]
         try:

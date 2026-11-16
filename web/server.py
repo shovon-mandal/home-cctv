@@ -111,6 +111,9 @@ def drive_path(cam, date=None, name=None):
     return "/".join([remote, cctvrec.folder_names().get(cam, cam)] + [x for x in (date, name) if x])
 
 
+DRIVE_NAME = re.compile(r"^(?:\[\d+s\] )?(\d{2}-\d{2}-\d{2}\.mp4)$")   # "[60s] 10-02-00.mp4" or "10-02-00.mp4"
+
+
 def drive_ls(path, dirs=False):
     """rclone listing of a Drive folder, cached for a minute."""
     key = (path, dirs)
@@ -1002,7 +1005,11 @@ class Handler(BaseHTTPRequestHandler):
         base, qs = f"/rec/{cam}/{date}/", f"?src={src}"
         segs = []
         if src == "drive":
-            items = [x for x in drive_ls(drive_path(cam, date)) if cctvrec.SEG_RE.match(x.get("Name", ""))]
+            items = []
+            for x in drive_ls(drive_path(cam, date)):
+                m = DRIVE_NAME.match(x.get("Name", ""))
+                if m:
+                    items.append(dict(x, Name=m.group(1)))
             items.sort(key=lambda x: x["Name"])
             starts = [cctvrec.seg_epoch(date, x["Name"]) for x in items]
             for i, (x, st) in enumerate(zip(items, starts)):
@@ -1212,7 +1219,9 @@ class Handler(BaseHTTPRequestHandler):
             if not os.path.isfile(fp):
                 os.makedirs(os.path.dirname(fp), exist_ok=True)
                 tmp = fp + ".part"
-                r = subprocess.run(["rclone", "--config", RCLONE_CONF, "copyto", drive_path(*parts), tmp],
+                real = next((x["Name"] for x in drive_ls(drive_path(parts[0], parts[1]))
+                             if (DRIVE_NAME.match(x.get("Name", "")) or [None, None])[1] == parts[2]), parts[2])
+                r = subprocess.run(["rclone", "--config", RCLONE_CONF, "copyto", drive_path(parts[0], parts[1], real), tmp],
                                    capture_output=True, text=True, timeout=300)
                 if r.returncode != 0 or not os.path.isfile(tmp):
                     return self.send_error_json(502, "Could not get the clip from Google Drive")
