@@ -1155,6 +1155,30 @@ async function refreshStatus() {
 const pad = n => String(n).padStart(2, "0");
 const hms = (sec, s = true) => { sec = Math.max(0, Math.floor(sec)); return `${pad(Math.floor(sec / 3600))}:${pad(Math.floor(sec / 60) % 60)}${s ? ":" + pad(sec % 60) : ""}`; };
 let TL = null, cur = null, selHour = null;          // timeline data, playing segment, selected hour
+/* Pictures load two at a time and only when on screen: a missing one is made by the server from
+   the video, and a page full of them must not keep the video itself waiting. */
+const IMG_OK = new Set(), imgQ = []; let imgBusy = 0;
+const qImg = url => IMG_OK.has(url) ? `<img src="${url}" alt="">` : `<img class="ph" data-src="${url}" alt="">`;
+const imgIO = new IntersectionObserver(es => {
+  for (const e of es) if (e.isIntersecting) { imgIO.unobserve(e.target); imgQ.push(e.target); }
+  imgPump();
+}, { rootMargin: "150px" });
+function imgPump() {
+  while (imgBusy < 2 && imgQ.length) {
+    const el = imgQ.pop();                             // newest request first: what is on screen now
+    if (!el.isConnected) continue;
+    const url = el.dataset.src; let tries = 0; imgBusy++;
+    const probe = new Image();
+    const done = () => { imgBusy--; imgPump(); };
+    probe.onload = () => { IMG_OK.add(url); el.src = url; el.classList.remove("ph"); done(); };
+    probe.onerror = () => {
+      if (++tries < 3 && el.isConnected) setTimeout(() => { probe.src = url + (url.includes("?") ? "&" : "?") + "r=" + tries; }, 3000);
+      else done();
+    };
+    probe.src = url;
+  }
+}
+const watchImgs = box => box.querySelectorAll("img[data-src]").forEach(i => imgIO.observe(i));
 /* two video elements: while one plays, the next file loads in the hidden one, then they swap.
    No "loading" pause between the HD motion pieces and the low-quality 24h copy. */
 let pv = $("#pv"), pvB = $("#pv2"), PRE = null;
@@ -1274,11 +1298,12 @@ function drawStrip() {
   for (const s of hourSegs(selHour)) {
     const b = document.createElement("button");
     b.className = "thumb" + (segHasMotion(s) ? " m" : "") + (cur && segKey(cur) === segKey(s) ? " sel" : "");
-    b.innerHTML = (s.thumb ? `<img loading="lazy" src="${s.thumb}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'ph'}))">` : `<div class="ph"></div>`) +
+    b.innerHTML = (s.thumb ? qImg(s.thumb) : `<div class="ph"></div>`) +
       `<span>${hms(relSec(s.start), false)}${s.done ? "" : " · " + t("live2")}</span>`;
     b.onclick = () => playSeg(s, 0);
     strip.appendChild(b);
   }
+  watchImgs(strip);
   const sel = strip.querySelector(".sel"); if (sel) sel.scrollIntoView({ block: "nearest", inline: "center" });
 }
 function drawEvents() {
@@ -1288,11 +1313,12 @@ function drawEvents() {
   for (const e of [...TL.events].reverse()) {
     const dur = Math.round((e.end ?? TL.now) - e.start);
     const b = document.createElement("button"); b.className = "evc";
-    b.innerHTML = (e.pic ? `<img loading="lazy" src="${e.pic}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'ph'}))">` : `<div class="ph"></div>`) +
+    b.innerHTML = (e.pic ? qImg(e.pic) : `<div class="ph"></div>`) +
       `<div><b>${hms(relSec(e.start))}</b> · ${e.live ? t("ongoing") : dur < 90 ? dur + " " + t("secs") : Math.round(dur / 60) + " " + t("mins")}</div>`;
     b.onclick = () => { playAt(e.start - 3, true); $("#recs").scrollTo({ top: 0, behavior: "smooth" }); };
     box.appendChild(b);
   }
+  watchImgs(box);
 }
 function playAt(ts, autoplay) {
   const segs = TL.segments; if (!segs.length) return;

@@ -77,9 +77,14 @@ def gen_motion(g, cams, outdir):
         f"width {g['motion_width']}",
         f"height {g['motion_height']}",
         f"event_gap {g['event_gap']}",
-        "minimum_motion_frames 2",
+        # 3 frames in a row (0.6 s): one-frame flashes (an insect at the night light, a
+        # compression glitch, the picture switching to night mode) are not an event
+        "minimum_motion_frames 3",
         "noise_tune on",
         "despeckle_filter EedDl",
+        # places that move all the time (the camera's own clock, a tree, a flag, a blinking
+        # light) are learned and ignored after a while
+        "smart_mask_speed 5",
         # a light switching on/off IS an event we want, so don't filter it out
         "lightswitch_percent 0",
         # draw a red box around what moved on the event snapshot

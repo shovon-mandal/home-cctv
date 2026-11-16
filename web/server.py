@@ -130,13 +130,13 @@ def drive_ls(path, dirs=False):
 
 def make_thumb(mp4, jpg, at=0.0, width=240):
     """A keyframe of the clip (at `at` seconds) as a small JPEG; fast even for H.265 on a small board."""
-    if not THUMB_SEM.acquire(timeout=30):
+    if not THUMB_SEM.acquire(timeout=6):        # busy: the page asks again later
         return False
     try:
         tmp = jpg + ".tmp.jpg"
         seek = ["-ss", f"{at:.1f}"] if at > 0.5 else []
         for extra in ([seek, []] if seek else [[]]):       # seeking can fail in a growing file: then frame 1
-            subprocess.run(["nice", "-n", "10", "ffmpeg", "-nostdin", "-loglevel", "error", "-y", "-skip_frame", "nokey",
+            subprocess.run(["nice", "-n", "19", "ffmpeg", "-nostdin", "-loglevel", "error", "-y", "-threads", "1", "-skip_frame", "nokey",
                             *extra, "-i", mp4, "-frames:v", "1", "-vf", f"scale={width}:-2", "-q:v", "7", tmp],
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=40)
             if os.path.exists(tmp) and os.path.getsize(tmp) > 0:
@@ -1145,17 +1145,24 @@ class Handler(BaseHTTPRequestHandler):
         m = re.match(r"^m-(\d{2})-(\d{2})-(\d{2})", name)
         if not m:
             mp4 = fp[:-4] + ".mp4"
-            return os.path.isfile(mp4) and make_thumb(mp4, fp)
+            if not os.path.isfile(mp4):
+                return False
+            # the small 24h copy of the same minute decodes many times faster than 4 MP H.265
+            low = os.path.join(os.path.dirname(mp4), cctvrec.LOW, os.path.basename(mp4))
+            if os.path.basename(os.path.dirname(mp4)) != cctvrec.LOW and os.path.isfile(low) \
+                    and os.path.getsize(low) > 20000:
+                return make_thumb(low, fp) or make_thumb(mp4, fp)
+            return make_thumb(mp4, fp)
         date = parts[1]
         if not DATE_RE.match(date):
             return False
         t = cctvrec.midnight(date) + int(m.group(1)) * 3600 + int(m.group(2)) * 60 + int(m.group(3))
         day = os.path.dirname(fp)
-        segs = [x for x in cctvrec.merged_segments(day, date) if x["start"] - 1 <= t < x["end"]]
-        if not segs:
-            return False
-        s_ = segs[0]
-        return make_thumb(os.path.join(day, s_["rel"]), fp, t - s_["fstart"], 480)
+        for low in (True, False):                # the small copy first: much faster to decode
+            for x in cctvrec.segments(day, date, low=low):
+                if x["start"] - 1 <= t < x["end"] and make_thumb(x["path"], fp, t - x["start"], 480):
+                    return True
+        return False
 
     def export_range(self, q, user):
         """One video for a time range: the 1-minute files joined on the fly (no re-encoding)."""
@@ -1342,6 +1349,10 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(length))
             if ranged:
                 self.send_header("Accept-Ranges", "bytes")
+                st = os.fstat(f.fileno())
+                self.send_header("ETag", f'"{st.st_size:x}-{st.st_mtime_ns:x}"')
+                if fp.endswith(".jpg"):                 # a thumbnail never changes once made
+                    self.send_header("Cache-Control", "private, max-age=604800")
             else:
                 self.send_header("Cache-Control", "no-cache")
             self.end_headers()
