@@ -7,6 +7,7 @@
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -26,6 +27,22 @@ STATE = os.environ.get("CCTV_UPLOADED", "/srv/cctv/uploaded.txt")
 
 LOG = os.path.join(os.path.dirname(STATE), "upload-log.json")   # recent uploads, survives reboots
 INFO = {}                                                         # extra fields for the dashboard
+
+
+def probe_codec(path):
+    try:
+        return subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=codec_name",
+                               "-of", "csv=p=0", path], capture_output=True, text=True, timeout=30).stdout.strip()
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+
+
+def probe_duration(path):
+    try:
+        return float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0",
+                                     path], capture_output=True, text=True, timeout=30).stdout.strip() or 0)
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return 0.0
 
 
 LEN_PREFIX = re.compile(r"/\[\d+s\] ")         # clip length in front of the name on Drive
@@ -61,7 +78,11 @@ def main():
                 if cctvrec.overlaps(s["start"], s["end"], ivs):
                     rel = os.path.relpath(s["path"], root)
                     to_upload.append(rel)
-                    secs[rel] = max(1, int(round(min(s["end"] - s["start"], 3600))))
+                    # only the part with motion (plus the pre/post seconds) goes to Drive
+                    hits = [(max(a, s["start"]), min(b if b is not None else s["end"], s["end"])) for a, b in ivs
+                            if a < s["end"] and (b is None or b > s["start"])]
+                    a, b = min(h[0] for h in hits), max(h[1] for h in hits)
+                    secs[rel] = (s["start"], s["end"], a, b)
                 elif c["mode"] in ("motion", "smart") and now - s["end"] > keep:
                     for p in (s["path"], s["path"][:-4] + ".jpg"):
                         try:
@@ -168,6 +189,46 @@ def main():
     batches[0] = batches[0] + extras
     STAT_RE = re.compile(r"([\d.]+ ?\w*B) / ([\d.]+ ?\w*B), (\d+)%, ([\d.]+ ?\w*B/s)(?:, ETA (\S+))?")
 
+    stage = os.path.join(root, ".upload-stage")
+
+    def prepare(batch):
+        """Files for this batch, named as on Drive: '[23s] 10-02-35.mp4'. A minute with only a
+        few seconds of motion is cut to those seconds (copied, not re-encoded: same quality,
+        hardly any CPU); a minute with motion all through goes as it is (a link, no copy)."""
+        shutil.rmtree(stage, ignore_errors=True)
+        names = {}
+        for p in batch:
+            cam, _, rest = p.partition("/")
+            day, _, fname = rest.rpartition("/")
+            src = os.path.join(root, p)
+            ddir = os.path.join(stage, cam, day)
+            os.makedirs(ddir, exist_ok=True)
+            if not p.endswith(".mp4") or p not in secs:
+                os.symlink(src, os.path.join(ddir, fname))
+                continue
+            s0, s1, a, b = secs[p]
+            name = None
+            if b - a < 0.85 * (s1 - s0) and b - a >= 1:
+                tmp = os.path.join(ddir, ".cut.mp4")
+                r = subprocess.run(["nice", "-n", "15", "ffmpeg", "-nostdin", "-loglevel", "error", "-y",
+                                    "-ss", f"{a - s0:.2f}", "-i", src, "-t", f"{b - a:.2f}", "-map", "0", "-c", "copy",
+                                    "-avoid_negative_ts", "make_zero", "-movflags", "+faststart",
+                                    *(["-tag:v", "hvc1"] if probe_codec(src) == "hevc" else []), tmp],
+                                   capture_output=True, timeout=120)
+                dur = probe_duration(tmp) if r.returncode == 0 and os.path.exists(tmp) else 0
+                if dur > 0.5:
+                    start = b - dur                          # the cut begins at the keyframe before 'a'
+                    name = f"[{int(round(dur))}s] " + time.strftime("%H-%M-%S", time.localtime(start)) + ".mp4"
+                    os.replace(tmp, os.path.join(ddir, name))
+            if name is None:                                 # whole minute
+                name = f"[{int(round(s1 - s0))}s] {fname}"
+                os.symlink(src, os.path.join(ddir, name))
+            try:
+                names[p] = (name, os.path.getsize(os.path.join(ddir, name)))
+            except OSError:
+                names[p] = (name, 0)
+        return names
+
     def live(extra=""):
         INFO.update(sent=sent, total=total, pending=total - sent)
         status("busy", f"Uploading motion clips: {sent}/{total} done{extra}…")
@@ -175,18 +236,18 @@ def main():
     for batch in batches:
         live()
         ok = True
-        by_cam = {}
-        for p in batch:
-            cam, _, rest = p.partition("/")
-            by_cam.setdefault(cam, []).append(rest)
-        for cam, files in by_cam.items():               # Drive folder = camera name
-            with tempfile.NamedTemporaryFile("w", delete=False, suffix=".txt") as lst:
-                lst.write("\n".join(files) + "\n")
+        try:
+            uploaded_as = prepare(batch)
+        except (OSError, subprocess.TimeoutExpired) as e:
+            print(f"cctv-upload: preparing failed: {e}")
+            shutil.rmtree(stage, ignore_errors=True)
+            return status("error", "Could not prepare the clips (disk?)")
+        for cam in {p.split("/")[0] for p in batch}:      # Drive folder = camera name
             err_tail = []
             try:
-                proc = subprocess.Popen(["nice", "-n", "15", "rclone", "copy", os.path.join(root, cam) + "/",
+                proc = subprocess.Popen(["nice", "-n", "15", "rclone", "copy", os.path.join(stage, cam) + "/",
                                          f"{remote}/{folder_of(cam)}", "--config", RCLONE_CONF,
-                                         "--files-from", lst.name, "--no-traverse", "--transfers", "2",
+                                         "--copy-links", "--no-traverse", "--transfers", "2",
                                          "--bwlimit", g["drive_bwlimit"], "--retries", "2",
                                          "--stats", "5s", "--stats-one-line", "--stats-log-level", "NOTICE"],
                                         stderr=subprocess.PIPE, stdout=subprocess.DEVNULL, text=True)
@@ -202,7 +263,7 @@ def main():
                         proc.kill()
                 rc_code = proc.wait()
             finally:
-                os.unlink(lst.name)
+                pass
             if rc_code != 0:
                 print("\n".join(err_tail))
                 ok = False
@@ -211,24 +272,15 @@ def main():
         if not ok:
             save_state()
             return status("error", f"Upload stopped at {sent}/{total}: check internet / Drive (retries every minute)")
-        # name on Drive starts with the clip's length: "[60s] 10-02-00.mp4"
-        for p in batch:
-            if p.endswith(".mp4") and p in secs:
-                cam, _, rest = p.partition("/")
-                day, _, fname = rest.rpartition("/")
-                base = f"{remote}/{folder_of(cam)}/{day}/"
-                try:
-                    rc("moveto", base + fname, base + f"[{secs[p]}s] {fname}", t=120)
-                except subprocess.TimeoutExpired:
-                    pass
+        shutil.rmtree(stage, ignore_errors=True)
         done |= set(batch)
         sent += sum(1 for p in batch if p.endswith(".mp4"))
         save_state()
         for p in batch:
             if p.endswith(".mp4"):
                 cam, day, f = (p.split("/") + ["", ""])[:3]
-                recent.insert(0, {"cam": folder_of(cam), "day": day,
-                                  "file": f"[{secs[p]}s] {f}" if p in secs else f, "size": max(0, local_size.get(p, 0)),
+                recent.insert(0, {"cam": folder_of(cam), "day": day, "file": uploaded_as.get(p, (f,))[0],
+                                  "size": uploaded_as[p][1] if p in uploaded_as else max(0, local_size.get(p, 0)),
                                   "t": int(time.time())})
         recent = recent[:20]
         try:

@@ -111,7 +111,7 @@ def drive_path(cam, date=None, name=None):
     return "/".join([remote, cctvrec.folder_names().get(cam, cam)] + [x for x in (date, name) if x])
 
 
-DRIVE_NAME = re.compile(r"^(?:\[\d+s\] )?(\d{2}-\d{2}-\d{2}\.mp4)$")   # "[60s] 10-02-00.mp4" or "10-02-00.mp4"
+DRIVE_NAME = re.compile(r"^(?:\[(\d+)s\] )?(\d{2}-\d{2}-\d{2}\.mp4)$")   # "[23s] 10-02-35.mp4" or "10-02-00.mp4"
 
 
 def drive_ls(path, dirs=False):
@@ -1009,11 +1009,13 @@ class Handler(BaseHTTPRequestHandler):
             for x in drive_ls(drive_path(cam, date)):
                 m = DRIVE_NAME.match(x.get("Name", ""))
                 if m:
-                    items.append(dict(x, Name=m.group(1)))
+                    items.append(dict(x, Name=m.group(2), Secs=int(m.group(1) or 60)))
             items.sort(key=lambda x: x["Name"])
             starts = [cctvrec.seg_epoch(date, x["Name"]) for x in items]
             for i, (x, st) in enumerate(zip(items, starts)):
-                end = min(starts[i + 1], st + 60) if i + 1 < len(starts) else st + 60
+                end = st + max(1, x["Secs"])
+                if i + 1 < len(starts):
+                    end = min(end, starts[i + 1])
                 jpg = os.path.join(d, x["Name"][:-4] + ".jpg")       # picture of that minute, if still here
                 has = os.path.exists(jpg) and os.path.getsize(jpg) > 0
                 segs.append({"start": st, "end": end, "fstart": st, "size": x.get("Size", 0), "done": True, "low": False,
@@ -1222,7 +1224,7 @@ class Handler(BaseHTTPRequestHandler):
                 os.makedirs(os.path.dirname(fp), exist_ok=True)
                 tmp = fp + ".part"
                 real = next((x["Name"] for x in drive_ls(drive_path(parts[0], parts[1]))
-                             if (DRIVE_NAME.match(x.get("Name", "")) or [None, None])[1] == parts[2]), parts[2])
+                             if (DRIVE_NAME.match(x.get("Name", "")) or [None, None, None])[2] == parts[2]), parts[2])
                 r = subprocess.run(["rclone", "--config", RCLONE_CONF, "copyto", drive_path(parts[0], parts[1], real), tmp],
                                    capture_output=True, text=True, timeout=300)
                 if r.returncode != 0 or not os.path.isfile(tmp):
