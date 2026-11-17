@@ -87,12 +87,18 @@ sync   # write the program files to the card now: a power cut must not leave the
 # a kernel oops must not turn into a reboot (a Tinker Board can hang on reboot from an SD card)
 [ -f /etc/sysctl.d/90-cctv.conf ] && sed -i 's/panic_on_oops = 1/panic_on_oops = 0/' /etc/sysctl.d/90-cctv.conf
 sysctl -q kernel.panic_on_oops=0 2>/dev/null || true
+# the hardware watchdog added for a few hours last night: off again (a Tinker Board started
+# from an SD card can hang after such a reset instead of starting again)
+if [ -f /etc/systemd/system.conf.d/cctv-watchdog.conf ]; then
+  rm -f /etc/systemd/system.conf.d/cctv-watchdog.conf
+  systemctl daemon-reexec || true
+fi
 echo "==> Services"
 install -m 644 "$HERE"/systemd/* /etc/systemd/system/
 systemctl daemon-reload
 /opt/cctv/bin/cctv-storage || true
 /opt/cctv/bin/cctv-apply --no-restart
-systemctl enable -q cctv-go2rtc cctv-motion cctv-recorder cctv-web cctv-storage.timer cctv-upload.timer cctv-drive-clean.timer cctv-apply.path cctv-ssd-eject.path cctv-ssd-attach.path cctv-watchdog.timer cctv-merge.timer
+systemctl enable -q cctv-go2rtc cctv-motion cctv-recorder cctv-web cctv-storage.timer cctv-upload.timer cctv-drive-clean.timer cctv-apply.path cctv-ssd-eject.path cctv-ssd-attach.path cctv-watchdog.timer cctv-merge.timer cctv-crashlog
 systemctl restart cctv-ssd-eject.path cctv-ssd-attach.path
 if [ -d "$HERE/.git" ]; then
   [ "$HERE" = /opt/cctv-src ] || ln -sfn "$HERE" /opt/cctv-src
@@ -101,7 +107,7 @@ if [ -d "$HERE/.git" ]; then
   systemctl enable -q cctv-update.timer cctv-update.path
   systemctl restart cctv-update.timer cctv-update.path
 fi
-systemctl restart cctv-storage.timer cctv-upload.timer cctv-drive-clean.timer cctv-apply.path cctv-watchdog.timer cctv-merge.timer
+systemctl restart cctv-storage.timer cctv-upload.timer cctv-drive-clean.timer cctv-apply.path cctv-watchdog.timer cctv-merge.timer cctv-crashlog
 # restarts go2rtc, web, motion and one recorder per camera
 /opt/cctv/bin/cctv-apply || true
 

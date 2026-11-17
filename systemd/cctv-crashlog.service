@@ -1,0 +1,12 @@
+[Unit]
+Description=CCTV black box: last seconds before a sudden shutdown, kept on the SD card
+After=local-fs.target
+
+[Service]
+ExecStart=/opt/cctv/bin/cctv-crashlog --run
+Restart=always
+RestartSec=5
+Nice=10
+
+[Install]
+WantedBy=multi-user.target
