@@ -223,8 +223,11 @@ window.I18N_BN = {
   talkTip: "Camera দিয়ে কথা বলুন (থামাতে আবার চাপুন)",
   talkOn: "🎤 {0} দিয়ে কথা বলছেন… থামাতে 🎤 আবার চাপুন",
   talkNeedHttps: "Microphone শুধু https ঠিকানায় (Tailscale) বা Android app-এ চলে, http://192.168… ঠিকানায় নয়",
-  talkNoMic: "Microphone-এর অনুমতি নেই: এই site / app-কে microphone ব্যবহারের অনুমতি দিন",
+  talkNoMic: "Microphone-এর অনুমতি নেই: অনুমতি দিন (browser: ঠিকানার পাশের 🔒 → Permissions → Microphone; app: জিজ্ঞেস করলে Allow)",
   talkFailed: "কথা বলা থেমে গেছে: CCTV server-এর সাথে সংযোগ কেটে গেছে",
+  talkUpdateApp: "কথা বলতে app-এর নতুন version লাগবে: HomeCCTV.apk আবার নামিয়ে (GitHub → Releases → Android app) এটার ওপরেই install করুন",
+  talkMicSettings: "এই app-এর microphone বন্ধ করা আছে: যে settings খুলেছে সেখানে Permissions → Microphone → Allow দিন, তারপর আবার 🎤 চাপুন",
+  zoomReset: "Zoom: 1×-এ ফিরতে চাপুন",
 };
 
 window.I18N_BN_LABEL = "বাং";

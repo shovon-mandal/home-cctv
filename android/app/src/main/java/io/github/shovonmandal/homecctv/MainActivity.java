@@ -23,6 +23,7 @@ import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
+import android.webkit.PermissionRequest;
 import android.webkit.URLUtil;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
@@ -108,6 +109,18 @@ public class MainActivity extends Activity {
         });
 
         web.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public void onPermissionRequest(PermissionRequest req) {           // microphone for the page
+                for (String r : req.getResources()) {
+                    if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(r)
+                            && checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                        ui.post(() -> req.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE}));
+                        return;
+                    }
+                }
+                ui.post(req::deny);
+            }
+
             @Override
             public void onShowCustomView(View view, CustomViewCallback cb) {      // video fullscreen
                 if (fullscreenView != null) { cb.onCustomViewHidden(); return; }
@@ -322,8 +335,18 @@ public class MainActivity extends Activity {
         if (req != REQ_MIC) return;
         String cam = pendingTalkCam;
         pendingTalkCam = null;
-        if (res.length > 0 && res[0] == PackageManager.PERMISSION_GRANTED && cam != null) talkStart(cam);
-        else appTalk("error:mic");
+        if (res.length > 0 && res[0] == PackageManager.PERMISSION_GRANTED && cam != null) {
+            talkStart(cam);
+        } else if (!shouldShowRequestPermissionRationale(android.Manifest.permission.RECORD_AUDIO)) {
+            // "don't ask again": Android won't show the question any more -> open the app's settings
+            appTalk("error:micsettings");
+            try {
+                startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.fromParts("package", getPackageName(), null)));
+            } catch (Exception ignored) { }
+        } else {
+            appTalk("error:mic");
+        }
     }
 
     @Override

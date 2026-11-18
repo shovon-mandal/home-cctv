@@ -73,6 +73,12 @@
   .tile.moving { border-color: var(--motion); box-shadow: 0 0 0 1px var(--motion) inset; }
   .tile .in { position: absolute; inset: 0; }
   .tile video { width: 100%; height: 100%; object-fit: contain; display: block; background: #000; }
+  /* digital zoom: pinch / mouse wheel on the picture, drag to move; the badge goes back to 1× */
+  .zoomable { touch-action: pan-y; transform-origin: 0 0; will-change: transform; }
+  .zoomed { touch-action: none; cursor: grab; }
+  .zbadge { position: absolute; left: 6px; bottom: 6px; z-index: 3; border: 0; border-radius: 8px; padding: 3px 8px;
+    background: rgba(0,0,0,.6); color: #fff; font-size: 12.5px; display: none; }
+  .zbox { position: relative; overflow: hidden; }
   .tile.rot { position: fixed; inset: 0; z-index: 60; border: 0; border-radius: 0; }
   .tile.rot .in { inset: auto; top: 0; left: 0; width: 100vh; height: 100vw; width: 100dvh; height: 100dvw;
     transform-origin: 0 0; transform: translateX(100vw) rotate(90deg); }
@@ -258,7 +264,7 @@
       <button class="navbtn" id="dNext">▶</button>
     </div>
     <div class="player">
-      <video id="pv" controls playsinline preload="metadata"></video>
+      <div class="zbox" id="pvBox"><video id="pv" controls playsinline preload="metadata"></video><button class="zbadge" id="pvZoom"></button></div>
       <div class="pbar">
         <span><b id="pvTime">--:--:--</b> <span class="muted" id="pvInfo"></span></span>
         <span><button id="pvPrev">⏮ <span data-t="prevMin"></span></button><button id="pvNext"><span data-t="nextMin"></span> ⏭</button>
@@ -806,8 +812,11 @@ const I18N = {
   talkTip: "Talk through the camera (tap again to stop)",
   talkOn: "🎤 Talking through {0}… tap 🎤 again to stop",
   talkNeedHttps: "The microphone works only on the https address (Tailscale) or in the Android app, not on http://192.168…",
-  talkNoMic: "No microphone access: allow the microphone for this site / app",
+  talkNoMic: "No microphone access: allow it (browser: tap 🔒 next to the address → Permissions → Microphone; app: allow when asked)",
   talkFailed: "Talking stopped: the connection to the CCTV server broke",
+  talkUpdateApp: "Talking needs the new version of the app: download HomeCCTV.apk again (GitHub → Releases → Android app) and install it over this one",
+  talkMicSettings: "The microphone is blocked for this app: in the settings that opened, tap Permissions → Microphone → Allow, then tap 🎤 again",
+  zoomReset: "Zoom: tap to go back to 1×",
 };
 /* wording when running in Docker on a PC / NAS (no SD card, no SSD switching) */
 const I18N_DOCKER = {
@@ -991,6 +1000,7 @@ async function talkStart(c, btn) {
   try { await api(`/api/talkcheck?cam=${encodeURIComponent(c.id)}`); }
   catch (e) { if (e.message !== "login") toast(e.message); return; }
   const app = window.CCTVApp && typeof window.CCTVApp.talkStart === "function";
+  if (window.CCTVApp && !app) { toast(t("talkUpdateApp")); return; }       // app older than talking
   TALK = { cam: c.id, btn, app };
   btn.classList.add("talk");
   if (app) { window.CCTVApp.talkStart(c.id); toast(t("talkOn", c.name), 4000); return; }
@@ -1038,7 +1048,7 @@ function talkStop() {
 // called by the Android app: "on" / "off" / "error:<text>"
 window.onAppTalk = state => {
   if (state.startsWith("error:")) {
-    const m = state.slice(6); toast(m === "mic" ? t("talkNoMic") : tr(m));
+    const m = state.slice(6); toast(m === "mic" ? t("talkNoMic") : m === "micsettings" ? t("talkMicSettings") : tr(m));
     if (TALK) { TALK.btn.classList.remove("talk"); TALK = null; }
   }
   else if (state === "off" && TALK) { TALK.btn.classList.remove("talk"); TALK = null; }
@@ -1047,10 +1057,62 @@ document.addEventListener("visibilitychange", () => { if (document.hidden && TAL
 
 function ptzSend(cam, body) { return api("/api/ptz", Object.assign({ cam }, body)).catch(e => { if (e.message !== "login") alert(e.message); throw e; }); }
 
+/* Digital zoom for a <video>: two fingers to pinch, mouse wheel, drag to move when zoomed.
+ * box = the element that clips the picture; badge = button showing "2.5×" (tap = back to 1×). */
+function enableZoom(box, video, badge, onChange) {
+  const Z = { s: 1, x: 0, y: 0 }, pts = new Map();
+  let pinch = null, pan = null, moved = false;
+  video.classList.add("zoomable");
+  const apply = () => {
+    const w = box.clientWidth, h = box.clientHeight;
+    Z.s = Math.min(6, Math.max(1, Z.s));
+    Z.x = Math.min(0, Math.max(w - w * Z.s, Z.x)); Z.y = Math.min(0, Math.max(h - h * Z.s, Z.y));
+    const on = Z.s > 1.01;
+    if (!on) { Z.s = 1; Z.x = 0; Z.y = 0; }
+    video.style.transform = on ? `translate(${Z.x}px,${Z.y}px) scale(${Z.s})` : "";
+    video.classList.toggle("zoomed", on);
+    if (badge) { badge.style.display = on ? "block" : "none"; badge.textContent = Z.s.toFixed(1) + "× ✕"; badge.title = t("zoomReset"); }
+    if (onChange) onChange(on);
+  };
+  const at = (cx, cy, ns) => {                         // zoom keeping the point under the finger in place
+    const r = box.getBoundingClientRect(), px = cx - r.left, py = cy - r.top;
+    ns = Math.min(6, Math.max(1, ns));
+    Z.x = px - (px - Z.x) * (ns / Z.s); Z.y = py - (py - Z.y) * (ns / Z.s); Z.s = ns; apply();
+  };
+  video.addEventListener("pointerdown", e => {
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pts.size === 2) {
+      const [a, b] = [...pts.values()];
+      pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, s: Z.s }; pan = null; moved = true;
+    } else if (pts.size === 1) { pan = { x: e.clientX, y: e.clientY, zx: Z.x, zy: Z.y }; moved = false; }
+  });
+  video.addEventListener("pointermove", e => {
+    if (!pts.has(e.pointerId)) return;
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch && pts.size >= 2) {
+      e.preventDefault();
+      const [a, b] = [...pts.values()];
+      at((a.x + b.x) / 2, (a.y + b.y) / 2, pinch.s * Math.hypot(a.x - b.x, a.y - b.y) / pinch.d);
+    } else if (pan && Z.s > 1) {
+      const dx = e.clientX - pan.x, dy = e.clientY - pan.y;
+      if (Math.abs(dx) + Math.abs(dy) > 6) moved = true;
+      Z.x = pan.zx + dx; Z.y = pan.zy + dy; apply();
+    }
+  });
+  const up = e => { pts.delete(e.pointerId); if (pts.size < 2) pinch = null; if (!pts.size) pan = null; };
+  ["pointerup", "pointercancel", "pointerleave"].forEach(n => video.addEventListener(n, up));
+  video.addEventListener("wheel", e => { e.preventDefault(); at(e.clientX, e.clientY, Z.s * (e.deltaY < 0 ? 1.2 : 1 / 1.2)); }, { passive: false });
+  // a drag or pinch is not a tap (a tap on a live tile enlarges it)
+  video.addEventListener("click", e => { if (moved) { e.stopPropagation(); e.preventDefault(); moved = false; } }, true);
+  if (badge) badge.onclick = e => { e.stopPropagation(); Z.s = 1; apply(); };
+  window.addEventListener("resize", apply);
+  return { reset() { Z.s = 1; apply(); }, get zoomed() { return Z.s > 1; } };
+}
+
 function makeTile(c) {
   const el = document.createElement("div");
   el.className = "tile";
-  el.innerHTML = `<div class="in"><video muted playsinline autoplay></video>
+  el.innerHTML = `<div class="in"><video muted playsinline autoplay></video><button class="zbadge"></button>
     <div class="label"><span class="dot"></span><span class="nm"></span></div>
     <div class="mbadge"></div>
     <div class="tools"><button class="snd" title="">🔇</button><button class="mic" style="display:none">🎤</button><button class="pz" style="display:none">🎮</button>
@@ -1074,6 +1136,7 @@ function makeTile(c) {
     pBtn.title = t("ptzBtn"); el.querySelector(".mbadge").textContent = t("motion");
   };
   T.sync = sync; sync();
+  T.zoom = enableZoom(el.querySelector(".in"), video, el.querySelector(".zbadge"));
   video.addEventListener("resize", sync);
   if (ME && (ME.role === "admin" || ME.camset)) {
     const pc = el.querySelector(".pic"); pc.style.display = ""; pc.title = t("picture");
@@ -1222,6 +1285,8 @@ const pad = n => String(n).padStart(2, "0");
 const hms = (sec, s = true) => { sec = Math.max(0, Math.floor(sec)); return `${pad(Math.floor(sec / 3600))}:${pad(Math.floor(sec / 60) % 60)}${s ? ":" + pad(sec % 60) : ""}`; };
 let TL = null, cur = null, selHour = null;          // timeline data, playing segment, selected hour
 const pv = $("#pv");
+// zoom in the recording: the video's own controls are hidden while zoomed (they would be enlarged too)
+const PVZ = enableZoom($("#pvBox"), pv, $("#pvZoom"), on => { pv.controls = !on; });
 
 async function loadTimeline(date, keepPos) {
   const cam = $("#recCam").value; if (!cam) return;
