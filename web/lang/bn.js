@@ -220,6 +220,11 @@ window.I18N_BN = {
   xStarted: "Download শুরু হয়েছে ({0} মিনিট)। বড় range হলে শুরু হতে একটু সময় লাগতে পারে।",
   autoUpd: "Auto update",
   autoUpdHint: "নতুন version GitHub থেকে নিজে install হবে (প্রতি ১০ মিনিটে check)। বন্ধ থাকলে শুধু জানাবে যে update আছে।",
+  talkTip: "Camera দিয়ে কথা বলুন (থামাতে আবার চাপুন)",
+  talkOn: "🎤 {0} দিয়ে কথা বলছেন… থামাতে 🎤 আবার চাপুন",
+  talkNeedHttps: "Microphone শুধু https ঠিকানায় (Tailscale) বা Android app-এ চলে, http://192.168… ঠিকানায় নয়",
+  talkNoMic: "Microphone-এর অনুমতি নেই: এই site / app-কে microphone ব্যবহারের অনুমতি দিন",
+  talkFailed: "কথা বলা থেমে গেছে: CCTV server-এর সাথে সংযোগ কেটে গেছে",
 };
 
 window.I18N_BN_LABEL = "বাং";
@@ -237,6 +242,8 @@ window.I18N_BN_DOCKER = {
 window.I18N_BN_MSGS = {
   "Please log in": "Login করুন",
   "Admins only": "শুধু admin পারবে",
+  "No permission to talk through the cameras": "Camera দিয়ে কথা বলার অনুমতি নেই",
+  "Someone else is talking through this camera now": "এই camera দিয়ে এখন অন্য কেউ কথা বলছেন",
   "Pick a start and end time": "শুরু আর শেষের সময় দিন",
   "The end time must be after the start time": "শেষের সময় শুরুর পরে হতে হবে",
   "Another download is being prepared, try again in a minute": "আরেকটা download তৈরি হচ্ছে, এক মিনিট পর আবার চেষ্টা করুন",

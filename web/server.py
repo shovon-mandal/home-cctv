@@ -6,7 +6,12 @@
   127.0.0.1, so camera passwords and the go2rtc admin API never leave the box)
 - Lists and streams recordings (with HTTP Range for seeking)
 """
+import base64
+import hashlib
 import json
+import queue
+import secrets
+import struct
 import mimetypes
 import os
 import re
@@ -130,6 +135,41 @@ def drive_ls(path, dirs=False):
         items = []
     _drive_ls[key] = (time.time(), items)
     return items
+
+
+# ---------------- two-way audio ("talk") ----------------
+# The phone's microphone (8 kHz, 16-bit mono PCM) arrives over a websocket (browser) or a
+# streaming POST (Android app). It is offered to go2rtc as a raw PCM stream on a one-time
+# local URL (input template "talkpcm" in go2rtc.yaml, see cctv-apply); go2rtc's ffmpeg turns it into the camera's codec and sends it to the camera's speaker
+# over the RTSP back channel (ONVIF Profile T: Imou / Dahua and others).
+TALK_FEEDS = {}                          # token -> queue of PCM chunks (None = end)
+TALK_BUSY = {}                           # camera id -> user talking now
+_talk_lock = threading.Lock()
+
+
+def go2rtc_json(path):
+    import urllib.request
+    with urllib.request.urlopen(f"http://{GO2RTC}{path}", timeout=5) as r:
+        return json.loads(r.read() or b"null")
+
+
+def talk_codec(cam):
+    """The camera's back-channel codec as go2rtc sees it: 'pcma'/'pcmu'/..., None = the camera
+    has no back channel, '' = not known (nobody is reading the camera right now)."""
+    try:
+        info = go2rtc_json(f"/api/streams?src={quote(cam)}") or {}
+    except (OSError, ValueError):
+        return ""
+    medias = [m for p in (info.get("producers") or []) for m in (p.get("medias") or [])]
+    if not medias:
+        return ""
+    for m in medias:
+        parts = [x.strip() for x in str(m).split(",")]
+        if len(parts) >= 3 and parts[0] == "audio" and parts[1] == "sendonly":
+            codec = parts[2].split("/")[0].lower()
+            return {"pcma": "pcma", "pcmu": "pcmu", "opus": "opus", "mpeg4-generic": "aac", "aac": "aac",
+                    "l16": "pcm"}.get(codec, "pcma")
+    return None
 
 
 _fails_lock = threading.Lock()
@@ -503,6 +543,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.serve_file(os.path.join(HERE, "manifest.webmanifest"), "application/manifest+json")
             if p == "/api/me":
                 return self.me()
+            if p.startswith("/talkfeed/"):                 # go2rtc's ffmpeg, on this machine only
+                return self.talk_feed(p[10:].split(".")[0])
             who = self.require()
             if not who:
                 return
@@ -511,6 +553,17 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_error_json(403, "bad origin")
             if p == "/api/ws":
                 return self.ws_proxy(q, user)
+            if p == "/api/talk":
+                return self.talk(q, user, ws=True)
+            if p == "/api/talkcheck":                     # before opening the websocket: a clear error
+                cam = (q.get("cam") or [""])[0]
+                if cam not in {c["id"] for c in self.my_cameras(user)}:
+                    return self.send_error_json(403, "unknown camera")
+                if not (user["role"] == "admin" or user.get("ptz")):
+                    return self.send_error_json(403, "No permission to talk through the cameras")
+                if TALK_BUSY.get(cam):
+                    return self.send_error_json(409, "Someone else is talking through this camera now")
+                return self.send_json({"ok": True, "codec": talk_codec(cam)})
             if p == "/api/cameras":
                 return self.send_json(self.my_cameras(user))
             if p == "/api/motion":
@@ -584,6 +637,11 @@ class Handler(BaseHTTPRequestHandler):
         p = urlparse(self.path).path
         if not self.same_origin():
             return self.send_error_json(403, "bad request origin")
+        if p == "/api/talk":                             # streaming body: microphone from the app
+            who = self.require()
+            if not who:
+                return
+            return self.talk(parse_qs(urlparse(self.path).query), who[1], ws=False)
         try:
             body = self.read_body()
         except PermissionError:
@@ -1033,6 +1091,179 @@ class Handler(BaseHTTPRequestHandler):
                for a, b, pic in cctvrec.read_events(d, now)]
         self.send_json({"cam": cam, "date": date, "day_start": cctvrec.midnight(date), "src": src, "sources": sources,
                         "dates": days, "segments": segs, "events": evs, "now": now})
+
+    # ---------- two-way audio ----------
+    def talk_feed(self, token):
+        if self.client_address[0] not in ("127.0.0.1", "::1") or token not in TALK_FEEDS:
+            return self.send_error_json(404, "not found")
+        q = TALK_FEEDS[token]
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.close_connection = True
+        try:
+            while True:
+                try:
+                    chunk = q.get(timeout=10)
+                except queue.Empty:
+                    break                                   # nothing from the phone for 10 s
+                if chunk is None:
+                    break
+                self.wfile.write(chunk)
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
+
+    def talk(self, q, user, ws):
+        """Microphone -> camera speaker. Browser: websocket of PCM frames; app: streaming POST."""
+        cam = (q.get("cam") or [""])[0]
+        if cam not in {c["id"] for c in self.my_cameras(user)}:
+            return self.send_error_json(403, "unknown camera")
+        if not (user["role"] == "admin" or user.get("ptz")):
+            return self.send_error_json(403, "No permission to talk through the cameras")
+        codec = talk_codec(cam) or "pcma"          # unknown: G.711 A-law, what most cameras use
+        with _talk_lock:
+            if TALK_BUSY.get(cam):
+                return self.send_error_json(409, "Someone else is talking through this camera now")
+            TALK_BUSY[cam] = True
+        token = secrets.token_hex(12)
+        feed = queue.Queue(maxsize=400)
+        TALK_FEEDS[token] = feed
+        port = self.server.server_address[1]
+        src = f"ffmpeg:http://127.0.0.1:{port}/talkfeed/{token}.pcm#input=talkpcm#audio={codec}"
+        result = {}
+
+        def start():                                        # go2rtc plays the feed on the camera
+            import urllib.request
+            try:
+                req = urllib.request.Request(f"http://{GO2RTC}/api/streams?dst={quote(cam)}&src={quote(src, safe='')}",
+                                             method="POST")
+                with urllib.request.urlopen(req, timeout=15) as r:
+                    result["ok"] = r.status
+            except urllib.error.HTTPError as e:
+                msg = (e.read() or b"").decode(errors="replace").strip() or str(e)
+                if "consumer" in msg or "backchannel" in msg or "not found" in msg:
+                    msg = "this camera does not take sound over RTSP (no two-way audio / back channel)"
+                result["error"] = msg
+            except OSError as e:
+                result["error"] = str(e)
+
+        def put(chunk):
+            try:
+                feed.put(chunk, timeout=2)
+            except queue.Full:
+                pass
+        try:
+            if ws:
+                self.talk_ws(put, start, result)
+            else:
+                self.talk_post(put, start, result)
+        finally:
+            try:
+                for _ in range(10):                        # 2 s of silence: the last words get through
+                    feed.put_nowait(bytes(3200))
+                feed.put_nowait(None)
+            except queue.Full:
+                pass
+            threading.Timer(15, lambda: TALK_FEEDS.pop(token, None)).start()
+            with _talk_lock:
+                TALK_BUSY.pop(cam, None)
+
+    def talk_post(self, put, start, result):
+        """Android app: chunked POST of raw PCM; answered when the talking ends."""
+        threading.Thread(target=start, daemon=True).start()
+        rf = self.rfile
+        if self.headers.get("Transfer-Encoding", "").lower() == "chunked":
+            while True:
+                size_line = rf.readline(64)
+                if not size_line:
+                    break
+                try:
+                    n = int(size_line.split(b";")[0].strip() or b"0", 16)
+                except ValueError:
+                    break
+                if n == 0:
+                    rf.readline(8)
+                    break
+                put(rf.read(n))
+                rf.read(2)
+        else:
+            left = int(self.headers.get("Content-Length") or 0)
+            while left > 0:
+                chunk = rf.read(min(3200, left))
+                if not chunk:
+                    break
+                left -= len(chunk)
+                put(chunk)
+        if result.get("error"):
+            return self.send_error_json(502, "The camera did not accept the sound: " + result["error"][:200])
+        self.send_json({"ok": True})
+
+    def talk_ws(self, put, start, result):
+        """Browser: a small websocket server (binary frames = PCM, client -> server)."""
+        if self.headers.get("Upgrade", "").lower() != "websocket" or not self.headers.get("Sec-WebSocket-Key"):
+            return self.send_error_json(400, "websocket only")
+        acc = base64.b64encode(hashlib.sha1((self.headers["Sec-WebSocket-Key"]
+                                             + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest()).decode()
+        self.send_response(HTTPStatus.SWITCHING_PROTOCOLS)
+        self.send_header("Upgrade", "websocket")
+        self.send_header("Connection", "Upgrade")
+        self.send_header("Sec-WebSocket-Accept", acc)
+        self.end_headers()
+        self.wfile.flush()
+        self.close_connection = True
+        sock = self.connection
+        lock = threading.Lock()
+
+        def send_text(obj):
+            data = json.dumps(obj).encode()
+            hdr = bytes([0x81, len(data)]) if len(data) < 126 else bytes([0x81, 126]) + struct.pack(">H", len(data))
+            with lock:
+                try:
+                    sock.sendall(hdr + data)
+                except OSError:
+                    pass
+
+        def starter():
+            start()
+            send_text({"error": result["error"][:200]} if result.get("error") else {"ok": True})
+        threading.Thread(target=starter, daemon=True).start()
+        rf = self.rfile
+        sock.settimeout(30)
+        try:
+            while True:
+                h = rf.read(2)
+                if len(h) < 2:
+                    break
+                op, ln = h[0] & 0x0F, h[1] & 0x7F
+                if ln == 126:
+                    ln = struct.unpack(">H", rf.read(2))[0]
+                elif ln == 127:
+                    ln = struct.unpack(">Q", rf.read(8))[0]
+                mask = rf.read(4) if h[1] & 0x80 else b"\0\0\0\0"
+                if ln > 1 << 20:
+                    break
+                raw = rf.read(ln)
+                if len(raw) < ln:
+                    break
+                data = (int.from_bytes(raw, "big") ^ int.from_bytes((mask * (ln // 4 + 1))[:ln], "big")).to_bytes(ln, "big") if ln else b""
+                if op == 0x8:                               # close
+                    break
+                if op == 0x9:                               # ping -> pong
+                    with lock:
+                        sock.sendall(bytes([0x8A, len(data)]) + data)
+                    continue
+                if op in (0x0, 0x2) and data:
+                    put(bytes(data))
+        except (OSError, socket.timeout):
+            pass
+        with lock:
+            try:
+                sock.sendall(b"\x88\x00")
+            except OSError:
+                pass
 
     # ---------- live view: websocket proxy to go2rtc ----------
     def ws_proxy(self, q, user):
