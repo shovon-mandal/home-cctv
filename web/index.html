@@ -74,11 +74,16 @@
   .tile .in { position: absolute; inset: 0; }
   .tile video { width: 100%; height: 100%; object-fit: contain; display: block; background: #000; }
   /* digital zoom: pinch / mouse wheel on the picture, drag to move; the badge goes back to 1× */
-  .zoomable { touch-action: pan-y; transform-origin: 0 0; will-change: transform; }
+  .zoomable { touch-action: pan-y; transform-origin: 0 0; }
   .zoomed { touch-action: none; cursor: grab; }
   .zbadge { position: absolute; left: 6px; bottom: 6px; z-index: 3; border: 0; border-radius: 8px; padding: 3px 8px;
     background: rgba(0,0,0,.6); color: #fff; font-size: 12.5px; display: none; }
-  .zbox { position: relative; overflow: hidden; }
+  .zbox { position: relative; overflow: hidden; background: #000; }
+  .zbox .pfs { position: absolute; right: 6px; top: 6px; z-index: 3; border: 0; border-radius: 8px; padding: 3px 9px;
+    background: rgba(0,0,0,.55); color: #fff; font-size: 16px; }
+  .zbox:fullscreen, .zbox:-webkit-full-screen { display: flex; align-items: center; justify-content: center; }
+  .zbox video { object-fit: contain; }
+  .zbox:fullscreen video, .zbox:-webkit-full-screen video { max-height: none; height: 100%; width: 100%; aspect-ratio: auto; }
   .tile.rot { position: fixed; inset: 0; z-index: 60; border: 0; border-radius: 0; }
   .tile.rot .in { inset: auto; top: 0; left: 0; width: 100vh; height: 100vw; width: 100dvh; height: 100dvw;
     transform-origin: 0 0; transform: translateX(100vw) rotate(90deg); }
@@ -264,7 +269,7 @@
       <button class="navbtn" id="dNext">▶</button>
     </div>
     <div class="player">
-      <div class="zbox" id="pvBox"><video id="pv" controls playsinline preload="metadata"></video><button class="zbadge" id="pvZoom"></button></div>
+      <div class="zbox" id="pvBox"><video id="pv" controls playsinline preload="metadata" controlsList="nofullscreen"></video><button class="zbadge" id="pvZoom"></button><button class="pfs" id="pvFs" title="Full screen">⛶</button></div>
       <div class="pbar">
         <span><b id="pvTime">--:--:--</b> <span class="muted" id="pvInfo"></span></span>
         <span><button id="pvPrev">⏮ <span data-t="prevMin"></span></button><button id="pvNext"><span data-t="nextMin"></span> ⏭</button>
@@ -1059,24 +1064,40 @@ function ptzSend(cam, body) { return api("/api/ptz", Object.assign({ cam }, body
 
 /* Digital zoom for a <video>: two fingers to pinch, mouse wheel, drag to move when zoomed.
  * box = the element that clips the picture; badge = button showing "2.5×" (tap = back to 1×). */
+const OVB = !!(window.CSS && CSS.supports && CSS.supports("object-view-box", "inset(1% 1% 1% 1%)"));
 function enableZoom(box, video, badge, onChange) {
-  const Z = { s: 1, x: 0, y: 0 }, pts = new Map();
+  const Z = { s: 1, x: 0, y: 0 }, pts = new Map(), MAXZ = OVB ? 8 : 3;
   let pinch = null, pan = null, moved = false;
   video.classList.add("zoomable");
+  // the area the picture really covers inside the box (black bars of "contain" left out)
+  const area = () => {
+    const W = box.clientWidth, H = box.clientHeight, a = (video.videoWidth / video.videoHeight) || (W / H || 16 / 9);
+    if (!OVB) return { w: W, h: H, ox: 0, oy: 0 };
+    const w = Math.min(W, H * a), h = w / a;
+    return { w, h, ox: (W - w) / 2, oy: (H - h) / 2 };
+  };
   const apply = () => {
-    const w = box.clientWidth, h = box.clientHeight;
-    Z.s = Math.min(6, Math.max(1, Z.s));
+    const { w, h } = area();
+    Z.s = Math.min(MAXZ, Math.max(1, Z.s));
     Z.x = Math.min(0, Math.max(w - w * Z.s, Z.x)); Z.y = Math.min(0, Math.max(h - h * Z.s, Z.y));
     const on = Z.s > 1.01;
     if (!on) { Z.s = 1; Z.x = 0; Z.y = 0; }
-    video.style.transform = on ? `translate(${Z.x}px,${Z.y}px) scale(${Z.s})` : "";
+    if (OVB) {
+      // crop the picture itself (object-view-box): the video stays its normal size, so no huge
+      // layer (black screen on phones) and it also works in full screen
+      const f = 1 / Z.s, fx = -Z.x / (w * Z.s), fy = -Z.y / (h * Z.s), p = v => (v * 100).toFixed(3) + "%";
+      video.style.objectViewBox = on ? `inset(${p(fy)} ${p(Math.max(0, 1 - fx - f))} ${p(Math.max(0, 1 - fy - f))} ${p(fx)})` : "";
+    } else {
+      video.style.transform = on ? `translate(${Z.x}px,${Z.y}px) scale(${Z.s})` : "";
+    }
     video.classList.toggle("zoomed", on);
     if (badge) { badge.style.display = on ? "block" : "none"; badge.textContent = Z.s.toFixed(1) + "× ✕"; badge.title = t("zoomReset"); }
     if (onChange) onChange(on);
   };
   const at = (cx, cy, ns) => {                         // zoom keeping the point under the finger in place
-    const r = box.getBoundingClientRect(), px = cx - r.left, py = cy - r.top;
-    ns = Math.min(6, Math.max(1, ns));
+    const r = box.getBoundingClientRect(), A = area();
+    const px = Math.min(A.w, Math.max(0, cx - r.left - A.ox)), py = Math.min(A.h, Math.max(0, cy - r.top - A.oy));
+    ns = Math.min(MAXZ, Math.max(1, ns));
     Z.x = px - (px - Z.x) * (ns / Z.s); Z.y = py - (py - Z.y) * (ns / Z.s); Z.s = ns; apply();
   };
   video.addEventListener("pointerdown", e => {
@@ -1286,7 +1307,13 @@ const hms = (sec, s = true) => { sec = Math.max(0, Math.floor(sec)); return `${p
 let TL = null, cur = null, selHour = null;          // timeline data, playing segment, selected hour
 const pv = $("#pv");
 // zoom in the recording: the video's own controls are hidden while zoomed (they would be enlarged too)
-const PVZ = enableZoom($("#pvBox"), pv, $("#pvZoom"), on => { pv.controls = !on; });
+const PVZ = enableZoom($("#pvBox"), pv, $("#pvZoom"), on => { if (!OVB) pv.controls = !on; });
+$("#pvFs").onclick = () => {                     // full screen of the box, not of the video: zoom keeps working
+  const box = $("#pvBox");
+  if (document.fullscreenElement || document.webkitFullscreenElement) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+  else if (box.requestFullscreen || box.webkitRequestFullscreen) (box.requestFullscreen || box.webkitRequestFullscreen).call(box);
+  else if (pv.webkitEnterFullscreen) pv.webkitEnterFullscreen();   // iPhone: only the video itself
+};
 
 async function loadTimeline(date, keepPos) {
   const cam = $("#recCam").value; if (!cam) return;
