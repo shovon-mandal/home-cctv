@@ -45,10 +45,6 @@ def gen_go2rtc(cams):
         "  listen: '127.0.0.1:8555'",
         "log:",
         "  level: warn",
-        # two-way audio: the phone's microphone arrives as raw 8 kHz PCM from the dashboard
-        "ffmpeg:",
-        "  talkpcm: '-fflags nobuffer -flags low_delay -probesize 32 -analyzeduration 0"
-        " -f s16le -ar 8000 -ac 1 -i {input} -flush_packets 1'",
         "streams:",
     ]
     for c in cams:

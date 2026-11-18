@@ -6,10 +6,6 @@ import android.app.DownloadManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.content.pm.PackageManager;
-import android.media.AudioFormat;
-import android.media.AudioRecord;
-import android.media.MediaRecorder;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
@@ -23,7 +19,6 @@ import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
-import android.webkit.PermissionRequest;
 import android.webkit.URLUtil;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
@@ -34,12 +29,8 @@ import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 import android.widget.Toast;
 
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.net.URLEncoder;
-import org.json.JSONObject;
 
 /**
  * Thin wrapper around the CCTV dashboard. Tries the home (Wi-Fi) address
@@ -58,9 +49,6 @@ public class MainActivity extends Activity {
     private String baseUrl;
     private boolean showingError;
     private final Handler ui = new Handler(Looper.getMainLooper());
-    private volatile boolean talking;
-    private String pendingTalkCam;
-    static final int REQ_MIC = 7;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -109,18 +97,6 @@ public class MainActivity extends Activity {
         });
 
         web.setWebChromeClient(new WebChromeClient() {
-            @Override
-            public void onPermissionRequest(PermissionRequest req) {           // microphone for the page
-                for (String r : req.getResources()) {
-                    if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(r)
-                            && checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                        ui.post(() -> req.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE}));
-                        return;
-                    }
-                }
-                ui.post(req::deny);
-            }
-
             @Override
             public void onShowCustomView(View view, CustomViewCallback cb) {      // video fullscreen
                 if (fullscreenView != null) { cb.onCustomViewHidden(); return; }
@@ -262,96 +238,8 @@ public class MainActivity extends Activity {
         }
     }
 
-    // ---------- two-way audio: microphone -> /api/talk (raw 8 kHz 16-bit mono PCM, streamed) ----------
-    @SuppressLint("MissingPermission")     // checked just below
-    void talkStart(String cam) {
-        if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            pendingTalkCam = cam;
-            requestPermissions(new String[]{android.Manifest.permission.RECORD_AUDIO}, REQ_MIC);
-            return;
-        }
-        if (talking || baseUrl == null || baseUrl.isEmpty()) return;
-        talking = true;
-        final String base = baseUrl;
-        new Thread(() -> {
-            AudioRecord rec = null;
-            HttpURLConnection c = null;
-            String error = null;
-            try {
-                int rate = 8000;
-                int min = AudioRecord.getMinBufferSize(rate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
-                rec = new AudioRecord(MediaRecorder.AudioSource.VOICE_COMMUNICATION, rate,   // echo cancelling
-                        AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, Math.max(min, 3200) * 2);
-                c = (HttpURLConnection) new URL(base + "/api/talk?cam=" + URLEncoder.encode(cam, "UTF-8")).openConnection();
-                c.setDoOutput(true);
-                c.setRequestMethod("POST");
-                c.setChunkedStreamingMode(1600);
-                c.setConnectTimeout(8000);
-                c.setReadTimeout(30000);
-                c.setRequestProperty("Content-Type", "application/octet-stream");
-                c.setRequestProperty("X-Requested-With", "cctv");
-                String ck = CookieManager.getInstance().getCookie(base);
-                if (ck != null) c.setRequestProperty("Cookie", ck);
-                rec.startRecording();
-                byte[] buf = new byte[1600];                 // 0.1 s
-                try (OutputStream out = c.getOutputStream()) {
-                    while (talking) {
-                        int n = rec.read(buf, 0, buf.length);
-                        if (n > 0) { out.write(buf, 0, n); out.flush(); }
-                    }
-                } catch (Exception e) {
-                    // the server stopped reading: its answer below says why
-                }
-                int code = c.getResponseCode();
-                if (code != 200) {
-                    InputStream es = c.getErrorStream();
-                    String body = "";
-                    if (es != null) {
-                        byte[] b = new byte[2048];
-                        int n = es.read(b);
-                        if (n > 0) body = new String(b, 0, n, "UTF-8");
-                    }
-                    try { error = new JSONObject(body).optString("error", "Error " + code); }
-                    catch (Exception e) { error = "Error " + code; }
-                }
-            } catch (Exception e) {
-                error = e.getMessage() != null ? e.getMessage() : e.toString();
-            } finally {
-                talking = false;
-                if (rec != null) { try { rec.stop(); } catch (Exception ignored) { } rec.release(); }
-                if (c != null) c.disconnect();
-            }
-            appTalk(error == null ? "off" : "error:" + error);
-        }).start();
-    }
-
-    void appTalk(String state) {
-        ui.post(() -> web.evaluateJavascript("window.onAppTalk&&onAppTalk(" + JSONObject.quote(state) + ")", null));
-    }
-
-    @Override
-    public void onRequestPermissionsResult(int req, String[] perms, int[] res) {
-        super.onRequestPermissionsResult(req, perms, res);
-        if (req != REQ_MIC) return;
-        String cam = pendingTalkCam;
-        pendingTalkCam = null;
-        if (res.length > 0 && res[0] == PackageManager.PERMISSION_GRANTED && cam != null) {
-            talkStart(cam);
-        } else if (!shouldShowRequestPermissionRationale(android.Manifest.permission.RECORD_AUDIO)) {
-            // "don't ask again": Android won't show the question any more -> open the app's settings
-            appTalk("error:micsettings");
-            try {
-                startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                        Uri.fromParts("package", getPackageName(), null)));
-            } catch (Exception ignored) { }
-        } else {
-            appTalk("error:mic");
-        }
-    }
-
     @Override
     protected void onPause() {
-        talking = false;                            // never keep the microphone open in the background
         super.onPause();
         web.onPause();                              // stops live streams in the background
         CookieManager.getInstance().flush();
@@ -379,16 +267,6 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void retry() {
             ui.post(MainActivity.this::connect);
-        }
-
-        @JavascriptInterface
-        public void talkStart(String cam) {
-            ui.post(() -> MainActivity.this.talkStart(cam));
-        }
-
-        @JavascriptInterface
-        public void talkStop() {
-            talking = false;
         }
     }
 }

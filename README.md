@@ -48,10 +48,6 @@ Built on [go2rtc](https://github.com/AlexxIT/go2rtc), [FFmpeg](https://ffmpeg.or
 - **Motion detection** with adjustable sensitivity, a live "Motion" badge, events with snapshots.
 - **Timeline**: a 24-hour bar per day (recorded / full quality / motion), thumbnails, zoom,
   jump between motion events, playback across minutes at up to 16× speed.
-- **Two-way audio**: tap 🎤 on a camera to talk through its speaker (cameras with an RTSP /
-  ONVIF back channel, e.g. Imou / Dahua; low delay, no CPU load). Works in the Android app
-  everywhere, and in a browser on the https (Tailscale) address — browsers allow the
-  microphone only on https. Who may move PTZ cameras may also talk.
 - **PTZ**: pan and tilt ONVIF cameras from the live view. **Picture settings** (HDR/WDR,
   brightness, color, resolution, bitrate) over ONVIF.
 - **Storage that cleans itself**: size limits, oldest minutes *without* motion are deleted first.

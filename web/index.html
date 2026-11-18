@@ -98,8 +98,6 @@
   .tile .tools button { border: 0; background: rgba(0,0,0,.55); border-radius: 8px; padding: 4px 8px; font-size: 12.5px;
     backdrop-filter: blur(4px); min-width: 30px; }
   .tile .tools button.on { color: var(--blue); }
-  .tile .tools button.mic.talk { background: #d73a49; color: #fff; animation: talkpulse 1.2s ease-in-out infinite; }
-  @keyframes talkpulse { 50% { box-shadow: 0 0 0 5px rgba(215,58,73,.35); } }
   .tile .msg { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 14px;
     pointer-events: none; text-align: center; padding: 10px; }
   .ptz { position: absolute; right: 10px; bottom: 10px; width: 132px; height: 132px; display: none;
@@ -814,13 +812,6 @@ const I18N = {
   xStarted: "Download started ({0} min). A long range can take a while to begin.",
   autoUpd: "Auto update",
   autoUpdHint: "Install new versions from GitHub by itself (checked every 10 minutes). Off: only shows that an update is available.",
-  talkTip: "Talk through the camera (tap again to stop)",
-  talkOn: "🎤 Talking through {0}… tap 🎤 again to stop",
-  talkNeedHttps: "The microphone works only on the https address (Tailscale) or in the Android app, not on http://192.168…",
-  talkNoMic: "No microphone access: allow it (browser: tap 🔒 next to the address → Permissions → Microphone; app: allow when asked)",
-  talkFailed: "Talking stopped: the connection to the CCTV server broke",
-  talkUpdateApp: "Talking needs the new version of the app: download HomeCCTV.apk again (GitHub → Releases → Android app) and install it over this one",
-  talkMicSettings: "The microphone is blocked for this app: in the settings that opened, tap Permissions → Microphone → Allow, then tap 🎤 again",
   zoomReset: "Zoom: tap to go back to 1×",
 };
 /* wording when running in Docker on a PC / NAS (no SD card, no SSD switching) */
@@ -996,70 +987,6 @@ function renderChips() {
   }
 }
 
-/* ---- two-way audio: phone microphone -> camera speaker ----
- * In a browser: 8 kHz 16-bit PCM over a websocket (the microphone needs https or localhost).
- * In the Android app: the app records and sends it itself (works on the home address too). */
-let TALK = null;
-async function talkStart(c, btn) {
-  if (TALK) talkStop();
-  try { await api(`/api/talkcheck?cam=${encodeURIComponent(c.id)}`); }
-  catch (e) { if (e.message !== "login") toast(e.message); return; }
-  const app = window.CCTVApp && typeof window.CCTVApp.talkStart === "function";
-  if (window.CCTVApp && !app) { toast(t("talkUpdateApp")); return; }       // app older than talking
-  TALK = { cam: c.id, btn, app };
-  btn.classList.add("talk");
-  if (app) { window.CCTVApp.talkStart(c.id); toast(t("talkOn", c.name), 4000); return; }
-  if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    talkStop(); toast(t("talkNeedHttps")); return;
-  }
-  const me = TALK;
-  try {
-    me.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-  } catch (e) { if (TALK === me) talkStop(); toast(t("talkNoMic")); return; }
-  if (TALK !== me) { me.stream.getTracks().forEach(x => x.stop()); return; }
-  const ac = me.ac = new (window.AudioContext || window.webkitAudioContext)();
-  const src = ac.createMediaStreamSource(me.stream), proc = ac.createScriptProcessor(2048, 1, 1);
-  const ws = me.ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/api/talk?cam=" + encodeURIComponent(c.id));
-  ws.binaryType = "arraybuffer";
-  const step = ac.sampleRate / 8000; let pos = 0;
-  proc.onaudioprocess = e => {
-    const x = e.inputBuffer.getChannelData(0), out = new Int16Array(Math.floor((x.length - pos) / step) + 1);
-    let n = 0;
-    for (; pos < x.length; pos += step) {                // average the samples of each 1/8000 s
-      const a = Math.floor(pos), b = Math.min(x.length, Math.floor(pos + step)); let sum = 0;
-      for (let i = a; i < b; i++) sum += x[i];
-      const v = Math.max(-1, Math.min(1, sum / Math.max(1, b - a)));
-      out[n++] = v < 0 ? v * 0x8000 : v * 0x7fff;
-    }
-    pos -= x.length;
-    if (ws.readyState === 1) ws.send(out.subarray(0, n).buffer.slice(0, n * 2));
-  };
-  src.connect(proc); proc.connect(ac.destination);
-  me.proc = proc; me.src = src;
-  ws.onmessage = m => { try { const d = JSON.parse(m.data); if (d.error) { toast(tr(d.error)); talkStop(); } else toast(t("talkOn", c.name), 4000); } catch (e) {} };
-  ws.onclose = () => { if (TALK === me) talkStop(); };
-  ws.onerror = () => { if (TALK === me) { toast(t("talkFailed")); talkStop(); } };
-}
-function talkStop() {
-  const me = TALK; TALK = null;
-  if (!me) return;
-  me.btn.classList.remove("talk");
-  if (me.app) { try { window.CCTVApp.talkStop(); } catch (e) {} return; }
-  try { me.proc && me.proc.disconnect(); me.src && me.src.disconnect(); } catch (e) {}
-  try { me.stream && me.stream.getTracks().forEach(x => x.stop()); } catch (e) {}
-  try { me.ac && me.ac.close(); } catch (e) {}
-  try { me.ws && me.ws.close(); } catch (e) {}
-}
-// called by the Android app: "on" / "off" / "error:<text>"
-window.onAppTalk = state => {
-  if (state.startsWith("error:")) {
-    const m = state.slice(6); toast(m === "mic" ? t("talkNoMic") : m === "micsettings" ? t("talkMicSettings") : tr(m));
-    if (TALK) { TALK.btn.classList.remove("talk"); TALK = null; }
-  }
-  else if (state === "off" && TALK) { TALK.btn.classList.remove("talk"); TALK = null; }
-};
-document.addEventListener("visibilitychange", () => { if (document.hidden && TALK) talkStop(); });
-
 function ptzSend(cam, body) { return api("/api/ptz", Object.assign({ cam }, body)).catch(e => { if (e.message !== "login") alert(e.message); throw e; }); }
 
 /* Digital zoom for a <video>: two fingers to pinch, mouse wheel, drag to move when zoomed.
@@ -1136,7 +1063,7 @@ function makeTile(c) {
   el.innerHTML = `<div class="in"><video muted playsinline autoplay></video><button class="zbadge"></button>
     <div class="label"><span class="dot"></span><span class="nm"></span></div>
     <div class="mbadge"></div>
-    <div class="tools"><button class="snd" title="">🔇</button><button class="mic" style="display:none">🎤</button><button class="pz" style="display:none">🎮</button>
+    <div class="tools"><button class="snd" title="">🔇</button><button class="pz" style="display:none">🎮</button>
       <button class="sens" style="display:none">🎯</button><button class="pic" style="display:none">🎛️</button><button class="q">SD</button>
       <button class="rotb" style="display:none">⟳</button><button class="fs">⛶</button></div>
     <div class="msg"></div>
@@ -1181,11 +1108,6 @@ function makeTile(c) {
     e.stopPropagation();
     if (document.fullscreenElement) document.exitFullscreen(); else (el.requestFullscreen || el.webkitRequestFullscreen)?.call(el);
   };
-  // two-way audio: tap 🎤 to talk through the camera's speaker, tap again to stop
-  if (ME && (ME.role === "admin" || ME.ptz)) {
-    const mb = el.querySelector(".mic"); mb.style.display = ""; mb.title = t("talkTip");
-    mb.onclick = e => { e.stopPropagation(); if (TALK && TALK.cam === c.id) talkStop(); else talkStart(c, mb); };
-  }
   // PTZ: hold an arrow to move, release to stop
   if (c.ptz && ME && ME.ptz) {
     pBtn.style.display = "";
