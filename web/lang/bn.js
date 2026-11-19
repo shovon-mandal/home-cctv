@@ -238,6 +238,7 @@ window.I18N_BN_DOCKER = {
 window.I18N_BN_MSGS = {
   "Please log in": "Login করুন",
   "Admins only": "শুধু admin পারবে",
+  "Google account storage is full: making room on Drive, upload goes on by itself": "Google account-এর জায়গা ভরে গেছে: Drive-এ জায়গা খালি করা হচ্ছে, upload নিজে থেকেই চলবে",
   "Pick a start and end time": "শুরু আর শেষের সময় দিন",
   "The end time must be after the start time": "শেষের সময় শুরুর পরে হতে হবে",
   "Another download is being prepared, try again in a minute": "আরেকটা download তৈরি হচ্ছে, এক মিনিট পর আবার চেষ্টা করুন",

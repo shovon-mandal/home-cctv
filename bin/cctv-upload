@@ -242,6 +242,7 @@ def main():
             print(f"cctv-upload: preparing failed: {e}")
             shutil.rmtree(stage, ignore_errors=True)
             return status("error", "Could not prepare the clips (disk?)")
+        quota = False
         for cam in {p.split("/")[0] for p in batch}:      # Drive folder = camera name
             err_tail = []
             try:
@@ -259,6 +260,9 @@ def main():
                         live(f" · {m.group(4)}")
                     elif line.strip():
                         err_tail = (err_tail + [line.strip()])[-3:]
+                        low = line.lower()
+                        if "quota" in low or "storage limit" in low or "insufficient" in low:
+                            quota = True
                     if time.time() - start > 1800:
                         proc.kill()
                 rc_code = proc.wait()
@@ -268,6 +272,14 @@ def main():
                 print("\n".join(err_tail))
                 ok = False
                 break
+        if not ok and quota:
+            # Google account storage is full: cctv-drive-clean frees 2 GB extra on its next run
+            try:
+                open(os.path.join(RUN, "drive-full"), "w").close()
+            except OSError:
+                pass
+            save_state()
+            return status("error", "Google account storage is full: making room on Drive, upload goes on by itself")
         INFO.pop("batch_pct", None)
         if not ok:
             save_state()
